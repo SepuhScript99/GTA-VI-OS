@@ -1,0 +1,25 @@
+# /etc/pam.d/su configuration for GTA VI OS (Vice OS)
+#
+# This PAM profile is optimized for the custom PyQt5 login screen (login.py).
+# It intentionally OMITS pam_systemd.so and pam_xauth.so to prevent the
+# QProcess authentication check from hanging or crashing before the
+# X session and user runtime directories are fully initialized.
+
+# Allow root to su without a password
+auth       sufficient pam_rootok.so
+
+# Standard UNIX authentication
+auth       required   pam_unix.so
+
+# Account management
+account    required   pam_unix.so
+
+# Password management
+password   required   pam_unix.so shadow nullok try_first_pass use_authtok
+
+# Session management
+# Set up environment limits and locale, but skip systemd/xauth
+session    required   pam_env.so readenv=1
+session    required   pam_env.so readenv=1 envfile=/etc/default/locale
+session    required   pam_limits.so
+session    required   pam_unix.so

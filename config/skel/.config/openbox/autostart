@@ -1,0 +1,63 @@
+#!/bin/bash
+# GTA VI OS (Vice OS) Openbox Autostart Script
+# Executed by openbox-session upon login.
+
+# 1. Start Core UI Components explicitly to ensure proper ordering
+/usr/bin/picom -b --config /etc/xdg/compton.conf &
+/usr/bin/feh --bg-fill /usr/share/backgrounds/vice_neon.jpg &
+/usr/bin/python3 /opt/vice-os/vice_shell.py &
+
+# 2. Export DBus environment if not already set (fallback for manual starts)
+if [ -z "$DBUS_SESSION_BUS_ADDRESS" ] && [ -x /usr/bin/dbus-launch ]; then
+    eval "$(/usr/bin/dbus-launch --sh-syntax --exit-with-session)"
+fi
+
+# 3. Execute XDG Autostart entries (System-wide + User-specific)
+# We process user-specific entries first, then system-wide, ensuring
+# user overrides take precedence and avoiding duplicate executions.
+
+declare -A started_apps
+
+process_autostart_dir() {
+    local dir="$1"
+    if [ -d "$dir" ]; then
+        for f in "$dir"/*.desktop; do
+            if [ -f "$f" ]; then
+                local app_name=$(basename "$f")
+                
+                # Skip if already started (e.g., user override processed first)
+                if [ -n "${started_apps[$app_name]}" ]; then
+                    continue
+                fi
+                
+                # Skip if Hidden=true
+                if grep -q "Hidden=true" "$f"; then
+                    continue
+                fi
+                
+                # Skip our core components that we started explicitly above
+                case "$app_name" in
+                    vice-os-compositor.desktop|vice-os-wallpaper.desktop|vice-os-shell.desktop)
+                        continue
+                        ;;
+                esac
+                
+                # Extract Exec line, remove %f, %u, etc.
+                local cmd=$(grep -m 1 "^Exec=" "$f" | sed 's/^Exec=//;s/ %.*//')
+                if [ -n "$cmd" ]; then
+                    # Execute in background
+                    eval "$cmd &" 2>/dev/null
+                    started_apps[$app_name]=1
+                fi
+            fi
+        done
+    fi
+}
+
+# Process user-specific autostart (takes precedence)
+process_autostart_dir "$HOME/.config/autostart"
+
+# Process system-wide autostart
+process_autostart_dir "/etc/xdg/autostart"
+
+exit 0

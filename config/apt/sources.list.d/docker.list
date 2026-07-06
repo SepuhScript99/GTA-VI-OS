@@ -1,0 +1,4 @@
+# GTA VI OS (Vice OS) APT Source for Docker Engine
+# The GPG key is installed by apps/vp-docker.sh to /etc/apt/keyrings/docker.gpg
+
+deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable

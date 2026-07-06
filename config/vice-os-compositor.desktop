@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Vice OS Compositor
+Comment=Start the picom compositor for blur, transparency, and vsync
+Exec=picom -b --config /etc/xdg/compton.conf
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=1
+StartupNotify=false
+Icon=preferences-system-windows
+Categories=Utility;

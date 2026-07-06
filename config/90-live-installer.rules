@@ -1,0 +1,19 @@
+# GTA VI OS (Vice OS) Udev Rules for Live ISO & System Virtual Devices
+# 
+# This rule file hides internal virtual block devices from desktop file managers
+# (like Thunar) and disk utilities (like GParted) to prevent users from
+# accidentally formatting or deleting critical system structures.
+
+# 1. Ignore all loop devices (squashfs, overlayfs) in Udisks/UDisks2
+KERNEL=="loop[0-9]*", ENV{UDISKS_IGNORE}="1"
+KERNEL=="loop[0-9]*", ENV{UDISKS_SYSTEM_INTERNAL}="1"
+
+# 2. Ignore ZRAM block devices (used for compressed swap)
+KERNEL=="zram*", ENV{UDISKS_IGNORE}="1"
+
+# 3. Ignore SquashFS partitions explicitly
+ENV{ID_FS_TYPE}=="squashfs", ENV{UDISKS_IGNORE}="1"
+
+# 4. Ignore the auto-mounted Live ISO media itself to prevent accidental ejection
+# while the system is running from it.
+SUBSYSTEM=="block", ENV{ID_FS_LABEL}=="VICE_OS", ENV{UDISKS_IGNORE}="1"

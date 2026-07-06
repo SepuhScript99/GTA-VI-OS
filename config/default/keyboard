@@ -1,0 +1,21 @@
+# GTA VI OS (Vice OS) Console Keyboard Configuration
+# This file is installed to /etc/default/keyboard
+# It configures the keyboard layout for both the Linux console (TTY) and X11.
+
+# Keyboard model
+XKBMODEL="pc105"
+
+# Keyboard layout (us, gb, de, fr, etc.)
+XKBLAYOUT="us"
+
+# Keyboard variant (e.g., dvorak, intl, nodeadkeys)
+XKBVARIANT=""
+
+# Keyboard options:
+# terminate:ctrl_alt_bksp allows killing the X server with Ctrl+Alt+Backspace.
+# This is a crucial recovery shortcut if the desktop shell freezes.
+XKBOPTIONS="terminate:ctrl_alt_bksp"
+
+# Backspace key behavior:
+# "guess" determines the Backspace/Delete key mapping by checking the terminal type.
+BACKSPACE="guess"

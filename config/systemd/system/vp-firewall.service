@@ -1,0 +1,14 @@
+[Unit]
+Description=Vice OS Live ISO Firewall Initialization
+After=network-pre.target
+Before=network.target
+Wants=network-pre.target
+ConditionPathExists=!/etc/ufw/user.rules
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vp-firewall.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

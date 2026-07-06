@@ -1,0 +1,8 @@
+# GTA VI OS (Vice OS) OpenSSH Server Configuration
+# Installed to /etc/default/ssh
+
+# Additional options passed to sshd.
+# -u0: Disable reverse DNS lookups for connecting clients.
+# This is a critical performance tweak that prevents 10-30 second login delays
+# on networks without proper reverse DNS (PTR) records.
+SSHD_OPTS="-u0"

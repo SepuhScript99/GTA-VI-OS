@@ -1,0 +1,28 @@
+// GTA VI OS (Vice OS) Polkit Rules
+// This file configures polkit to prompt for passwords on administrative tasks
+// while caching the authentication for convenience.
+
+// 1. Define the 'admin' identity as members of the 'sudo' group.
+// This allows polkit agents to prompt for the user's password instead of root's.
+polkit.addAdminRule(function(action, subject) {
+    return ["unix-group:sudo"];
+});
+
+// 2. Authentication behavior for the 'sudo' group
+// AUTH_ADMIN_KEEP prompts for a password but remembers it for a short time,
+// preventing password fatigue during multiple administrative actions.
+polkit.addRule(function(action, subject) {
+    if (subject.isInGroup("sudo")) {
+        return polkit.Result.AUTH_ADMIN_KEEP;
+    }
+});
+
+// 3. NetworkManager specific rules
+// Allow users in the 'netdev' group to modify their own network connections
+// without prompting for a password, but still require it for system-wide changes.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.NetworkManager.settings.modify.own" &&
+        subject.isInGroup("netdev")) {
+        return polkit.Result.YES;
+    }
+});

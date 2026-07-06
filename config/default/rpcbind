@@ -1,0 +1,12 @@
+# GTA VI OS (Vice OS) RPCBind Daemon Configuration
+# Installed to /etc/default/rpcbind
+
+# Options for rpcbind.
+# -w: Enable warm starts. If rpcbind is restarted, it will restore its state
+#     from /var/lib/rpcbind/rpcbind.xdr and portmap.xdr.
+# This is critical for maintaining NFSv3 mount stability across service restarts.
+OPTIONS="-w"
+
+# Set to "yes" to start rpcbind automatically.
+# This is required for NFSv3 and NIS support.
+ENABLE_RPCBIND=yes

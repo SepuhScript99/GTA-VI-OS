@@ -1,0 +1,30 @@
+name: Build Vice OS ISO
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y debootstrap grub2-common grub-efi-amd64-bin grub-pc-bin mtools xorriso squashfs-tools xauth
+
+    - name: Build ISO
+      run: |
+        sudo bash build_iso.sh
+
+    - name: Upload ISO Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: gta-vi-os-amd64
+        path: out/gta-vi-os-amd64.iso

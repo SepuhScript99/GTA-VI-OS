@@ -1,0 +1,104 @@
+/* GTA VI OS (Vice OS) GTK3 CSS Overrides */
+/* Note: GTK3 CSS uses widget type names (e.g., headerbar, trough) which may */
+/* trigger "Unknown type selector" warnings in standard web CSS linters. */
+
+window, dialog {
+    background-color: #050505;
+    color: #00FFFF;
+}
+
+headerbar, titlebar {
+    background-color: #0a0a0a;
+    color: #00FFFF;
+    border-bottom: 1px solid #FF00FF;
+}
+
+entry, button, combobox, spinbutton {
+    background-color: #0a0a0a;
+    color: #00FFFF;
+    border: 1px solid #FF00FF;
+    border-radius: 4px;
+}
+
+button:hover, entry:focus, combobox:hover {
+    border-color: #00FFFF;
+    background-color: #1a002e;
+}
+
+button:active, button:checked {
+    background-color: #FF00FF;
+    color: #050505;
+    border-color: #00FFFF;
+}
+
+selection {
+    background-color: #FF00FF;
+    color: #FFFFFF;
+}
+
+menu, menuitem, popover {
+    background-color: #050505;
+    color: #00FFFF;
+    border: 1px solid #FF00FF;
+}
+
+menuitem:hover, menuitem:active {
+    background-color: #FF00FF;
+    color: #FFFFFF;
+}
+
+scrollbar {
+    background-color: #050505;
+    border: none;
+}
+
+scrollbar slider {
+    background-color: #FF00FF;
+    border-radius: 5px;
+}
+
+scrollbar slider:hover {
+    background-color: #00FFFF;
+}
+
+tooltip {
+    background-color: #050505;
+    color: #00FFFF;
+    border: 1px solid #FF00FF;
+}
+
+progressbar {
+    background-color: #0a0a0a;
+    color: #00FFFF;
+    border: 1px solid #FF00FF;
+}
+
+progressbar progress {
+    background-color: #00FFFF;
+}
+
+scale trough {
+    background-color: #0a0a0a;
+    border: 1px solid #FF00FF;
+}
+
+scale highlight {
+    background-color: #00FFFF;
+}
+
+infobar {
+    background-color: #0a0a0a;
+    color: #00FFFF;
+    border: 1px solid #FF00FF;
+}
+
+/* Backdrop state (inactive windows) */
+*:backdrop {
+    background-color: #020202;
+    color: #006666;
+}
+
+headerbar:backdrop, titlebar:backdrop {
+    background-color: #020202;
+    border-bottom: 1px solid #660066;
+}

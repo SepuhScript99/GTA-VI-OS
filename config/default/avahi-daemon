@@ -1,0 +1,8 @@
+# GTA VI OS (Vice OS) Avahi Daemon Configuration
+# Installed to /etc/default/avahi-daemon
+
+# 1 = yes, 0 = no
+# If set to 1, Avahi will check if the .local domain is already configured
+# in unicast DNS and disable itself if it is. This is a critical security
+# and performance measure to prevent network conflicts on corporate networks.
+AVAHI_DAEMON_DETECT_LOCAL=1

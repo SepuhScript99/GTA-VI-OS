@@ -1,0 +1,25 @@
+# /etc/nsswitch.conf
+#
+# Example configuration of GNU Name Service Switch functionality.
+# GTA VI OS (Vice OS) Custom Configuration
+
+passwd:         files systemd
+group:          files systemd
+shadow:         files
+gshadow:        files
+
+# Host resolution order:
+# 1. /etc/hosts
+# 2. Multicast DNS (Avahi/mDNS for .local addresses)
+# 3. Standard DNS (NetworkManager/systemd-resolved)
+hosts:          files mdns4_minimal [NOTFOUND=return] dns
+
+# Ensure group initialization is handled by files and systemd
+initgroups:     files systemd
+
+networks:       files
+
+protocols:      db files
+services:       db files
+ethers:         db files
+rpc:            db files

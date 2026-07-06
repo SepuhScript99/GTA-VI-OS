@@ -1,0 +1,14 @@
+# GTA VI OS (Vice OS) NTP Daemon Configuration
+# Installed to /etc/default/ntp
+#
+# IMPORTANT: Vice OS uses 'chrony' for time synchronization (see /etc/default/chrony).
+# This file is provided to prevent the legacy 'ntp' package from starting
+# automatically or conflicting with chronyd if it is accidentally installed.
+
+# Options passed to ntpd if it is ever run.
+# -g allows ntpd to make large time adjustments on the first sync.
+NTPD_OPTS="-g"
+
+# Explicitly disable the daemon in legacy init scripts.
+# (Systemd masking in the build script handles the primary prevention).
+RUN_DAEMON=no

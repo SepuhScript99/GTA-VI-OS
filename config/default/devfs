@@ -1,0 +1,9 @@
+# /etc/default/devfs
+# GTA VI OS (Vice OS) Custom Configuration
+#
+# This file is sourced by the devfsd init script (if installed).
+# NOTE: Vice OS uses 'udev' as the primary device manager.
+# This file is kept for legacy compatibility and must be valid shell syntax.
+
+# Do not start the legacy devfsd daemon; udev handles device management.
+START_DEVFSD=no

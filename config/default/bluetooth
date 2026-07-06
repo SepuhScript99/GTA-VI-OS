@@ -1,0 +1,11 @@
+# GTA VI OS (Vice OS) Bluetooth Daemon Configuration
+# Installed to /etc/default/bluetooth
+
+# Start bluetoothd automatically on boot?
+# 1 = yes, 0 = no
+BLUETOOTH_ENABLED=1
+
+# Additional arguments to pass to bluetoothd.
+# --experimental: Enable experimental features (e.g., battery level reporting for devices).
+# This is highly recommended for modern desktop usage.
+BLUETOOTH_OPTS="--experimental"

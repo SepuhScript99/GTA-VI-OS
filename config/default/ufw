@@ -1,0 +1,29 @@
+# /etc/default/ufw
+#
+# Default settings for the Uncomplicated Firewall (ufw).
+# GTA VI OS (Vice OS) Custom Configuration
+
+# Set to yes to apply rules to support IPv6 (no means only IPv6 on loopback
+# accepted). You will need to 'disable' and 'enable' the firewall for the
+# changes to take affect.
+IPV6=yes
+
+# Set the default forward policy to ACCEPT or DROP. Please note that if you
+# change this you will most likely want to adjust your rules
+DEFAULT_FORWARD_POLICY="DROP"
+
+# Set the default input policy to ACCEPT or DROP.
+DEFAULT_INPUT_POLICY="DROP"
+
+# Set the default output policy to ACCEPT or DROP.
+DEFAULT_OUTPUT_POLICY="ACCEPT"
+
+# Set the default application policy to ACCEPT, DROP, REJECT or SKIP. Please
+# note that setting this to ACCEPT may be a security risk. See 'man ufw' for
+# details.
+DEFAULT_APPLICATION_POLICY="SKIP"
+
+# By default, ufw will only log its own messages. Set this to 'yes' to also
+# log packets that are blocked or rejected. Set to 'low', 'medium', 'high' or
+# 'full' for different levels of logging.
+LOGLEVEL="low"

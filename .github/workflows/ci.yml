@@ -1,0 +1,43 @@
+name: Build and Test ISO
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y debootstrap grub2-common grub-efi-amd64-bin grub-pc-bin mtools xorriso squashfs-tools curl qemu-system-x86
+
+    - name: Build Vice OS ISO
+      run: |
+        sudo bash build_iso.sh --clean
+
+    - name: Validate ISO Structure
+      run: |
+        bash tests/validate_iso.sh out/gta-vi-os-amd64.iso
+
+    - name: Run QEMU Smoke Test
+      run: |
+        bash tests/smoke_test_qemu.sh out/gta-vi-os-amd64.iso
+
+    - name: Upload ISO Artifact
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: gta-vi-os-amd64-iso
+        path: |
+          out/gta-vi-os-amd64.iso
+          out/SHA256SUMS
+          out/build_info.txt
+        retention-days: 14

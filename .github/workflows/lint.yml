@@ -1,0 +1,63 @@
+name: Lint and Unit Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    name: ShellCheck
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck
+        run: |
+          # Find all .sh files and run shellcheck
+          # Excluding .git is good practice, though checkout@v4 doesn't usually include it in the working tree
+          find . -name "*.sh" -not -path "./.git/*" -print0 | xargs -0 shellcheck
+
+  python-lint:
+    runs-on: ubuntu-latest
+    name: Python Lint (Flake8)
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Flake8
+        run: pip install flake8
+
+      - name: Run Flake8
+        run: |
+          # Run flake8 on all python files, ignoring E501 (line too long) which is handled by black/formatters
+          # F401: imported but unused (we handle this in __init__.py)
+          # F403: star import (used in __init__.py)
+          find . -name "*.py" -not -path "./.git/*" -print0 | xargs -0 flake8 --ignore=E501,F401,F403
+
+  python-test:
+    runs-on: ubuntu-latest
+    name: Python Unit Tests
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run Unit Tests
+        run: |
+          # Run the unittest suite
+          python3 -m unittest discover -s tests -p "test_*.py"

@@ -1,0 +1,16 @@
+# GTA VI OS (Vice OS) Sudoers Configuration for 'vice' user
+# This file is installed to /etc/sudoers.d/vice during the build.
+# It grants passwordless sudo for the Live ISO and dev environment.
+# The physical installer (apps/vp-installer.sh) overwrites this file with
+# a password-prompting version for better security on installed systems.
+
+# Reset the environment for security, but preserve locale variables
+# to prevent GUI applications (like GParted) from crashing or warning.
+Defaults env_reset
+Defaults env_keep += "LANG LC_*"
+
+# Define a secure path so sudo commands work regardless of user's PATH variable
+Defaults secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Allow the 'vice' user to execute all commands as root without a password
+vice ALL=(ALL) NOPASSWD: ALL

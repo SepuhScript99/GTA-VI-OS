@@ -1,0 +1,26 @@
+# GTA VI OS (Vice OS) .gitignore
+
+# Build Artifacts
+chroot/
+image/
+scratch/
+out/
+backups/
+
+# Logs
+*.log
+build.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

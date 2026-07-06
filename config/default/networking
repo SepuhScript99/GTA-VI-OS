@@ -1,0 +1,15 @@
+# GTA VI OS (Vice OS) Networking Daemon Configuration
+# Installed to /etc/default/networking
+
+# Set to "yes" to configure interfaces from /etc/network/interfaces.
+# We set this to "yes" to ensure the loopback (lo) interface is configured.
+CONFIGURE_INTERFACES=yes
+
+# Exclude physical interfaces from ifupdown management.
+# This prevents conflicts with NetworkManager, which handles physical hardware.
+EXCLUDE_INTERFACES="eth* wlan* en* wlp*"
+
+# Do not wait for network interfaces to be fully configured during boot.
+# NetworkManager handles network connectivity asynchronously; waiting for 
+# ifupdown would just slow down the boot process unnecessarily.
+WAIT_FOR_INTERFACES=no

@@ -1,0 +1,28 @@
+# GTA VI OS (Vice OS) Chrony NTP Configuration
+# Installed to /etc/chrony/chrony.conf
+#
+# Chrony is used instead of systemd-timesyncd for faster, more robust
+# synchronization, which is critical for VMs and Live ISOs.
+
+# Use Debian's NTP pool servers
+pool 2.debian.pool.ntp.org iburst
+
+# Allow large time steps on the first synchronization.
+# This is CRITICAL for Live ISOs where the hardware clock might be years off.
+makestep 1.0 3
+
+# Synchronize the hardware clock (RTC) to the system clock.
+# This ensures the time stays correct across reboots on physical hardware.
+rtcsync
+
+# Specify directory for log files
+logdir /var/log/chrony
+
+# Select which information chronyd logs.
+# 'tracking' is minimal and sufficient for desktop use, preventing disk bloat.
+log tracking
+
+# Bind to localhost only for security.
+# This is a desktop OS; it should not serve time to the network.
+allow 127.0.0.1
+allow ::1

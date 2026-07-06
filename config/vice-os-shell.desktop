@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Vice OS Desktop Shell
+Comment=Start the custom PyQt5 TopBar, Dock, and Run Menu
+Exec=python3 /opt/vice-os/vice_shell.py
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=3
+StartupNotify=false
+Icon=preferences-desktop
+Categories=Utility;

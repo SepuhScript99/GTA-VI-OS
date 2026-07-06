@@ -1,0 +1,22 @@
+# GTA VI OS (Vice OS) Console Setup Configuration
+# Installed to /etc/default/console-setup
+# Configures the Linux text console (TTY) font and character encoding.
+
+# Character mapping
+CHARMAP="UTF-8"
+
+# Codeset (Lat15 for Latin/Western European)
+CODESET="Lat15"
+
+# Font face (VGA is a safe, standard default available in all environments)
+FONTFACE="VGA"
+
+# Font size (8x16 is standard for 80x25 console)
+FONTSIZE="8x16"
+
+# Video mode for the console
+# Empty means let the kernel/firmware decide (best for framebuffer)
+VIDEOMODE=""
+
+# Active virtual consoles
+ACTIVE_CONSOLES="/dev/tty[1-6]"

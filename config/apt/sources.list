@@ -1,0 +1,18 @@
+# GTA VI OS (Vice OS) APT Sources List
+# Base Distribution: Debian 12 (Bookworm)
+
+# Base Repository
+# Includes main (DFSG-compliant), contrib (DFSG-compliant deps on non-free), 
+# non-free (non-DFSG), and non-free-firmware (firmware blobs for hardware support).
+deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+
+# Security Updates
+deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+
+# Recommended Updates
+deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+
+# Source Repositories (Uncomment to enable for development/compiling kernel modules)
+# deb-src http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+# deb-src http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+# deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware

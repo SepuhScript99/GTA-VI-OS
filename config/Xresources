@@ -1,0 +1,51 @@
+! GTA VI OS (Vice OS) Xresources
+! Themes xterm and configures X11 cursor and font rendering.
+
+! --- Cursor Theme ---
+! Ensure the cursor matches the GTK theme (Adwaita)
+Xcursor.theme: Adwaita
+Xcursor.size: 24
+
+! --- Font Rendering (Xft) ---
+! Ensure smooth fonts in xterm and other X11 apps
+Xft.dpi: 96
+Xft.antialias: true
+Xft.hinting: true
+Xft.hintstyle: hintslight
+Xft.rgba: rgb
+Xft.lcdfilter: lcddefault
+
+! --- Terminal Background and Foreground ---
+XTerm*background: #050505
+XTerm*foreground: #00FFFF
+XTerm*cursorColor: #FF00FF
+XTerm*borderColor: #120024
+
+! --- Scrollback Buffer ---
+XTerm*saveLines: 10000
+
+! --- Font Configuration (Requires fonts-dejavu-core which is in packages.list) ---
+XTerm*faceName: DejaVu Sans Mono
+XTerm*faceSize: 11
+XTerm*renderFont: true
+
+! --- Hide the ugly default scrollbar ---
+XTerm*scrollBar: false
+
+! --- 16-Color Palette (Cyberpunk/Neon Miami) ---
+XTerm*color0:  #050505
+XTerm*color1:  #FF00FF
+XTerm*color2:  #00FFFF
+XTerm*color3:  #FFFF00
+XTerm*color4:  #120024
+XTerm*color5:  #FF00FF
+XTerm*color6:  #00FFFF
+XTerm*color7:  #FFFFFF
+XTerm*color8:  #1a002e
+XTerm*color9:  #FF00FF
+XTerm*color10: #00FFFF
+XTerm*color11: #FFFF00
+XTerm*color12: #120024
+XTerm*color13: #FF00FF
+XTerm*color14: #00FFFF
+XTerm*color15: #FFFFFF

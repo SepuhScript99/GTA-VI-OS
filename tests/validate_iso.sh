@@ -1,0 +1,101 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+# ============================================================================
+# GTA VI OS (Vice OS) ISO Validator
+# Validates the structural integrity and bootability of the generated ISO.
+# ============================================================================
+
+WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# --- Source Shared Library ---
+if [ ! -f "$WORKDIR/lib/common.sh" ]; then
+    echo "Error: lib/common.sh not found. Cannot continue." >&2
+    exit 1
+fi
+source "$WORKDIR/lib/common.sh"
+
+# --- Arguments ---
+ISO_PATH="${1:?Error: Path to ISO argument required}"
+
+# --- Main ---
+main() {
+    check_dependencies "xorriso" "sha256sum" "du"
+
+    log_info "=== Starting ISO Validation ==="
+
+    # 1. Check if ISO exists
+    if [ ! -f "$ISO_PATH" ]; then
+        log_error "ISO file not found: $ISO_PATH"
+        exit 1
+    fi
+
+    # 2. Check file size (must be > 0)
+    local size_bytes
+    size_bytes=$(stat -c%s "$ISO_PATH")
+    if [ "$size_bytes" -le 0 ]; then
+        log_error "ISO file is zero bytes."
+        exit 1
+    fi
+    local size_human
+    size_human=$(du -sh "$ISO_PATH" | awk '{print $1}')
+    log_info "ISO Size: $size_human"
+
+    # 3. Verify SHA256 Checksum (if SHA256SUMS exists)
+    local sum_file="$(dirname "$ISO_PATH")/SHA256SUMS"
+    if [ -f "$sum_file" ]; then
+        log_info "Verifying SHA256 checksum..."
+        if ! (cd "$(dirname "$ISO_PATH")" && sha256sum -c SHA256SUMS); then
+            log_error "SHA256 checksum verification failed!"
+            exit 1
+        fi
+        log_success "Checksum verified."
+    else
+        log_warn "SHA256SUMS file not found. Skipping checksum verification."
+    fi
+
+    # 4. Inspect ISO structure using xorriso
+    log_info "Inspecting ISO structure..."
+    local xorriso_report
+    xorriso_report=$(xorriso -indev "$ISO_PATH" -report_system_area plain -- 2>&1)
+
+    # Check for El Torito BIOS boot image
+    if echo "$xorriso_report" | grep -q "El Torito boot catalog"; then
+        log_success "BIOS (El Torito) boot catalog found."
+    else
+        log_error "BIOS (El Torito) boot catalog MISSING."
+        exit 1
+    fi
+
+    # Check for EFI boot image
+    if echo "$xorriso_report" | grep -q "EFI boot image"; then
+        log_success "EFI boot image found."
+    else
+        log_error "EFI boot image MISSING."
+        exit 1
+    fi
+
+    # Check for Hybrid MBR
+    if echo "$xorriso_report" | grep -q "System area summary: MBR"; then
+        log_success "Hybrid MBR found (USB bootable)."
+    else
+        log_warn "Hybrid MBR not found. ISO might not boot from USB in legacy mode."
+    fi
+
+    # 5. Verify critical payload files exist inside the ISO
+    log_info "Checking critical payload files inside ISO..."
+    local critical_files=("/vmlinuz" "/initrd.img" "/VICE_OS" "/live/filesystem.squashfs" "/boot/grub/grub.cfg")
+    
+    for file in "${critical_files[@]}"; do
+        if xorriso -indev "$ISO_PATH" -find "/=$file" 2>/dev/null | grep -q "$file"; then
+            log_success "Found: $file"
+        else
+            log_error "Missing critical file in ISO: $file"
+            exit 1
+        fi
+    done
+
+    log_success "=== ISO Validation Complete: Artifact is structurally sound ==="
+}
+
+main "$@"

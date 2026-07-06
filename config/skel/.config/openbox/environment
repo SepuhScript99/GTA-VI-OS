@@ -1,0 +1,32 @@
+# Openbox Environment
+# GTA VI OS (Vice OS) Custom Configuration
+# 
+# This file is sourced by openbox-session before executing autostart.
+# It exports variables to the X session environment.
+
+# --- XDG Base Directory Specification ---
+export XDG_CURRENT_DESKTOP="Openbox"
+export XDG_SESSION_DESKTOP="openbox"
+export XDG_SESSION_TYPE="x11"
+export DESKTOP_SESSION="openbox"
+# Ensure local data directory is in the search path for user-installed apps
+export XDG_DATA_DIRS="/usr/local/share:/usr/share:${HOME}/.local/share"
+
+# --- Qt Environment (HiDPI & Scaling) ---
+# Ensure Qt apps scale correctly on high-resolution displays
+export QT_AUTO_SCREEN_SCALE_FACTOR=1
+# Use the qt5ct tool to manage Qt themes (if installed)
+export QT_QPA_PLATFORMTHEME="qt5ct"
+
+# --- Mozilla (Firefox) Environment ---
+# Explicitly disable Wayland to ensure Firefox uses X11/XWayland
+export MOZ_ENABLE_WAYLAND=0
+
+# --- Default Applications ---
+# Set the default terminal emulator for applications that check this variable
+export TERMINAL="xterm"
+# Set default editor, visual editor, pager, and browser
+export EDITOR="geany"
+export VISUAL="geany"
+export PAGER="less"
+export BROWSER="firefox"

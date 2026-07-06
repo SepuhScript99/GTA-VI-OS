@@ -1,0 +1,19 @@
+# GTA VI OS (Vice OS) Login Defaults Configuration
+# Installed to /etc/default/login
+#
+# Defines the default environment for login sessions.
+
+# Set the default PATH for login shells.
+# Ensures /usr/local/bin is available for Vice OS utilities and symlinks.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Set the default umask.
+# 022 is standard for desktop Linux (files: 644, dirs: 755).
+UMASK=022
+
+# Set core file size limit to 0 (disable core dumps) for desktop use.
+# This prevents disk pollution from crashed applications.
+ULIMIT="-c 0"
+
+# Allow users to change their login shell via 'chsh'.
+ALTSHELL=yes

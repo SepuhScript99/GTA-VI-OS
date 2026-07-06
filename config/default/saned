@@ -1,0 +1,16 @@
+# GTA VI OS (Vice OS) SANE Daemon Configuration
+# Installed to /etc/default/saned
+
+# Set to "yes" to start the saned daemon at boot time.
+# This allows network scanning if configured in /etc/sane.d/saned.conf.
+RUN=yes
+
+# Set the user and group under which saned will run.
+# Running as a non-root user is a critical security best practice.
+# The 'scanner' group is standard for SANE access.
+SANED_USER="saned"
+SANED_GROUP="scanner"
+
+# Additional options passed to saned.
+# Empty is default.
+SANED_OPTS=""

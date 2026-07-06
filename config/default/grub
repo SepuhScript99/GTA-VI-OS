@@ -1,0 +1,28 @@
+# GTA VI OS (Vice OS) GRUB Defaults
+# This file is installed to /etc/default/grub on the target disk.
+
+# Default menu entry
+GRUB_DEFAULT=0
+
+# Boot timeout in seconds
+GRUB_TIMEOUT=5
+GRUB_TIMEOUT_STYLE=menu
+
+# OS Distributor (displayed in GRUB menu)
+GRUB_DISTRIBUTOR="Vice OS"
+
+# Default kernel command line parameters.
+# 'quiet loglevel=3' ensures a clean boot screen without verbose kernel logs.
+GRUB_CMDLINE_LINUX_DEFAULT="quiet loglevel=3"
+
+# Additional kernel command line parameters (usually empty)
+GRUB_CMDLINE_LINUX=""
+
+# Disable submenus to keep the boot menu flat and simple
+GRUB_DISABLE_SUBMENU=y
+
+# Disable recovery mode to keep the menu clean
+GRUB_DISABLE_RECOVERY=true
+
+# Terminal output
+GRUB_TERMINAL_OUTPUT=console

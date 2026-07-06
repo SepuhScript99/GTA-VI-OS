@@ -1,0 +1,75 @@
+# GTA VI OS (Vice OS) Package List
+# Used by chroot_setup.sh
+# Syntax: One package per line. Comments start with #.
+
+# --- Core System Utilities ---
+sudo
+systemd-sysv
+locales
+net-tools
+network-manager
+network-manager-gnome
+ufw
+fail2ban
+open-vm-tools
+open-vm-tools-desktop
+virtualbox-guest-utils
+virtualbox-guest-x11
+acpi
+acpid
+htop
+
+# --- Desktop Environment (X11 & Openbox) ---
+xorg
+xserver-xorg-video-all
+xserver-xorg-video-vmware
+xserver-xorg-video-vboxvideo
+openbox
+picom
+nitrogen
+x11-xserver-utils
+xbacklight
+dbus-x11
+
+# --- Authentication & Security ---
+policykit-1-gnome
+
+# --- Fonts ---
+fonts-dejavu-core
+fonts-noto-core
+fonts-liberation
+
+# --- Audio ---
+pulseaudio
+pulseaudio-utils
+pipewire
+pipewire-audio
+wireplumber
+pavucontrol
+libcanberra-gtk3-module
+
+# --- Python & UI Frameworks ---
+python3
+python3-pyqt5
+python3-pil
+qt5ct
+
+# --- Applications ---
+firefox-esr
+mpv
+feh
+geany
+galculator
+file-roller
+unrar
+p7zip-full
+gnome-screenshot
+gparted
+synaptic
+
+# --- Developer Tools ---
+gcc
+python3-dev
+git
+cmake
+make

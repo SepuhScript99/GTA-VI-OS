@@ -1,0 +1,30 @@
+# GTA VI OS (Vice OS) Code Owners
+# These users will automatically be requested for review when a Pull Request
+# includes changes to the specified paths.
+
+# Global default (fallback for any file not explicitly matched)
+*       @vice-os-maintainers
+
+# Build System & CI/CD
+/build/          @vice-os-build-engs
+/build_iso.sh    @vice-os-build-engs
+/chroot_setup.sh @vice-os-build-engs
+/chroot_scripts/ @vice-os-build-engs
+/.github/        @vice-os-build-engs
+
+# Desktop Environment & UI
+/desktop/        @vice-os-ui-team
+/assets/         @vice-os-ui-team
+
+# System Configuration & Tuning
+/config/         @vice-os-sysadmins
+/lib/            @vice-os-sysadmins
+
+# Recovery & System Scripts
+/recovery/       @vice-os-sysadmins
+/system_scripts/ @vice-os-sysadmins
+/apps/           @vice-os-sysadmins
+
+# Documentation
+/docs/           @vice-os-docs-team
+/README.md       @vice-os-docs-team

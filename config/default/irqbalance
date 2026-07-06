@@ -1,0 +1,20 @@
+# GTA VI OS (Vice OS) IRQ Balance Daemon Configuration
+# Installed to /etc/default/irqbalance
+
+# Set to "yes" to enable irqbalance.
+# It is highly recommended to enable this on multi-core systems to distribute
+# hardware interrupts across cores, improving performance and reducing latency.
+ENABLED="yes"
+
+# Set to "yes" to run irqbalance once and exit (useful for scripts).
+# Set to "no" to run as a continuous daemon (recommended for desktops).
+ONESHOT="no"
+
+# List of CPUs to ignore when balancing IRQs.
+# Leave empty to allow balancing across all available CPUs.
+# Format: a bitmask (e.g., "0xffff" to ignore specific cores).
+BANNED_CPUS=""
+
+# Additional options passed to irqbalance.
+# --pidfile: Explicitly define the PID file location.
+OPTIONS="--pidfile=/run/irqbalance.pid"

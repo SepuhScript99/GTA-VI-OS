@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <resistance>
+    <strength>10</strength>
+    <screen_edge_strength>20</screen_edge_strength>
+  </resistance>
+
+  <focus>
+    <focusNew>yes</focusNew>
+    <followMouse>no</followMouse>
+    <focusLast>yes</focusLast>
+    <underMouse>no</underMouse>
+    <focusDelay>200</focusDelay>
+    <raiseOnFocus>yes</raiseOnFocus>
+  </focus>
+
+  <placement>
+    <policy>Smart</policy>
+    <center>yes</center>
+    <monitor>Any</monitor>
+    <primaryMonitor>1</primaryMonitor>
+  </placement>
+
+  <theme>
+    <name>Clearlooks</name>
+    <titleLayout>NLIMC</titleLayout>
+    <keepBorder>yes</keepBorder>
+    <animateIconify>yes</animateIconify>
+    <font place="ActiveWindow">
+      <name>sans</name>
+      <size>10</size>
+      <weight>bold</weight>
+      <slant>normal</slant>
+    </font>
+    <font place="InactiveWindow">
+      <name>sans</name>
+      <size>10</size>
+      <weight>normal</weight>
+      <slant>normal</slant>
+    </font>
+  </theme>
+
+  <!-- Reserve space for the custom TopBar and Dock -->
+  <margins>
+    <top>30</top>
+    <bottom>70</bottom>
+    <left>0</left>
+    <right>0</right>
+  </margins>
+
+  <desktops>
+    <number>2</number>
+    <firstdesk>1</firstdesk>
+    <names>
+      <name>Main</name>
+      <name>Work</name>
+    </names>
+  </desktops>
+
+  <!-- Define the right-click desktop menu -->
+  <menu id="root-menu" label="Vice OS">
+    <item label="Terminal">
+      <action name="Execute"><command>xterm</command></action>
+    </item>
+    <item label="Web Browser">
+      <action name="Execute"><command>firefox</command></action>
+    </item>
+    <item label="File Manager">
+      <action name="Execute"><command>thunar</command></action>
+    </item>
+    <item label="Editor">
+      <action name="Execute"><command>geany</command></action>
+    </item>
+    <separator/>
+    <!-- Dynamic Pipe Menu for all installed applications -->
+    <menu id="apps-menu" label="Applications" execute="python3 /opt/vice-os/ob_menu.py" />
+    <separator/>
+    <menu id="client-list-menu"/>
+    <separator/>
+    <item label="Vice OS Settings">
+      <action name="Execute"><command>xterm -title "Vice OS Settings" -e /usr/local/bin/vice-os-menu.sh</command></action>
+    </item>
+    <item label="Screenshot">
+      <action name="Execute"><command>gnome-screenshot -i</command></action>
+    </item>
+    <separator/>
+    <item label="Restart Openbox">
+      <action name="Reconfigure"/>
+    </item>
+    <item label="Exit Openbox">
+      <action name="Exit"/>
+    </item>
+  </menu>
+
+  <keyboard>
+    <!-- Standard Window Keybinds -->
+    <keybind key="A-Tab">
+      <action name="NextWindow">
+        <finalactions>
+          <action name="Focus"/>
+          <action name="Raise"/>
+          <action name="Unshade"/>
+        </finalactions>
+      </action>
+    </keybind>
+    <keybind key="A-S-Tab">
+      <action name="PreviousWindow">
+        <finalactions>
+          <action name="Focus"/>
+          <action name="Raise"/>
+          <action name="Unshade"/>
+        </finalactions>
+      </action>
+    </keybind>
+    <keybind key="A-F4">
+      <action name="Close"/>
+    </keybind>
+    <keybind key="A-space">
+      <action name="ShowMenu"><menu>client-menu</menu></action>
+    </keybind>
+    <keybind key="A-Escape">
+      <action name="ShowMenu"><menu>client-menu</menu></action>
+    </keybind>
+    
+    <!-- Vice OS Custom Keybinds -->
+    <keybind key="W-t">
+      <action name="Execute"><command>xterm</command></action>
+    </keybind>
+    <keybind key="W-e">
+      <action name="Execute"><command>thunar</command></action>
+    </keybind>
+    <keybind key="W-f">
+      <action name="Execute"><command>firefox</command></action>
+    </keybind>
+    <keybind key="W-space">
+      <action name="Execute"><command>python3 /opt/vice-os/vice_shell.py --menu</command></action>
+    </keybind>
+    <keybind key="W-d">
+      <action name="ToggleShowDesktop"/>
+    </keybind>
+    
+    <!-- Window Snapping & Maximize -->
+    <keybind key="W-Left">
+      <action name="UnmaximizeFull"/>
+      <action name="MoveResizeTo"><x>0</x><y>0</y><width>50%</width><height>100%</height></action>
+    </keybind>
+    <keybind key="W-Right">
+      <action name="UnmaximizeFull"/>
+      <action name="MoveResizeTo"><x>-0</x><y>0</y><width>50%</width><height>100%</height></action>
+    </keybind>
+    <keybind key="W-Up">
+      <action name="MaximizeFull"/>
+    </keybind>
+    <keybind key="W-Down">
+      <action name="UnmaximizeFull"/>
+      <action name="MoveResizeTo"><x>0</x><y>-0</y><width>100%</width><height>50%</height></action>
+    </keybind>
+    <keybind key="W-v">
+      <action name="Maximize"><direction>vertical</direction></action>
+    </keybind>
+    
+    <!-- Desktop switching -->
+    <keybind key="C-A-Left">
+      <action name="DesktopLeft"/>
+    </keybind>
+    <keybind key="C-A-Right">
+      <action name="DesktopRight"/>
+    </keybind>
+
+    <!-- Media Keys -->
+    <keybind key="XF86AudioRaiseVolume">
+      <action name="Execute"><command>pactl set-sink-volume @DEFAULT_SINK@ +5%</command></action>
+    </keybind>
+    <keybind key="XF86AudioLowerVolume">
+      <action name="Execute"><command>pactl set-sink-volume @DEFAULT_SINK@ -5%</command></action>
+    </keybind>
+    <keybind key="XF86AudioMute">
+      <action name="Execute"><command>pactl set-sink-mute @DEFAULT_SINK@ toggle</command></action>
+    </keybind>
+    <keybind key="XF86MonBrightnessUp">
+      <action name="Execute"><command>xbacklight -inc 10</command></action>
+    </keybind>
+    <keybind key="XF86MonBrightnessDown">
+      <action name="Execute"><command>xbacklight -dec 10</command></action>
+    </keybind>
+    <keybind key="Print">
+      <action name="Execute"><command>gnome-screenshot -i</command></action>
+    </keybind>
+  </keyboard>
+
+  <mouse>
+    <dragThreshold>8</dragThreshold>
+    <doubleClickTime>400</doubleClickTime>
+    <screenEdgeWarpTime>400</screenEdgeWarpTime>
+    
+    <context name="Frame">
+      <mousebind button="A-Left" action="Press">
+        <action name="Focus"/>
+        <action name="Raise"/>
+      </mousebind>
+      <mousebind button="A-Left" action="Drag">
+        <action name="Move"/>
+      </mousebind>
+      <mousebind button="A-Right" action="Press">
+        <action name="Focus"/>
+        <action name="Raise"/>
+      </mousebind>
+      <mousebind button="A-Right" action="Drag">
+        <action name="Resize"/>
+      </mousebind>
+    </context>
+
+    <context name="Titlebar">
+      <mousebind button="Left" action="Press">
+        <action name="Focus"/>
+        <action name="Raise"/>
+      </mousebind>
+      <mousebind button="Left" action="Drag">
+        <action name="Move"/>
+      </mousebind>
+      <mousebind button="Left" action="DoubleClick">
+        <action name="ToggleMaximizeFull"/>
+      </mousebind>
+      <mousebind button="Middle" action="Press">
+        <action name="Lower"/>
+        <action name="FocusToBottom"/>
+      </mousebind>
+      <mousebind button="Right" action="Press">
+        <action name="Focus"/>
+        <action name="Raise"/>
+        <action name="ShowMenu"><menu>client-menu</menu></action>
+      </mousebind>
+    </context>
+
+    <context name="Desktop">
+      <mousebind button="Left" action="Press">
+        <action name="Focus"/>
+        <action name="Raise"/>
+      </mousebind>
+      <mousebind button="Middle" action="Press">
+        <action name="ShowMenu"><menu>client-list-menu</menu></action>
+      </mousebind>
+      <mousebind button="Right" action="Press">
+        <action name="ShowMenu"><menu>root-menu</menu></action>
+      </mousebind>
+      <mousebind button="Up" action="Press">
+        <action name="DesktopPrevious"/>
+      </mousebind>
+      <mousebind button="Down" action="Press">
+        <action name="DesktopNext"/>
+      </mousebind>
+    </context>
+  </mouse>
+
+  <applications>
+    <!-- Ensure custom UI elements are unmanaged and hidden from taskbar/pager -->
+    <application name="vice_shell*">
+      <decor>no</decor>
+      <shade>no</shade>
+      <skip_taskbar>yes</skip_taskbar>
+      <skip_pager>yes</skip_pager>
+      <maximized>no</maximized>
+    </application>
+    <application name="RunMenu">
+      <decor>no</decor>
+      <shade>no</shade>
+      <skip_taskbar>yes</skip_taskbar>
+      <skip_pager>yes</skip_pager>
+      <maximized>no</maximized>
+    </application>
+    <application name="AnimatedLogin">
+      <decor>no</decor>
+      <shade>no</shade>
+      <skip_taskbar>yes</skip_taskbar>
+      <skip_pager>yes</skip_pager>
+      <maximized>no</maximized>
+    </application>
+  </applications>
+</openbox_config>

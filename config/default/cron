@@ -1,0 +1,19 @@
+# GTA VI OS (Vice OS) Cron Daemon Configuration
+# Installed to /etc/default/cron
+
+# Expand PATH to include /usr/local/bin where Vice OS utilities are installed.
+# This prevents user cron jobs from failing to find system scripts.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Set locale to C to prevent issues with cron output and mail delivery.
+LANG=C
+LC_ALL=C
+
+# Set default umask for files created by cron jobs.
+# 022 ensures files are created with 644 permissions and directories with 755.
+umask 022
+
+# Additional options passed to cron daemon.
+# We omit the '-p' flag to prevent users from setting arbitrary environment
+# variables in their crontabs, which is a security hardening best practice.
+# CRON_OPTS=""

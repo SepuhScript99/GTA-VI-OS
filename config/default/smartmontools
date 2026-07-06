@@ -1,0 +1,16 @@
+# GTA VI OS (Vice OS) Smartmontools Configuration
+# Installed to /etc/default/smartmontools
+
+# Set to "yes" to start the smartd daemon automatically.
+# This monitors disk health and logs warnings to syslog/journald.
+start_smartd=yes
+
+# Set to "yes" to automatically enable SMART on all ATA/SCSI disks.
+# This is highly recommended for desktop systems.
+enable_smart=auto
+
+# Additional options passed to smartd.
+# --interval=3600: Check disk health every 3600 seconds (1 hour).
+# The default is 30 minutes. 1 hour is a better balance for desktop/laptop
+# power consumption while still providing early failure warnings.
+smartd_opts="--interval=3600"

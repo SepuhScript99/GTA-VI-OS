@@ -1,0 +1,18 @@
+# GTA VI OS (Vice OS) ntpdate Configuration
+# Installed to /etc/default/ntpdate
+#
+# IMPORTANT: Vice OS uses 'chrony' for time synchronization.
+# 'ntpdate' is considered deprecated upstream. This file is provided to 
+# prevent the legacy 'ntpdate' utility from running on boot or network 
+# events and conflicting with chronyd if it is accidentally installed.
+
+# Set to "yes" to use the settings in /etc/ntp.conf. We set this to "no"
+# because we don't want ntpdate to run at all if it is installed.
+NTPDATE_USE_NTP_CONF=no
+
+# List of NTP servers to use if NTPDATE_USE_NTP_CONF is "no".
+# Left empty to ensure it fails gracefully if run manually.
+NTPSERVERS=""
+
+# Additional options for ntpdate.
+NTPOPTIONS=""

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Vice OS Settings
+Comment=Open the Vice OS system configuration and installation menu
+Exec=xterm -title "Vice OS Settings" -e /usr/local/bin/vice-os-menu.sh
+Icon=preferences-system
+Terminal=false
+StartupNotify=false
+Categories=Settings;System;

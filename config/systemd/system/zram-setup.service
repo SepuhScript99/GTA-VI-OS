@@ -1,0 +1,12 @@
+[Unit]
+Description=Setup ZRAM
+After=local-fs.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/systemd/zram-setup.conf
+ExecStart=/bin/bash -c "modprobe zram && echo $${ZRAM_ALGO:-lz4} > /sys/block/zram0/comp_algorithm && echo $${ZRAM_SIZE:-2G} > /sys/block/zram0/disksize && mkswap /dev/zram0 && swapon -p $${ZRAM_PRIORITY:-10} /dev/zram0"
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

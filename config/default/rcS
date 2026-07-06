@@ -1,0 +1,24 @@
+# /etc/default/rcS
+#
+# Default settings for the system initialization scripts.
+# GTA VI OS (Vice OS) Custom Configuration
+
+# Set the hardware clock to UTC (matches /etc/default/hwclock and chrony).
+UTC=yes
+
+# Do not display verbose boot messages (we prefer a clean splash/console).
+VERBOSE=no
+
+# Automatically fix minor filesystem errors during boot without prompting.
+FSCKFIX=yes
+
+# Do not drop to a single-user root login prompt on boot failure.
+# Let systemd handle the error and provide a recovery target if needed.
+SULOGIN=no
+
+# Allow logins as soon as the system is ready, without artificial delay.
+DELAYLOGIN=no
+
+# Do not dynamically edit /etc/motd (Message of the Day).
+# Vice OS uses custom TTY banners (/etc/issue).
+EDITMOTD=no

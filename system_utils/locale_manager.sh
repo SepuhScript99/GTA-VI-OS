@@ -1,0 +1,498 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+# ============================================================================
+# GTA VI OS (Vice OS) Locale Manager
+# Provides locale listing, generation, system locale setting, keyboard layout
+# configuration, and timezone management.
+# ============================================================================
+
+WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# --- Source Shared Library ---
+if [ ! -f "$WORKDIR/lib/common.sh" ]; then
+    echo "Error: lib/common.sh not found. Cannot continue." >&2
+    exit 1
+fi
+source "$WORKDIR/lib/common.sh"
+
+# --- Configuration ---
+LOCALE_GEN_FILE="/etc/locale.gen"
+LOCALE_DEFAULT_FILE="/etc/default/locale"
+KEYBOARD_DEFAULT_FILE="/etc/default/keyboard"
+TIMEZONE_FILE="/etc/localtime"
+ZONEINFO_DIR="/usr/share/zoneinfo"
+
+# --- Cleanup Function ---
+cleanup() {
+    local exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        log_error "Locale operation failed with exit code $exit_code."
+    fi
+    exit $exit_code
+}
+
+trap cleanup EXIT SIGINT SIGTERM
+
+# --- Helper Functions ---
+
+check_locale_deps() {
+    check_dependencies "locale" "locale-gen"
+}
+
+validate_locale_format() {
+    local locale="$1"
+    
+    # Basic validation: language_TERRITORY.encoding
+    if ! [[ "$locale" =~ ^[a-z]{2}_[A-Z]{2}\.[A-Za-z0-9-]+$ ]]; then
+        log_error "Invalid locale format: $locale"
+        log_info "Expected format: language_TERRITORY.encoding (e.g., en_US.UTF-8)"
+        return 1
+    fi
+    
+    return 0
+}
+
+validate_timezone() {
+    local timezone="$1"
+    local zone_file="${ZONEINFO_DIR}/${timezone}"
+    
+    if [ ! -f "$zone_file" ]; then
+        log_error "Invalid timezone: $timezone"
+        log_info "Use '$0 list-timezones' to see available timezones."
+        return 1
+    fi
+    
+    return 0
+}
+
+backup_config_file() {
+    local file="$1"
+    local timestamp
+    timestamp=$(date +%Y%m%d%H%M%S)
+    local backup="${file}.backup.${timestamp}"
+    
+    if [ -f "$file" ]; then
+        cp "$file" "$backup"
+        log_info "Backed up $file to $backup"
+    fi
+}
+
+# --- Locale Functions ---
+
+show_current_locale() {
+    log_info "Current Locale Configuration:"
+    echo "==================================="
+    
+    echo "System Locale:"
+    if [ -f "$LOCALE_DEFAULT_FILE" ]; then
+        cat "$LOCALE_DEFAULT_FILE"
+    else
+        echo "  (not configured)"
+    fi
+    
+    echo ""
+    echo "Environment Locale:"
+    locale 2>/dev/null | head -n 5
+    
+    echo ""
+    echo "Generated (Active) Locales:"
+    locale -a 2>/dev/null | head -n 20
+    
+    echo "==================================="
+}
+
+list_available_locales() {
+    log_info "Available Locales (commented = not generated):"
+    echo "==================================="
+    
+    if [ ! -f "$LOCALE_GEN_FILE" ]; then
+        log_error "$LOCALE_GEN_FILE not found."
+        return 1
+    fi
+    
+    # Show all locales, indicating which are enabled
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^[[:space:]]*# ]]; then
+            # Commented out - show as available but not enabled
+            local locale_str
+            locale_str=$(echo "$line" | sed 's/^#[[:space:]]*//')
+            echo "  [ ] $locale_str"
+        elif [[ -n "$line" ]] && ! [[ "$line" =~ ^[[:space:]]*$ ]]; then
+            # Not commented - show as enabled
+            echo "  [x] $line"
+        fi
+    done < "$LOCALE_GEN_FILE"
+    
+    echo "==================================="
+    log_info "Use '$0 generate <locale>' to enable a locale."
+}
+
+list_generated_locales() {
+    log_info "Generated (Active) Locales:"
+    echo "==================================="
+    locale -a 2>/dev/null
+    echo "==================================="
+}
+
+generate_locale() {
+    local locale="$1"
+    
+    validate_locale_format "$locale" || return 1
+    
+    log_info "Enabling locale: $locale"
+    
+    if [ ! -f "$LOCALE_GEN_FILE" ]; then
+        log_error "$LOCALE_GEN_FILE not found."
+        return 1
+    fi
+    
+    # Check if locale is available in locale.gen
+    if ! grep -q "$locale" "$LOCALE_GEN_FILE"; then
+        log_error "Locale '$locale' is not available in $LOCALE_GEN_FILE."
+        log_info "Available locales can be listed with: $0 list-available"
+        return 1
+    fi
+    
+    # Uncomment the locale in locale.gen
+    backup_config_file "$LOCALE_GEN_FILE"
+    
+    log_info "Uncommenting $locale in $LOCALE_GEN_FILE..."
+    sed -i "s/^# *${locale}/${locale}/" "$LOCALE_GEN_FILE"
+    
+    # Generate locales
+    log_info "Running locale-gen..."
+    if ! locale-gen; then
+        log_error "Failed to generate locale."
+        return 1
+    fi
+    
+    log_success "Locale '$locale' generated successfully."
+}
+
+set_system_locale() {
+    local locale="$1"
+    
+    validate_locale_format "$locale" || return 1
+    
+    # Check if locale is generated
+    if ! locale -a 2>/dev/null | grep -qi "^${locale}$"; then
+        log_warn "Locale '$locale' is not generated yet."
+        log_info "Generating it now..."
+        generate_locale "$locale" || return 1
+    fi
+    
+    log_info "Setting system locale to: $locale"
+    
+    backup_config_file "$LOCALE_DEFAULT_FILE"
+    
+    # Write new locale configuration
+    cat <<LOCALE_CONF > "$LOCALE_DEFAULT_FILE"
+# Generated by Vice OS Locale Manager
+LANG="$locale"
+LANGUAGE="${locale%%.*}:en"
+LC_CTYPE="$locale"
+LOCALE_CONF
+    
+    chmod 644 "$LOCALE_DEFAULT_FILE"
+    
+    # Also use update-locale if available
+    if command -v update-locale > /dev/null 2>&1; then
+        update-locale LANG="$locale" > /dev/null 2>&1 || true
+    fi
+    
+    log_success "System locale set to: $locale"
+    log_warn "Log out and log back in for changes to take effect."
+}
+
+# --- Keyboard Functions ---
+
+show_keyboard() {
+    log_info "Current Keyboard Configuration:"
+    echo "==================================="
+    
+    if [ -f "$KEYBOARD_DEFAULT_FILE" ]; then
+        cat "$KEYBOARD_DEFAULT_FILE"
+    else
+        echo "  (not configured)"
+    fi
+    
+    echo ""
+    echo "Runtime Layout:"
+    localectl status 2>/dev/null | grep -E "Keymap|Layout|Variant" || echo "  (N/A)"
+    
+    echo "==================================="
+}
+
+set_keyboard_layout() {
+    local layout="$1"
+    local variant="${2:-}"
+    
+    if [ -z "$layout" ]; then
+        log_error "Keyboard layout required (e.g., us, de, fr)."
+        return 1
+    fi
+    
+    log_info "Setting keyboard layout: $layout"
+    
+    backup_config_file "$KEYBOARD_DEFAULT_FILE"
+    
+    # Update /etc/default/keyboard
+    if [ -n "$variant" ]; then
+        cat <<KB_CONF > "$KEYBOARD_DEFAULT_FILE"
+XKBMODEL="pc105"
+XKBLAYOUT="$layout"
+XKBVARIANT="$variant"
+XKBOPTIONS="terminate:ctrl_alt_bksp"
+BACKSPACE="guess"
+KB_CONF
+    else
+        cat <<KB_CONF > "$KEYBOARD_DEFAULT_FILE"
+XKBMODEL="pc105"
+XKBLAYOUT="$layout"
+XKBVARIANT=""
+XKBOPTIONS="terminate:ctrl_alt_bksp"
+BACKSPACE="guess"
+KB_CONF
+    fi
+    
+    chmod 644 "$KEYBOARD_DEFAULT_FILE"
+    
+    # Apply using localectl if available
+    if command -v localectl > /dev/null 2>&1; then
+        if [ -n "$variant" ]; then
+            localectl set-x11-keymap "$layout" pc105 "$variant" "terminate:ctrl_alt_bksp"
+        else
+            localectl set-x11-keymap "$layout" pc105 "" "terminate:ctrl_alt_bksp"
+        fi
+    fi
+    
+    # Apply to console
+    if command -v setupcon > /dev/null 2>&1; then
+        setupcon --force 2>/dev/null || true
+    fi
+    
+    log_success "Keyboard layout set to: $layout"
+    if [ -n "$variant" ]; then
+        log_info "Variant: $variant"
+    fi
+}
+
+list_keyboard_layouts() {
+    log_info "Common Keyboard Layouts:"
+    echo "==================================="
+    echo "  us       - English (US)"
+    echo "  gb       - English (UK)"
+    echo "  de       - German"
+    echo "  fr       - French"
+    echo "  es       - Spanish"
+    echo "  it       - Italian"
+    echo "  pt       - Portuguese"
+    echo "  br       - Portuguese (Brazil)"
+    echo "  ru       - Russian"
+    echo "  jp       - Japanese"
+    echo "  kr       - Korean"
+    echo "  cn       - Chinese"
+    echo "  ar       - Arabic"
+    echo "  tr       - Turkish"
+    echo "  pl       - Polish"
+    echo "  nl       - Dutch"
+    echo "  se       - Swedish"
+    echo "  no       - Norwegian"
+    echo "  dk       - Danish"
+    echo "  fi       - Finnish"
+    echo "==================================="
+    log_info "Use '$0 set-keyboard <layout> [variant]' to change layout."
+}
+
+# --- Timezone Functions ---
+
+show_timezone() {
+    log_info "Current Timezone Configuration:"
+    echo "==================================="
+    
+    if command -v timedatectl > /dev/null 2>&1; then
+        timedatectl status 2>/dev/null | head -n 6
+    else
+        echo "Timezone: $(cat /etc/timezone 2>/dev/null || echo 'N/A')"
+        echo "Local Time: $(date)"
+    fi
+    
+    echo "==================================="
+}
+
+list_timezones() {
+    local region="${1:-}"
+    
+    log_info "Available Timezones:"
+    echo "==================================="
+    
+    if [ -n "$region" ]; then
+        # List timezones for a specific region
+        local region_dir="${ZONEINFO_DIR}/${region}"
+        
+        if [ ! -d "$region_dir" ]; then
+            log_error "Region '$region' not found."
+            log_info "Available regions: $(ls "$ZONEINFO_DIR" | tr '\n' ' ')"
+            return 1
+        fi
+        
+        find "$region_dir" -type f | sed "s|$ZONEINFO_DIR/||" | sort
+    else
+        # List all regions
+        echo "Regions:"
+        ls "$ZONEINFO_DIR" | sort
+        echo ""
+        log_info "Use '$0 list-timezones <region>' to see timezones in a region."
+        log_info "Example: $0 list-timezones America"
+    fi
+    
+    echo "==================================="
+}
+
+set_timezone() {
+    local timezone="$1"
+    
+    validate_timezone "$timezone" || return 1
+    
+    log_info "Setting timezone to: $timezone"
+    
+    backup_config_file "$TIMEZONE_FILE"
+    
+    # Update timezone symlink
+    rm -f "$TIMEZONE_FILE"
+    ln -s "${ZONEINFO_DIR}/${timezone}" "$TIMEZONE_FILE"
+    
+    # Update /etc/timezone if it exists
+    if [ -f /etc/timezone ]; then
+        echo "$timezone" > /etc/timezone
+    fi
+    
+    # Use timedatectl if available
+    if command -v timedatectl > /dev/null 2>&1; then
+        timedatectl set-timezone "$timezone"
+    fi
+    
+    # Restart chrony to pick up new timezone
+    if systemctl is-active --quiet chrony 2>/dev/null; then
+        systemctl restart chrony 2>/dev/null || true
+    fi
+    
+    log_success "Timezone set to: $timezone"
+    log_info "Current time: $(date)"
+}
+
+# --- Usage ---
+
+show_help() {
+    cat <<HELP
+GTA VI OS (Vice OS) Locale Manager
+
+Usage: $0 <command> [options]
+
+Locale:
+  show                        Show current locale configuration
+  list-available              List all available locales
+  list-generated              List generated (active) locales
+  generate <locale>           Generate a new locale (e.g., en_US.UTF-8)
+  set <locale>                Set system locale (generates if needed)
+
+Keyboard:
+  show-keyboard               Show current keyboard layout
+  set-keyboard <layout> [variant]  Set keyboard layout
+  list-keyboards              List common keyboard layouts
+
+Timezone:
+  show-timezone               Show current timezone
+  list-timezones [region]     List timezones (optionally by region)
+  set-timezone <timezone>     Set system timezone
+
+Help:
+  help                        Show this help message
+
+Examples:
+  $0 show
+  $0 generate de_DE.UTF-8
+  $0 set de_DE.UTF-8
+  $0 set-keyboard de
+  $0 list-timezones America
+  $0 set-timezone America/New_York
+HELP
+}
+
+# --- Main ---
+
+main() {
+    check_locale_deps
+    
+    local command="${1:-help}"
+    shift || true
+    
+    case "$command" in
+        show|status)
+            show_current_locale
+            ;;
+        list-available|available)
+            list_available_locales
+            ;;
+        list-generated|generated)
+            list_generated_locales
+            ;;
+        generate|gen)
+            local locale="${1:-}"
+            if [ -z "$locale" ]; then
+                log_error "Locale required."
+                exit 1
+            fi
+            generate_locale "$locale"
+            ;;
+        set|set-locale)
+            local locale="${1:-}"
+            if [ -z "$locale" ]; then
+                log_error "Locale required."
+                exit 1
+            fi
+            set_system_locale "$locale"
+            ;;
+        show-keyboard|keyboard)
+            show_keyboard
+            ;;
+        set-keyboard|keyboard-set)
+            local layout="${1:-}"
+            if [ -z "$layout" ]; then
+                log_error "Keyboard layout required."
+                exit 1
+            fi
+            local variant="${2:-}"
+            set_keyboard_layout "$layout" "$variant"
+            ;;
+        list-keyboards|keyboards)
+            list_keyboard_layouts
+            ;;
+        show-timezone|timezone)
+            show_timezone
+            ;;
+        list-timezones|timezones)
+            local region="${1:-}"
+            list_timezones "$region"
+            ;;
+        set-timezone|timezone-set)
+            local timezone="${1:-}"
+            if [ -z "$timezone" ]; then
+                log_error "Timezone required."
+                exit 1
+            fi
+            set_timezone "$timezone"
+            ;;
+        help|--help|-h)
+            show_help
+            ;;
+        *)
+            log_error "Unknown command: $command"
+            log_info "Run '$0 help' for usage information."
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

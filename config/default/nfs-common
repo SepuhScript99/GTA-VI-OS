@@ -1,0 +1,29 @@
+# GTA VI OS (Vice OS) NFS Common Configuration
+# Installed to /etc/default/nfs-common
+#
+# This file configures the RPC services required for NFS mounts.
+# Most desktop users only need statd (NFSv3 locking) and idmapd (NFSv4 ID mapping).
+
+# Statd is required for NFSv3 file locking.
+# If you only use NFSv4, you can set this to "no".
+NEED_STATD=yes
+
+# IDMAPD is required for NFSv4 ID mapping (string names to numeric IDs).
+# This is needed for most modern NFSv4 mounts.
+NEED_IDMAPD=yes
+
+# GSSD is required for Kerberos authentication (RFC 2203, RFC 2623).
+# Set to "yes" only if you use Kerberos-authenticated NFS mounts (rare for desktops).
+# Default is "no" to save resources.
+NEED_GSSD=no
+
+# Options for rpc.statd.
+# --no-notify: Prevents statd from sending reboot notifications to peers.
+# This is safe for desktop clients that do not export NFS shares.
+STATDOPTS="--no-notify"
+
+# Options for rpc.gssd.
+GSSDOPTS=""
+
+# Options for rpc.idmapd.
+IDMAPDOPTS=""

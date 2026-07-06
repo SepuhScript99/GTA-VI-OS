@@ -1,0 +1,15 @@
+# GTA VI OS (Vice OS) Rsyslog Configuration
+# Installed to /etc/default/rsyslog
+#
+# Vice OS relies primarily on systemd-journald for system logging.
+# If rsyslog is installed (e.g., pulled in as a dependency), we restrict
+# it to local logging only and disable network listening for security.
+
+# Set default umask for log files created by rsyslog.
+# 022 ensures files are created with 644 permissions and directories with 755.
+umask 022
+
+# Options passed to rsyslogd.
+# -x: Disable DNS resolution for remote log sources (improves performance/security).
+# Note: Network listening (imudp/imtcp) must be disabled in /etc/rsyslog.conf directly.
+RSYSLOGD_OPTS="-x"

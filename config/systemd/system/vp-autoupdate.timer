@@ -1,0 +1,21 @@
+[Unit]
+Description=Run Vice OS Auto-update daily
+Wants=network-online.target
+After=network-online.target
+
+[Timer]
+# Run at 03:00 AM
+OnCalendar=*-*-* 03:00:00
+# Also trigger 5 minutes after boot to catch systems that are rarely on at 3 AM
+OnBootSec=5min
+# Persist missed runs so they execute immediately upon next boot
+Persistent=true
+# Delay randomly by up to 1 hour to avoid hammering Debian mirrors
+RandomizedDelaySec=1h
+# Reduce accuracy window from 30m to 5m for tighter execution on desktops
+AccuracySec=5m
+# Explicitly link to the service file
+Unit=vp-autoupdate.service
+
+[Install]
+WantedBy=timers.target

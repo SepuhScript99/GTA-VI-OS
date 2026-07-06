@@ -1,0 +1,10 @@
+# GTA VI OS (Vice OS) Xfce Preferred Applications
+# Installed to ~/.config/xfce4/helpers.rc
+#
+# This file defines the default applications for common tasks,
+# ensuring consistent behavior when opening links or files from GTK apps.
+
+WebBrowser=firefox
+MailReader=firefox
+FileManager=thunar
+TerminalEmulator=xterm

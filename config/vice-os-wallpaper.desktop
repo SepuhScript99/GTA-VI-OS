@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Vice OS Wallpaper
+Comment=Set the default Neon Miami wallpaper using feh
+Exec=feh --bg-fill /usr/share/backgrounds/vice_neon.jpg
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=2
+Icon=preferences-desktop-wallpaper
+Categories=Utility;

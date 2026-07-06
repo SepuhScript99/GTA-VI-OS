@@ -1,0 +1,22 @@
+# Default values for useradd(8) on GTA VI OS (Vice OS)
+# This file is installed to /etc/default/useradd
+
+# The default shell for new users. Bash is required for our .bashrc neon theme.
+SHELL=/bin/bash
+
+# The default home directory location.
+HOME=/home
+
+# The number of days after a password expires before the account is disabled.
+# -1 disables this feature.
+INACTIVE=-1
+
+# The default expiration date for new accounts (empty = never).
+EXPIRE=
+
+# The default skeleton directory.
+SKEL=/etc/skel
+
+# Whether to create mail spools by default.
+# Set to "no" as Vice OS does not include a default Mail Transfer Agent (MTA).
+CREATE_MAIL_SPOOL=no

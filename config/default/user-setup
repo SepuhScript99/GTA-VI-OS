@@ -1,0 +1,17 @@
+# GTA VI OS (Vice OS) User Setup Configuration
+# Installed to /etc/default/user-setup
+#
+# This file provides declarative defaults for user creation in Vice OS.
+# It can be sourced by system scripts to ensure consistent user environment.
+
+# The default username for the Live ISO and physical install.
+VICE_DEFAULT_USER="vice"
+
+# The default shell for new users.
+VICE_DEFAULT_SHELL="/bin/bash"
+
+# Additional groups the default user should be added to.
+VICE_DEFAULT_GROUPS="sudo,audio,video,netdev"
+
+# Whether to create a home directory for new users.
+VICE_CREATE_HOME="yes"

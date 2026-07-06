@@ -1,0 +1,14 @@
+# /etc/fstab for GTA VI OS (Vice OS) Live Environment
+#
+# Note: The live-boot initramfs scripts automatically mount the SquashFS
+# root filesystem. This file provides additional mounts for the Live session.
+# The physical installer (apps/vp-installer.sh) will overwrite this file
+# with the actual root and EFI partition UUIDs upon installation.
+
+# Mount /tmp as a tmpfs to reduce overlay writes and improve performance.
+# nodev: Do not interpret character or block special devices on the file system.
+# nosuid: Do not allow set-user-identifier or set-group-identifier bits to take effect.
+tmpfs /tmp tmpfs defaults,noatime,size=512M,nodev,nosuid 0 0
+
+# Mount /dev/shm (shared memory) as a tmpfs with security hardening.
+tmpfs /dev/shm tmpfs defaults,noatime,size=512M,nodev,nosuid 0 0

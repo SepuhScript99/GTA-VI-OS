@@ -1,0 +1,60 @@
+[Unit]
+Description=Vice OS Auto-update Service
+After=network-online.target
+Wants=network-online.target
+# Only run if connected to power (skip on battery)
+ConditionACPower=true
+# Prevent running during shutdown to avoid dpkg interruption
+Conflicts=shutdown.target
+Before=shutdown.target
+# Ensure package and boot directories are mounted
+RequiresMountsFor=/var /boot
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/vp-autoupdate.sh
+
+# Environment setup to prevent interactive prompts
+Environment="DEBIAN_FRONTEND=noninteractive"
+Environment="NEEDRESTART_MODE=a"
+
+# Resource Management: Yield to user applications
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+# Timeout: Prevent infinite hangs (1 hour)
+TimeoutStartSec=1h
+
+# Hardening (Safe for apt/dpkg)
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0022
+
+# Filesystem Protection
+# apt needs write access to /var, /etc, /usr, /boot, /tmp
+ProtectSystem=strict
+ReadWritePaths=-/var -/etc -/usr -/boot -/tmp
+ProtectHome=true
+
+# Kernel Protection
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+
+# Capabilities (Restricted to what dpkg/apt need for file ownership and access)
+CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_SYS_ADMIN CAP_CHOWN CAP_SETGID CAP_SETUID CAP_FOWNER
+
+# System Call Filtering (Allow standard system service calls, block exotic ones)
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+
+# Logging
+StandardOutput=journal
+StandardError=journal

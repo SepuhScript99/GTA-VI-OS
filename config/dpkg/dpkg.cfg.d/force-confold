@@ -1,0 +1,7 @@
+// GTA VI OS (Vice OS) dpkg Configuration
+// Forces dpkg to keep existing configuration files during package upgrades
+// without prompting. This is critical for unattended automatic updates
+// and ensures a smooth desktop experience.
+
+force-confold
+force-confdef

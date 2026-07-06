@@ -1,0 +1,12 @@
+# /etc/dphys-swapfile configuration for GTA VI OS (Vice OS)
+# 
+# Vice OS utilizes ZRAM (compressed RAM) for swap, which is significantly
+# faster than disk-based swap. To prevent dphys-swapfile from creating a
+# disk-based swap file that competes with ZRAM and wastes SSD I/O, we
+# explicitly disable it here.
+
+# Set size to 0 to disable swap file creation
+CONF_SWAPSIZE=0
+
+# Standard swap file path (kept explicit for script compatibility)
+CONF_SWAPFILE=/var/swap

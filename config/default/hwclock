@@ -1,0 +1,19 @@
+# GTA VI OS (Vice OS) Hardware Clock Configuration
+# Installed to /etc/default/hwclock
+
+# Should hwclock(8) grant access to the hardware clock?
+HWCLOCKACCESS=yes
+
+# Additional parameters for hwclock(8).
+# --utc explicitly tells hwclock to assume the hardware clock is set to UTC.
+# This aligns with HWCLOCKLOCAL=no and prevents time drift issues.
+HWCLOCKPARMS="--utc"
+
+# If your hardware clock is set to local time instead of UTC,
+# set this to "yes". This is common for systems dual-booting with Windows.
+# For a pure Linux system or VM, "no" (UTC) is the correct and default value.
+HWCLOCKLOCAL=no
+
+# If the hardware clock is broken (e.g. doesn't keep time when powered off),
+# set this to "yes" to ignore it.
+BADYEAR=no

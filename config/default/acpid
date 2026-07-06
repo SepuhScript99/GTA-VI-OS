@@ -1,0 +1,7 @@
+# GTA VI OS (Vice OS) ACPI Daemon Configuration
+# Installed to /etc/default/acpid
+
+# Options to pass to acpid.
+# --netlink: Use the netlink interface to receive ACPI events.
+# This is the modern, efficient method, replacing deprecated /proc/acpi/event polling.
+OPTIONS="--netlink"

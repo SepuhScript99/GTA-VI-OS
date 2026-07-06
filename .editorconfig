@@ -1,0 +1,40 @@
+# EditorConfig is awesome: https://editorconfig.org
+# GTA VI OS (Vice OS) Editor Configuration
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Python scripts (PEP 8)
+[*.py]
+indent_size = 4
+
+# Bash scripts
+[*.sh]
+indent_size = 4
+
+# Qt Style Sheets
+[*.qss]
+indent_size = 2
+
+# Markdown documentation
+[*.md]
+trim_trailing_whitespace = false
+indent_size = 2
+
+# YAML (CI/CD)
+[*.yml]
+indent_size = 2
+
+# Debian package lists and sysctl configs
+[*.list]
+indent_size = 4
+
+[*.conf]
+indent_size = 4
