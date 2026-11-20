@@ -28,6 +28,13 @@ APT_OPTS=(
     "-o" "Dpkg::Options::=--force-confdef"
 )
 
+has_install_candidate() {
+    local pkg="$1"
+    local candidate
+    candidate=$(apt-cache policy "$pkg" 2>/dev/null | awk '/Candidate:/ {print $2; exit}')
+    [ -n "$candidate" ] && [ "$candidate" != "(none)" ]
+}
+
 main() {
     # Read build configuration
     local build_arch="amd64"
@@ -63,7 +70,7 @@ main() {
 
     local core_infra_pkgs=()
     for pkg in "${core_infra_candidates[@]}"; do
-        if apt-cache show "$pkg" >/dev/null 2>&1; then
+        if has_install_candidate "$pkg"; then
             core_infra_pkgs+=("$pkg")
         else
             log_warn "Prerequisite package unavailable in current Debian suite, skipping: $pkg"
@@ -102,7 +109,7 @@ main() {
             esac
         fi
 
-        if apt-cache show "$pkg_line" >/dev/null 2>&1; then
+        if has_install_candidate "$pkg_line"; then
             available_pkgs+=("$pkg_line")
         else
             log_warn "Package unavailable in current Debian suite, skipping: $pkg_line"

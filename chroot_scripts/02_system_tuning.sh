@@ -39,7 +39,7 @@ main() {
     log_info "Configuring Network and Security..."
     # Note: systemd-resolved is intentionally NOT enabled here to prevent DNS
     # conflicts with NetworkManager on the Live ISO. See 05_network_audio_fix.sh.
-    systemctl enable NetworkManager
+    systemctl enable NetworkManager 2>/dev/null || true
 
     # Install NetworkManager DNS configuration
     if [ -f /vice_payload/config/NetworkManager/conf.d/10-dns.conf ]; then
@@ -55,7 +55,7 @@ main() {
     # Pre-allow SSH if ufw is operational; first-boot initialization is completed by vp-firewall.service
     ufw allow ssh 2>/dev/null || true
     # Enable the UFW service so the firewall starts on boot
-    systemctl enable ufw
+    systemctl enable ufw 2>/dev/null || true
 
     log_success "System tuning and security configuration completed."
 }

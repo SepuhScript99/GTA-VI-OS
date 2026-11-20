@@ -100,7 +100,7 @@ main() {
         "--append_partition" "2" "0xef" "$SCRATCHDIR/efiboot.img"
         "-output" "$ISO_OUTPUT"
         "-graft-points"
-        "$IMAGEDIR"=
+        "$IMAGEDIR"
         "/EFI/efiboot.img=$SCRATCHDIR/efiboot.img"
     )
 

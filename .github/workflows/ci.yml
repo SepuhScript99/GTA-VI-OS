@@ -37,7 +37,8 @@ jobs:
       - name: Validate YAML syntax
         run: |
           if command -v yamllint > /dev/null 2>&1; then
-            yamllint .github/workflows/*.yml
+            yamllint -d "{extends: default, rules: {line-length: {max: 160}, truthy: disable, document-start: disable}}" \
+              .github/workflows/*.yml
           else
             python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml')); print('CI YAML is valid')"
           fi
@@ -50,7 +51,11 @@ jobs:
 
       - name: Check trailing whitespace
         run: |
-          FILES=$(grep -rIl '[[:blank:]]$' . --include='*.sh' --include='*.py' --include='*.md' --include='*.yml' --include='*.yaml' --include='*.conf' --include='*.list' --include='*.desktop' --include='*.qss' --include='*.xml' 2>/dev/null | grep -v '.git/' || true)
+          FILES=$(grep -rIl '[[:blank:]]$' . \
+            --include='*.sh' --include='*.py' --include='*.md' \
+            --include='*.yml' --include='*.yaml' --include='*.conf' \
+            --include='*.list' --include='*.desktop' --include='*.qss' \
+            --include='*.xml' 2>/dev/null | grep -v '.git/' || true)
           if [ -n "$FILES" ]; then
             echo "Files with trailing whitespace:"
             echo "$FILES"

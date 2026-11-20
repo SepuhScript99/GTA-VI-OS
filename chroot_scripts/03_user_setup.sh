@@ -122,7 +122,7 @@ main() {
 
     log_info "Configuring Auto-login via getty..."
     mkdir -p /etc/systemd/system/getty@tty1.service.d
-    cat <<GETTY > /etc/systemd/system/getty@tty1.service.d/override.conf
+    cat <<'GETTY' > /etc/systemd/system/getty@tty1.service.d/override.conf
 [Service]
 ExecStart=
 ExecStart=-/sbin/agetty --autologin vice --noclear %I $TERM

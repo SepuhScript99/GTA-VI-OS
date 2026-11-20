@@ -20,7 +20,7 @@ ISO_LABEL="VICE_OS"
 ARCH="${DEBIAN_ARCH:-amd64}"
 ISO_NAME="gta-vi-os-${ARCH}.iso"
 REQUIRED_SPACE_GB=10
-LOG_FILE="$WORKDIR/build.log"
+export LOG_FILE="$WORKDIR/build.log"
 
 # --- Source Shared Libraries ---
 if [ ! -f "$WORKDIR/lib/common.sh" ]; then

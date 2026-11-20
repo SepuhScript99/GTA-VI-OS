@@ -100,10 +100,11 @@ main() {
         fi
 
         local bios_modules="linux normal iso9660 biosdisk search search_fs_file search_label search_fs_uuid part_gpt part_msdos loopback squash4 font gfxterm all_video test cat echo memdisk tar fat ext2"
+        local core_modules="biosdisk iso9660 search search_fs_file search_label part_gpt part_msdos normal"
         if ! grub-mkstandalone --format=i386-pc \
             --output="$SCRATCHDIR/core.img" \
             --install-modules="$bios_modules" \
-            --modules="$bios_modules" \
+            --modules="$core_modules" \
             --locales="" --fonts="" \
             "boot/grub/grub.cfg=$grub_cfg"; then
             log_error "Failed to generate BIOS GRUB standalone image."

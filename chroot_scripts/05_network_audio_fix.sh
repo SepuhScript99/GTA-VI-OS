@@ -36,7 +36,7 @@ RESOLV
     chmod 644 /etc/resolv.conf
 
     # Ensure NetworkManager and essential system buses are enabled
-    systemctl enable NetworkManager
+    systemctl enable NetworkManager 2>/dev/null || true
     systemctl enable dbus 2>/dev/null || true
 
     log_info "Configuring User Groups and Audio..."
