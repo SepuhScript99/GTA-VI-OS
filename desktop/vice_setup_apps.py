@@ -205,7 +205,7 @@ def main():
     # Register essential autostart entries
     print("\n[*] Setting up autostart entries...")
     essential = [
-        ("vice-panel.desktop", f"{sys.executable} {os.path.join(DESKTOP_DIR, 'vice_panel.py')}", True),
+        ("vice-panel.desktop", f"{sys.executable} {os.path.join(DESKTOP_DIR, 'vice_panel.py')}", False),
         ("vice-launcher.desktop", f"{sys.executable} {os.path.join(DESKTOP_DIR, 'vice_launcher.py')}", False),
         ("vice-widgets.desktop", f"{sys.executable} {os.path.join(DESKTOP_DIR, 'vice_widgets.py')}", False),
     ]

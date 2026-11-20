@@ -1,0 +1,19 @@
+[Configuration]
+ColorForeground=#e6edf3
+ColorBackground=#0f121d
+ColorCursor=#00e5ff
+ColorSelectionBackground=#1d2840
+TabActivityColor=#ff2e97
+ColorPalette=#0f121d;#ff3b6b;#00e676;#ffd166;#3b82f6;#ff2e97;#00e5ff;#c8d3e6;#4a556e;#ff6b8b;#39ff14;#ffe08a;#60a5fa;#ff6eb4;#67f3ff;#ffffff
+FontName=DejaVu Sans Mono 11
+MiscAlwaysShowTabs=FALSE
+MiscBell=FALSE
+MiscBordersDefault=TRUE
+MiscCursorBlinks=TRUE
+MiscCursorShape=TERMINAL_CURSOR_SHAPE_IBEAM
+MiscDefaultGeometry=100x28
+MiscMenubarDefault=TRUE
+MiscToolbarDefault=FALSE
+MiscMouseWheelZoom=TRUE
+ScrollingLines=5000
+TitleMode=TERMINAL_TITLE_PREPEND

@@ -12,22 +12,22 @@ geometry from this module rather than hardcoding values.
 # Panel Dimensions (pixels)
 # ──────────────────────────────────────────────
 
-TOPBAR_HEIGHT = 30
+TOPBAR_HEIGHT = 38
 """Height of the TopBar in pixels."""
 
-DOCK_HEIGHT = 70
+DOCK_HEIGHT = 64
 """Height of the Dock in pixels."""
 
-DOCK_WIDTH = 400
-"""Width of the Dock in pixels."""
+DOCK_WIDTH = 620
+"""Minimum width of the Dock in pixels."""
 
-DOCK_BUTTON_WIDTH = 90
+DOCK_BUTTON_WIDTH = 82
 """Width of each dock application button in pixels."""
 
-RUNMENU_WIDTH = 400
+RUNMENU_WIDTH = 480
 """Width of the RunMenu in pixels."""
 
-RUNMENU_HEIGHT = 50
+RUNMENU_HEIGHT = 56
 """Height of the RunMenu in pixels."""
 
 SYSTRAY_WIDTH = 800
@@ -60,10 +60,13 @@ RUNMENU_Y_FRACTION = 3
 # ──────────────────────────────────────────────
 
 DOCK_APPS = [
-    ("Terminal", "xterm", "Open a terminal emulator"),
-    ("Browser", "firefox", "Launch web browser"),
-    ("Files", "thunar", "Open file manager"),
-    ("Editor", "geany", "Launch code editor"),
+    ("Apps", "python3 /opt/vice-os/vice_launcher.py", "Open Application Menu"),
+    ("Terminal", "xfce4-terminal", "Open Terminal Emulator"),
+    ("Browser", "firefox", "Launch Web Browser"),
+    ("Files", "thunar", "Open File Manager"),
+    ("Editor", "mousepad", "Open Text Editor"),
+    ("Calc", "galculator", "Open Calculator"),
+    ("Settings", "python3 /opt/vice-os/vice_settings.py", "Open Vice OS Settings"),
 ]
 """
 List of (label, command, tooltip) tuples for the dock.

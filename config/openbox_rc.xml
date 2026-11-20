@@ -22,18 +22,18 @@
   </placement>
 
   <theme>
-    <name>Clearlooks</name>
+    <name>Vice-Dark</name>
     <titleLayout>NLIMC</titleLayout>
     <keepBorder>yes</keepBorder>
     <animateIconify>yes</animateIconify>
     <font place="ActiveWindow">
-      <name>sans</name>
+      <name>Noto Sans</name>
       <size>10</size>
       <weight>bold</weight>
       <slant>normal</slant>
     </font>
     <font place="InactiveWindow">
-      <name>sans</name>
+      <name>Noto Sans</name>
       <size>10</size>
       <weight>normal</weight>
       <slant>normal</slant>
@@ -42,8 +42,8 @@
 
   <!-- Reserve space for the custom TopBar and Dock -->
   <margins>
-    <top>30</top>
-    <bottom>70</bottom>
+    <top>38</top>
+    <bottom>64</bottom>
     <left>0</left>
     <right>0</right>
   </margins>
@@ -59,8 +59,11 @@
 
   <!-- Define the right-click desktop menu -->
   <menu id="root-menu" label="Vice OS">
+    <item label="Applications Launcher">
+      <action name="Execute"><command>python3 /opt/vice-os/vice_launcher.py</command></action>
+    </item>
     <item label="Terminal">
-      <action name="Execute"><command>xterm</command></action>
+      <action name="Execute"><command>sh -c 'command -v xfce4-terminal &gt;/dev/null &amp;&amp; exec xfce4-terminal || exec xterm'</command></action>
     </item>
     <item label="Web Browser">
       <action name="Execute"><command>firefox</command></action>
@@ -69,7 +72,7 @@
       <action name="Execute"><command>thunar</command></action>
     </item>
     <item label="Editor">
-      <action name="Execute"><command>geany</command></action>
+      <action name="Execute"><command>sh -c 'command -v mousepad &gt;/dev/null &amp;&amp; exec mousepad || exec geany'</command></action>
     </item>
     <separator/>
     <!-- Dynamic Pipe Menu for all installed applications -->
@@ -78,7 +81,13 @@
     <menu id="client-list-menu"/>
     <separator/>
     <item label="Vice OS Settings">
-      <action name="Execute"><command>xterm -title "Vice OS Settings" -e /usr/local/bin/vice-os-menu.sh</command></action>
+      <action name="Execute"><command>python3 /opt/vice-os/vice_settings.py</command></action>
+    </item>
+    <item label="Display Settings">
+      <action name="Execute"><command>sh -c 'command -v arandr &gt;/dev/null &amp;&amp; exec arandr || exec python3 /opt/vice-os/vice_display_manager.py'</command></action>
+    </item>
+    <item label="Appearance Settings">
+      <action name="Execute"><command>sh -c 'command -v lxappearance &gt;/dev/null &amp;&amp; exec lxappearance || exec python3 /opt/vice-os/vice_theme_manager.py'</command></action>
     </item>
     <item label="Screenshot">
       <action name="Execute"><command>gnome-screenshot -i</command></action>
@@ -123,8 +132,11 @@
     </keybind>
 
     <!-- Vice OS Custom Keybinds -->
+    <keybind key="W-a">
+      <action name="Execute"><command>python3 /opt/vice-os/vice_launcher.py</command></action>
+    </keybind>
     <keybind key="W-t">
-      <action name="Execute"><command>xterm</command></action>
+      <action name="Execute"><command>sh -c 'command -v xfce4-terminal &gt;/dev/null &amp;&amp; exec xfce4-terminal || exec xterm'</command></action>
     </keybind>
     <keybind key="W-e">
       <action name="Execute"><command>thunar</command></action>

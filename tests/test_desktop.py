@@ -243,6 +243,86 @@ class TestWindowManagementConfig(unittest.TestCase):
             code = fp.read()
         self.assertNotIn("FramelessWindowHint", code)
 
+    def test_openbox_theme_and_margins_match_panel_config(self):
+        rc_path = os.path.join(REPO_ROOT, "config", "openbox_rc.xml")
+        tree = ET.parse(rc_path)
+        root = tree.getroot()
+        ns = {"ob": "http://openbox.org/3.4/rc"}
+
+        theme_name = root.find("ob:theme/ob:name", ns)
+        self.assertIsNotNone(theme_name)
+        self.assertEqual(theme_name.text.strip(), "Vice-Dark")
+
+        margins = root.find("ob:margins", ns)
+        self.assertIsNotNone(margins)
+        self.assertEqual(int(margins.find("ob:top", ns).text), panel_config.TOPBAR_HEIGHT)
+        self.assertEqual(int(margins.find("ob:bottom", ns).text), panel_config.DOCK_HEIGHT)
+
+        themerc = os.path.join(REPO_ROOT, "config", "themes", "Vice-Dark", "openbox-3", "themerc")
+        self.assertTrue(os.path.isfile(themerc), f"Missing custom Openbox theme: {themerc}")
+
+    def test_vice_shell_has_taskbar_widget(self):
+        shell_path = os.path.join(DESKTOP_DIR, "vice_shell.py")
+        with open(shell_path, "r", encoding="utf-8") as fp:
+            code = fp.read()
+        self.assertIn("TaskbarWidget", code)
+        self.assertIn("wmctrl", code)
+
+    def _assert_launcher_discovery(self, vice_launcher_mod):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            desktop_file = os.path.join(tmpdir, "sample-debian-app.desktop")
+            with open(desktop_file, "w", encoding="utf-8") as fp:
+                fp.write(
+                    "[Desktop Entry]\n"
+                    "Type=Application\n"
+                    "Name=Sample Debian App\n"
+                    "Comment=Sample Utility\n"
+                    "Exec=sample-app %U\n"
+                    "Icon=utilities-terminal\n"
+                    "Categories=Utility;\n"
+                )
+            apps = vice_launcher_mod.discover_apps(desktop_app_dirs=[tmpdir], include_vice_scripts=True)
+            names = {a["name"] for a in apps}
+            labels = {a["label"] for a in apps}
+            self.assertIn("Sample Debian App", labels)
+            self.assertNotIn("vice_notification_daemon.py", names)
+
+    def test_launcher_discovers_desktop_files_and_skips_daemons(self):
+        try:
+            import vice_launcher
+            self._assert_launcher_discovery(vice_launcher)
+        except ImportError:
+            import types
+            qt_pkg = types.ModuleType("PyQt5")
+            qt_widgets = types.ModuleType("PyQt5.QtWidgets")
+            qt_core = types.ModuleType("PyQt5.QtCore")
+            qt_gui = types.ModuleType("PyQt5.QtGui")
+            for name in ("QApplication", "QWidget", "QLabel", "QPushButton", "QVBoxLayout",
+                         "QHBoxLayout", "QLineEdit", "QScrollArea", "QGridLayout", "QShortcut"):
+                setattr(qt_widgets, name, type(name, (), {}))
+            for name in ("Qt", "QProcess", "QSize"):
+                setattr(qt_core, name, type(name, (), {}))
+            for name in ("QFont", "QIcon", "QKeySequence"):
+                setattr(qt_gui, name, type(name, (), {}))
+            with patch.dict(sys.modules, {
+                "PyQt5": qt_pkg,
+                "PyQt5.QtWidgets": qt_widgets,
+                "PyQt5.QtCore": qt_core,
+                "PyQt5.QtGui": qt_gui,
+            }):
+                try:
+                    import vice_launcher
+                    self._assert_launcher_discovery(vice_launcher)
+                finally:
+                    sys.modules.pop("vice_launcher", None)
+
+    def test_packages_list_has_standard_desktop_utilities(self):
+        pkg_path = os.path.join(REPO_ROOT, "config", "packages.list")
+        with open(pkg_path, "r", encoding="utf-8") as fp:
+            pkgs = {line.strip() for line in fp if line.strip() and not line.strip().startswith("#")}
+        for required in ["wmctrl", "xdotool", "xfce4-terminal", "papirus-icon-theme", "arc-theme", "xfconf", "tumbler", "gvfs"]:
+            self.assertIn(required, pkgs, f"Missing standard desktop package: {required}")
+
 
 if __name__ == "__main__":
     unittest.main()

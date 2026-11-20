@@ -1,6 +1,6 @@
 # Openbox Environment
 # GTA VI OS (Vice OS) Custom Configuration
-# 
+#
 # This file is sourced by openbox-session before executing autostart.
 # It exports variables to the X session environment.
 
@@ -24,9 +24,9 @@ export MOZ_ENABLE_WAYLAND=0
 
 # --- Default Applications ---
 # Set the default terminal emulator for applications that check this variable
-export TERMINAL="xterm"
+export TERMINAL="xfce4-terminal"
 # Set default editor, visual editor, pager, and browser
-export EDITOR="geany"
-export VISUAL="geany"
+export EDITOR="mousepad"
+export VISUAL="mousepad"
 export PAGER="less"
 export BROWSER="firefox"

@@ -32,6 +32,20 @@ stalonetray
 x11-xserver-utils
 xbacklight
 dbus-x11
+wmctrl
+xdotool
+xfconf
+tumbler
+gvfs
+gvfs-backends
+thunar-archive-plugin
+xdg-utils
+xdg-user-dirs
+arc-theme
+papirus-icon-theme
+adwaita-icon-theme
+arandr
+lxappearance
 
 # --- Wayland Session Support (optional, opt-in via session config) ---
 # labwc: stacking Wayland compositor (Openbox-style, wlroots-based)
@@ -53,6 +67,7 @@ policykit-1-gnome
 fonts-dejavu-core
 fonts-noto-core
 fonts-liberation
+fonts-noto-color-emoji
 
 # --- Audio ---
 pulseaudio-utils
@@ -81,6 +96,14 @@ p7zip-full
 gnome-screenshot
 gparted
 synaptic
+xfce4-terminal
+mousepad
+ristretto
+celluloid
+qpdfview
+xfce4-taskmanager
+unzip
+zip
 
 # --- Developer Tools ---
 gcc

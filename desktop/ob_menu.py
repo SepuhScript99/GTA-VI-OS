@@ -105,12 +105,16 @@ def get_categorized_apps() -> dict:
 def generate_xml() -> str:
     """Generates the Openbox pipe menu XML."""
     categorized_apps = get_categorized_apps()
+    term_bin = shutil.which("xfce4-terminal") or "xterm"
 
     xml_lines = ['<openbox_pipe_menu>']
 
     # Top level essentials
+    xml_lines.append('  <item label="Applications Launcher">')
+    xml_lines.append('    <action name="Execute"><command>python3 /opt/vice-os/vice_launcher.py</command></action>')
+    xml_lines.append('  </item>')
     xml_lines.append('  <item label="Terminal">')
-    xml_lines.append('    <action name="Execute"><command>xterm</command></action>')
+    xml_lines.append(f'    <action name="Execute"><command>{term_bin}</command></action>')
     xml_lines.append('  </item>')
     xml_lines.append('  <item label="File Manager">')
     xml_lines.append('    <action name="Execute"><command>thunar</command></action>')
@@ -129,9 +133,9 @@ def generate_xml() -> str:
             safe_name = escape(app["name"])
             safe_exec = escape(app["exec"])
 
-            # If the app requires a terminal, wrap the command in xterm -e
+            # If the app requires a terminal, wrap the command in terminal -e
             if app["terminal"] == "true":
-                final_cmd = f"xterm -e {safe_exec}"
+                final_cmd = f"{term_bin} -e {safe_exec}"
             else:
                 final_cmd = safe_exec
 
@@ -142,7 +146,7 @@ def generate_xml() -> str:
 
     xml_lines.append('  <separator />')
     xml_lines.append('  <item label="Vice OS Settings">')
-    xml_lines.append('    <action name="Execute"><command>xterm -e /usr/local/bin/vice-os-menu.sh</command></action>')
+    xml_lines.append('    <action name="Execute"><command>python3 /opt/vice-os/vice_settings.py</command></action>')
     xml_lines.append('  </item>')
     xml_lines.append('  <item label="Restart Openbox">')
     xml_lines.append('    <action name="Reconfigure" />')

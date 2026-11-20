@@ -1,104 +1,198 @@
-/* GTA VI OS (Vice OS) GTK3 CSS Overrides */
-/* Note: GTK3 CSS uses widget type names (e.g., headerbar, trough) which may */
-/* trigger "Unknown type selector" warnings in standard web CSS linters. */
+/* GTA VI OS (Vice OS) GTK3 CSS Overrides
+ * Modern dark slate palette designed to harmonize with Arc-Dark and Papirus-Dark.
+ * Explicitly styles views, sidebars, and toolbars so apps like Thunar stay dark and crisp
+ * without harsh borders around menu items.
+ */
 
-window, dialog {
-    background-color: #050505;
-    color: #00FFFF;
+window, dialog, .background {
+    background-color: #111522;
+    color: #e6edf3;
 }
 
 headerbar, titlebar {
-    background-color: #0a0a0a;
-    color: #00FFFF;
-    border-bottom: 1px solid #FF00FF;
+    background-color: #151a2b;
+    color: #e6edf3;
+    border-bottom: 1px solid #262f47;
+    box-shadow: none;
 }
 
-entry, button, combobox, spinbutton {
-    background-color: #0a0a0a;
-    color: #00FFFF;
-    border: 1px solid #FF00FF;
-    border-radius: 4px;
+menubar {
+    background-color: #151a2b;
+    color: #e6edf3;
+    border-bottom: 1px solid #222a40;
+    padding: 2px 4px;
 }
 
-button:hover, entry:focus, combobox:hover {
-    border-color: #00FFFF;
-    background-color: #1a002e;
+menubar > menuitem {
+    background-color: transparent;
+    color: #c8d3e6;
+    border: none;
+    border-radius: 5px;
+    padding: 4px 8px;
+}
+
+menubar > menuitem:hover {
+    background-color: #1f2740;
+    color: #00e5ff;
+}
+
+toolbar {
+    background-color: #151a2b;
+    color: #e6edf3;
+    border-bottom: 1px solid #222a40;
+    padding: 3px 6px;
+}
+
+.view,
+treeview.view,
+iconview,
+textview,
+textview text,
+scrolledwindow,
+placessidebar,
+placessidebar list,
+placessidebar row {
+    background-color: #0f131f;
+    color: #e6edf3;
+}
+
+placessidebar,
+placessidebar list {
+    background-color: #131826;
+    border-right: 1px solid #222a40;
+}
+
+placessidebar row:selected,
+.view:selected,
+treeview.view:selected,
+iconview:selected {
+    background-color: #1b324a;
+    color: #00e5ff;
+}
+
+entry, spinbutton {
+    background-color: #171c2c;
+    color: #e6edf3;
+    border: 1px solid #2d3652;
+    border-radius: 6px;
+    padding: 4px 8px;
+    box-shadow: none;
+}
+
+entry:focus, spinbutton:focus {
+    border-color: #00e5ff;
+    background-color: #1b2236;
+}
+
+button, combobox button {
+    background-color: #1a2033;
+    color: #e6edf3;
+    border: 1px solid #2a334d;
+    border-radius: 6px;
+    padding: 4px 10px;
+    box-shadow: none;
+}
+
+button:hover, combobox button:hover {
+    background-color: #232c45;
+    border-color: #00e5ff;
+    color: #ffffff;
 }
 
 button:active, button:checked {
-    background-color: #FF00FF;
-    color: #050505;
-    border-color: #00FFFF;
+    background-color: #1b324a;
+    color: #00e5ff;
+    border-color: #00e5ff;
+}
+
+toolbar button {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+}
+
+toolbar button:hover {
+    background-color: #202840;
+    border-color: #2e3a5c;
 }
 
 selection {
-    background-color: #FF00FF;
-    color: #FFFFFF;
+    background-color: #1f4b66;
+    color: #ffffff;
 }
 
-menu, menuitem, popover {
-    background-color: #050505;
-    color: #00FFFF;
-    border: 1px solid #FF00FF;
+menu, popover, popover.background {
+    background-color: #151a2b;
+    color: #e6edf3;
+    border: 1px solid #2a334d;
+    border-radius: 8px;
 }
 
-menuitem:hover, menuitem:active {
-    background-color: #FF00FF;
-    color: #FFFFFF;
+menu menuitem {
+    padding: 5px 10px;
+    border: none;
+}
+
+menu menuitem:hover, menu menuitem:active {
+    background-color: #1d2b45;
+    color: #00e5ff;
+    border-radius: 4px;
+}
+
+separator {
+    background-color: #222a40;
+    min-width: 1px;
+    min-height: 1px;
 }
 
 scrollbar {
-    background-color: #050505;
+    background-color: transparent;
     border: none;
 }
 
 scrollbar slider {
-    background-color: #FF00FF;
+    background-color: #2e3957;
     border-radius: 5px;
+    min-width: 6px;
+    min-height: 6px;
 }
 
 scrollbar slider:hover {
-    background-color: #00FFFF;
+    background-color: #00e5ff;
 }
 
-tooltip {
-    background-color: #050505;
-    color: #00FFFF;
-    border: 1px solid #FF00FF;
+tooltip, tooltip.background {
+    background-color: #151a2b;
+    color: #e6edf3;
+    border: 1px solid #00e5ff;
+    border-radius: 6px;
 }
 
 progressbar {
-    background-color: #0a0a0a;
-    color: #00FFFF;
-    border: 1px solid #FF00FF;
+    background-color: #171c2c;
+    color: #e6edf3;
+    border: 1px solid #2a334d;
+    border-radius: 6px;
 }
 
 progressbar progress {
-    background-color: #00FFFF;
+    background-color: #00e5ff;
+    border-radius: 5px;
 }
 
 scale trough {
-    background-color: #0a0a0a;
-    border: 1px solid #FF00FF;
+    background-color: #171c2c;
+    border: 1px solid #2a334d;
+    border-radius: 4px;
 }
 
 scale highlight {
-    background-color: #00FFFF;
+    background-color: #00e5ff;
+    border-radius: 4px;
 }
 
 infobar {
-    background-color: #0a0a0a;
-    color: #00FFFF;
-    border: 1px solid #FF00FF;
-}
-
-/* Backdrop state (inactive windows) */
-*:backdrop {
-    background-color: #020202;
-    color: #006666;
-}
-
-headerbar:backdrop, titlebar:backdrop {
-    background-color: #020202;
-    border-bottom: 1px solid #660066;
+    background-color: #151a2b;
+    color: #e6edf3;
+    border: 1px solid #2a334d;
 }

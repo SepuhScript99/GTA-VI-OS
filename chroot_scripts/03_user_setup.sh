@@ -82,6 +82,32 @@ main() {
     cp /vice_payload/config/openbox_rc.xml /home/vice/.config/openbox/rc.xml
     chown -R vice:vice /home/vice/.config
 
+    # Install Vice-Dark Openbox window theme
+    if [ -d /vice_payload/config/themes/Vice-Dark ]; then
+        mkdir -p /usr/share/themes
+        rm -rf /usr/share/themes/Vice-Dark
+        cp -r /vice_payload/config/themes/Vice-Dark /usr/share/themes/
+        find /usr/share/themes/Vice-Dark -type d -exec chmod 755 {} \;
+        find /usr/share/themes/Vice-Dark -type f -exec chmod 644 {} \;
+        log_info "Installed Vice-Dark Openbox theme."
+    fi
+
+    # Install default xfce4-terminal dark configuration
+    if [ -f /vice_payload/config/xfce4/terminal/terminalrc ]; then
+        mkdir -p /etc/skel/.config/xfce4/terminal /home/vice/.config/xfce4/terminal
+        cp /vice_payload/config/xfce4/terminal/terminalrc /etc/skel/.config/xfce4/terminal/terminalrc
+        cp /vice_payload/config/xfce4/terminal/terminalrc /home/vice/.config/xfce4/terminal/terminalrc
+        chmod 644 /etc/skel/.config/xfce4/terminal/terminalrc /home/vice/.config/xfce4/terminal/terminalrc
+        chown -R vice:vice /home/vice/.config
+        log_info "Installed default xfce4-terminal configuration."
+    fi
+
+    # Pre-create standard XDG user directories
+    for d in Desktop Documents Downloads Music Pictures Videos; do
+        mkdir -p "/etc/skel/$d" "/home/vice/$d"
+    done
+    chown -R vice:vice /home/vice
+
     # Copy Labwc (Wayland compositor) configuration to system skeleton and vice user
     # Labwc reads config from ~/.config/labwc/ — mirrors the Openbox config structure.
     if [ -d /vice_payload/config/labwc ]; then
