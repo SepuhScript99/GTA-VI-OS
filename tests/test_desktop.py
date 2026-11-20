@@ -13,6 +13,7 @@ import os
 import ast
 import glob
 import tempfile
+import xml.etree.ElementTree as ET
 
 # Add repo root, lib/, and desktop/ to path
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -199,6 +200,48 @@ class TestDesktopIntegrity(unittest.TestCase):
                 first_line.startswith("#!/usr/bin/env python3"),
                 f"Missing shebang in {fname}: {first_line.strip()}"
             )
+
+
+class TestWindowManagementConfig(unittest.TestCase):
+    """Regression tests for Openbox mouse controls, EWMH dock panels, and wizard chrome."""
+
+    def test_openbox_rc_has_window_controls_and_resize_contexts(self):
+        rc_path = os.path.join(REPO_ROOT, "config", "openbox_rc.xml")
+        tree = ET.parse(rc_path)
+        root = tree.getroot()
+        ns = {"ob": "http://openbox.org/3.4/rc"}
+
+        mouse_el = root.find("ob:mouse", ns)
+        self.assertIsNotNone(mouse_el, "openbox_rc.xml missing <mouse> section")
+
+        contexts = {c.attrib.get("name"): c for c in mouse_el.findall("ob:context", ns)}
+        required_contexts = [
+            "Titlebar", "Close", "Iconify", "Maximize", "Client",
+            "Top", "Bottom", "Left", "Right", "TRCorner BRCorner TLCorner BLCorner",
+        ]
+        for ctx_name in required_contexts:
+            self.assertIn(ctx_name, contexts, f"Missing Openbox mouse context: {ctx_name}")
+
+        all_actions = {
+            a.attrib.get("name")
+            for a in mouse_el.findall(".//ob:action", ns)
+        }
+        for action_name in ["Move", "Resize", "Close", "Iconify", "ToggleMaximize"]:
+            self.assertIn(action_name, all_actions, f"Missing Openbox mouse action: {action_name}")
+
+    def test_vice_shell_single_instance_and_ewmh_dock(self):
+        shell_path = os.path.join(DESKTOP_DIR, "vice_shell.py")
+        with open(shell_path, "r", encoding="utf-8") as fp:
+            code = fp.read()
+        self.assertIn("_acquire_shell_lock", code)
+        self.assertIn("WA_X11NetWmWindowTypeDock", code)
+        self.assertNotIn("availableGeometry()", code)
+
+    def test_welcome_wizard_is_managed_window(self):
+        wizard_path = os.path.join(DESKTOP_DIR, "welcome_wizard.py")
+        with open(wizard_path, "r", encoding="utf-8") as fp:
+            code = fp.read()
+        self.assertNotIn("FramelessWindowHint", code)
 
 
 if __name__ == "__main__":

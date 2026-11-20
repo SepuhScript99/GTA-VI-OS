@@ -474,8 +474,8 @@ class WelcomeWizard(QWidget):
 
     def initUI(self):
         self.setWindowTitle("Vice OS — Setup Wizard")
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setFixedSize(WIZARD_WIDTH, WIZARD_HEIGHT)
+        self.resize(WIZARD_WIDTH, WIZARD_HEIGHT)
+        self.setMinimumSize(WIZARD_WIDTH, WIZARD_HEIGHT)
         self.setStyleSheet(PAGE_STYLE)
 
         main_layout = QVBoxLayout()

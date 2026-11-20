@@ -14,6 +14,10 @@ import traceback
 import argparse
 import shlex
 import shutil
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 sys.path.insert(0, '/opt/vice-os/lib')
 sys.path.insert(0, '/opt/vice-os')
@@ -34,6 +38,22 @@ _TRAY_MODULE = None
 _POWER_MODULE = None
 _WALL_MODULE = None
 _PANEL_CONF = None
+
+
+def _acquire_shell_lock():
+    """Ensure only one instance of the desktop shell (TopBar + Dock) runs per user."""
+    if fcntl is None:
+        return None
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/vice-{os.getuid()}"
+    try:
+        os.makedirs(runtime_dir, exist_ok=True)
+        lock_file = os.path.join(runtime_dir, "vice_shell.lock")
+        f = open(lock_file, "w")
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return f
+    except (IOError, OSError):
+        log_info("vice_shell: another instance is already running. Exiting.")
+        return False
 
 
 def _pc():
@@ -175,9 +195,13 @@ class Dock(QWidget):
         self.initUI()
 
     def initUI(self):
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowTitle("ViceDock")
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        if hasattr(Qt, "WA_X11NetWmWindowTypeDock") and not os.environ.get("WAYLAND_DISPLAY"):
+            self.setAttribute(Qt.WA_X11NetWmWindowTypeDock, True)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setObjectName("Dock")
 
         screen = QApplication.primaryScreen()
@@ -185,14 +209,10 @@ class Dock(QWidget):
             log_error("No screen found. Cannot display Dock.")
             sys.exit(1)
 
-        geo = screen.availableGeometry()
-        pc = _pc()
-        dock_width = pc.DOCK_WIDTH
-        dock_height = pc.DOCK_HEIGHT
-        x = (geo.width() - dock_width) // 2
-        y = geo.height() - dock_height
-        self.setGeometry(x, y, dock_width, dock_height)
+        self._reposition()
+        screen.geometryChanged.connect(self._reposition)
 
+        pc = _pc()
         layout = QHBoxLayout()
 
         for app in pc.DOCK_APPS:
@@ -206,6 +226,19 @@ class Dock(QWidget):
 
         self.setLayout(layout)
 
+    def _reposition(self, _geometry=None):
+        screen = QApplication.primaryScreen()
+        if not screen:
+            return
+        geo = screen.geometry()
+        pc = _pc()
+        dock_width = pc.DOCK_WIDTH
+        dock_height = pc.DOCK_HEIGHT
+        y_offset = getattr(pc, "DOCK_Y_OFFSET", 0)
+        x = geo.x() + (geo.width() - dock_width) // 2
+        y = geo.y() + geo.height() - dock_height - y_offset
+        self.setGeometry(x, y, dock_width, dock_height)
+
 
 class TopBar(QWidget):
     """System bar at the top of the screen with system info, clock, and controls."""
@@ -216,9 +249,13 @@ class TopBar(QWidget):
         self.initUI()
 
     def initUI(self):
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowTitle("ViceTopBar")
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        if hasattr(Qt, "WA_X11NetWmWindowTypeDock") and not os.environ.get("WAYLAND_DISPLAY"):
+            self.setAttribute(Qt.WA_X11NetWmWindowTypeDock, True)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setObjectName("TopBar")
 
         screen = QApplication.primaryScreen()
@@ -226,9 +263,8 @@ class TopBar(QWidget):
             log_error("No screen found. Cannot display TopBar.")
             sys.exit(1)
 
-        geo = screen.availableGeometry()
-        pc = _pc()
-        self.setGeometry(0, 0, geo.width(), pc.TOPBAR_HEIGHT)
+        self._reposition()
+        screen.geometryChanged.connect(self._reposition)
 
         layout = QHBoxLayout()
         layout.setContentsMargins(10, 0, 10, 0)
@@ -263,6 +299,14 @@ class TopBar(QWidget):
         timer.timeout.connect(self.update_info)
         timer.start(_pc().TOPBAR_UPDATE_INTERVAL)
         self.update_info()
+
+    def _reposition(self, _geometry=None):
+        screen = QApplication.primaryScreen()
+        if not screen:
+            return
+        geo = screen.geometry()
+        pc = _pc()
+        self.setGeometry(geo.x(), geo.y(), geo.width(), pc.TOPBAR_HEIGHT)
 
     def update_info(self):
         self.clock.setText(time.strftime("%b %d, %H:%M:%S"))
@@ -368,6 +412,9 @@ if __name__ == '__main__':
         menu.input_field.setFocus()
         app.setQuitOnLastWindowClosed(True)
     else:
+        shell_lock_fd = _acquire_shell_lock()
+        if shell_lock_fd is False:
+            sys.exit(0)
         init_wallpaper()
         dock = Dock()
         bar = TopBar()
