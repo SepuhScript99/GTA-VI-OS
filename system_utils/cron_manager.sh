@@ -7,34 +7,18 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 SYSTEMCTL_CMD="systemctl"
 CRONTAB_CMD="crontab"
 
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Cron operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
-
 # --- Helper Functions ---
 
 check_cron_deps() {
     check_dependencies "crontab"
-    
+
     # Check if cron service is running
     if ! $SYSTEMCTL_CMD is-active --quiet cron 2>/dev/null; then
         log_warn "Cron service is not running. Attempting to start..."
@@ -45,17 +29,17 @@ check_cron_deps() {
 validate_schedule() {
     local schedule="$1"
     local field_count
-    
+
     # Count fields in the schedule string
     field_count=$(echo "$schedule" | wc -w)
-    
+
     if [ "$field_count" -ne 5 ]; then
         log_error "Invalid cron schedule format."
         log_info "Expected 5 fields: minute hour day-of-month month day-of-week"
         log_info "Example: '0 2 * * *' (Runs at 2:00 AM every day)"
         return 1
     fi
-    
+
     return 0
 }
 
@@ -64,16 +48,16 @@ validate_schedule() {
 list_jobs() {
     log_info "Current Cron Jobs for user '$USER':"
     echo "==================================="
-    
+
     local jobs
     jobs=$($CRONTAB_CMD -l 2>/dev/null)
-    
+
     if [ -z "$jobs" ]; then
         log_info "No cron jobs configured."
     else
         echo "$jobs"
     fi
-    
+
     echo "==================================="
 }
 
@@ -83,79 +67,79 @@ add_job() {
     local schedule="$1"
     shift
     local command="$*"
-    
+
     validate_schedule "$schedule" || return 1
-    
+
     if [ -z "$command" ]; then
         log_error "Command to execute is required."
         return 1
     fi
-    
+
     local entry="$schedule $command"
-    
+
     log_info "Adding cron job: $entry"
-    
+
     # Safely append to crontab without removing existing entries
     # Create a temp file to hold the combined crontab
     local tmp_crontab
     tmp_crontab=$(mktemp)
-    
+
     # Dump existing crontab (ignore errors if none exists)
     $CRONTAB_CMD -l > "$tmp_crontab" 2>/dev/null || true
-    
+
     # Ensure the file ends with a newline before appending
     if [ -s "$tmp_crontab" ] && [ "$(tail -c1 "$tmp_crontab" | wc -l)" -eq 0 ]; then
         echo "" >> "$tmp_crontab"
     fi
-    
+
     echo "$entry" >> "$tmp_crontab"
-    
+
     # Install the new crontab
     if ! $CRONTAB_CMD "$tmp_crontab"; then
         log_error "Failed to install new crontab."
         rm -f "$tmp_crontab"
         return 1
     fi
-    
+
     rm -f "$tmp_crontab"
     log_success "Cron job added successfully."
 }
 
 remove_job() {
     local pattern="$1"
-    
+
     if [ -z "$pattern" ]; then
         log_error "Pattern required to identify job(s) for removal."
         log_info "Example: $0 remove '/usr/local/bin/backup.sh'"
         return 1
     fi
-    
+
     log_info "Removing cron jobs matching: $pattern"
-    
+
     local tmp_crontab
     tmp_crontab=$(mktemp)
-    
+
     # Dump existing crontab, filtering out matching lines
     $CRONTAB_CMD -l 2>/dev/null | grep -v "$pattern" > "$tmp_crontab" || true
-    
+
     # Check if anything changed
     local original_count new_count
     original_count=$($CRONTAB_CMD -l 2>/dev/null | wc -l)
     new_count=$(wc -l < "$tmp_crontab")
-    
+
     if [ "$original_count" -eq "$new_count" ]; then
         log_warn "No matching cron jobs found."
         rm -f "$tmp_crontab"
         return 0
     fi
-    
+
     # Install the filtered crontab
     if ! $CRONTAB_CMD "$tmp_crontab"; then
         log_error "Failed to update crontab."
         rm -f "$tmp_crontab"
         return 1
     fi
-    
+
     rm -f "$tmp_crontab"
     log_success "Matching cron job(s) removed."
 }
@@ -163,12 +147,12 @@ remove_job() {
 clear_all_jobs() {
     log_warn "WARNING: This will permanently delete ALL cron jobs for user '$USER'."
     read -p "Type 'YES' to confirm: " confirm
-    
+
     if [ "$confirm" != "YES" ]; then
         log_info "Operation aborted."
         return 1
     fi
-    
+
     log_info "Clearing all cron jobs..."
     $CRONTAB_CMD -r
     log_success "All cron jobs cleared."
@@ -250,10 +234,10 @@ HELP
 
 main() {
     check_cron_deps
-    
+
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         list|ls)
             list_jobs

@@ -2,7 +2,7 @@
 # ============================================================================
 # GTA VI OS (Vice OS) State Manager Library
 # Version: 1.0
-# 
+#
 # Provides functions to manage build and installation state in a file.
 # Uses flock for atomic, concurrency-safe operations.
 # ============================================================================
@@ -61,23 +61,23 @@ state_init() {
 state_set() {
     local key="$1"
     local value="$2"
-    
+
     if [ -z "$key" ]; then
         log_error "state_set: Key cannot be empty."
         return 1
     fi
 
     __ensure_state_dir || return 1
-    
+
     # Use flock for atomic write to prevent race conditions
     (
         flock -x 9 || exit 1
-        
+
         # If the file doesn't exist, create it
         if [ ! -f "$STATE_FILE" ]; then
             echo "# GTA VI OS Build State" > "$STATE_FILE"
         fi
-        
+
         # Check if key exists, if so update it, otherwise append
         if grep -q "^${key}=" "$STATE_FILE"; then
             # Escape special characters in value for sed replacement
@@ -93,12 +93,12 @@ state_set() {
 # Usage: value=$(state_get "KEY")
 state_get() {
     local key="$1"
-    
+
     if [ ! -f "$STATE_FILE" ]; then
         return 0 # Return empty if file doesn't exist
     fi
-    
-    # Read lock is not strictly required for grep, but ensures consistency 
+
+    # Read lock is not strictly required for grep, but ensures consistency
     # if we were reading multiple values. For a single grep, it's safe.
     grep "^${key}=" "$STATE_FILE" 2>/dev/null | cut -d'=' -f2-
 }
@@ -109,9 +109,9 @@ state_check() {
     local key="$1"
     local expected_value="$2"
     local current_value
-    
+
     current_value=$(state_get "$key")
-    
+
     if [ "$current_value" == "$expected_value" ]; then
         return 0
     else
@@ -123,7 +123,7 @@ state_check() {
 # Usage: state_delete "KEY"
 state_delete() {
     local key="$1"
-    
+
     if [ ! -f "$STATE_FILE" ]; then
         return 0
     fi

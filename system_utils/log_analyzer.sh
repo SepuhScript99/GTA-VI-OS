@@ -7,14 +7,9 @@ set -Eeuo pipefail
 # event extraction from systemd journal and traditional log files.
 # ============================================================================
 
-WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd")
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
+WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 JOURNALCTL_CMD="journalctl"
@@ -47,19 +42,19 @@ check_analyzer_deps() {
 
 analyze_errors() {
     local lines="${1:-50}"
-    
+
     log_info "System Error Analysis (last $lines errors):"
     echo "==================================="
-    
+
     # Extract errors from journal
     "$JOURNALCTL_CMD" -p err --no-pager -n "$lines" 2>/dev/null | while IFS= read -r line; do
         echo "  $line"
     done
-    
+
     echo ""
     echo "Error Frequency (by service):"
     echo "-----------------------------------"
-    
+
     # Count errors by unit
     "$JOURNALCTL_CMD" -p err --no-pager -n 500 2>/dev/null | \
         "$AWK_CMD" -F'[][]' '{print $5}' | \
@@ -67,31 +62,31 @@ analyze_errors() {
         "$UNIQ_CMD" -c | \
         "$SORT_CMD" -rn | \
         head -n 10
-    
+
     echo "==================================="
 }
 
 analyze_warnings() {
     local lines="${1:-30}"
-    
+
     log_info "System Warning Analysis (last $lines warnings):"
     echo "==================================="
-    
+
     "$JOURNALCTL_CMD" -p warning --no-pager -n "$lines" 2>/dev/null | while IFS= read -r line; do
         echo "  $line"
     done
-    
+
     echo ""
     echo "Warning Frequency (by service):"
     echo "-----------------------------------"
-    
+
     "$JOURNALCTL_CMD" -p warning --no-pager -n 500 2>/dev/null | \
         "$AWK_CMD" -F'[][]' '{print $5}' | \
         "$SORT_CMD" | \
         "$UNIQ_CMD" -c | \
         "$SORT_CMD" -rn | \
         head -n 10
-    
+
     echo "==================================="
 }
 
@@ -100,7 +95,7 @@ analyze_warnings() {
 analyze_security() {
     log_info "Security Event Analysis:"
     echo "==================================="
-    
+
     # Failed SSH logins
     echo "1. Failed SSH Logins:"
     if [ -f "$AUTH_LOG" ]; then
@@ -117,7 +112,7 @@ analyze_security() {
         echo "   (auth.log not found)"
     fi
     echo ""
-    
+
     # Successful SSH logins
     echo "2. Successful SSH Logins:"
     if [ -f "$AUTH_LOG" ]; then
@@ -134,7 +129,7 @@ analyze_security() {
         echo "   (auth.log not found)"
     fi
     echo ""
-    
+
     # sudo usage
     echo "3. Sudo Usage:"
     if [ -f "$AUTH_LOG" ]; then
@@ -145,7 +140,7 @@ analyze_security() {
         echo "   (auth.log not found)"
     fi
     echo ""
-    
+
     # Fail2ban status
     echo "4. Fail2ban Status:"
     if command -v fail2ban-client > /dev/null 2>&1; then
@@ -159,7 +154,7 @@ analyze_security() {
     else
         echo "   (fail2ban not installed)"
     fi
-    
+
     echo "==================================="
 }
 
@@ -168,25 +163,25 @@ analyze_security() {
 analyze_boot() {
     log_info "Boot Time Analysis:"
     echo "==================================="
-    
+
     # Get boot duration
     local boot_time
     boot_time=$("$JOURNALCTL_CMD" -b 0 | "$GREP_CMD" "systemd-analyze" | "$AWK_CMD" '{print $NF}' | head -n 1)
-    
+
     if [ -n "$boot_time" ]; then
         echo "Last Boot Duration: $boot_time"
     else
         echo "Boot Duration: N/A"
     fi
-    
+
     echo ""
     echo "Boot Errors (current boot):"
     echo "-----------------------------------"
-    
+
     local boot_errors
     boot_errors=$("$JOURNALCTL_CMD" -b 0 -p err --no-pager 2>/dev/null | wc -l)
     echo "Total boot errors: $boot_errors"
-    
+
     if [ "$boot_errors" -gt 0 ]; then
         echo ""
         echo "Recent boot errors:"
@@ -194,11 +189,11 @@ analyze_boot() {
             echo "  $line"
         done
     fi
-    
+
     echo ""
     echo "Slowest Services:"
     echo "-----------------------------------"
-    
+
     # Get slowest services from boot
     if command -v systemd-analyze > /dev/null 2>&1; then
         systemd-analyze blame 2>/dev/null | head -n 10 | while read -r line; do
@@ -207,7 +202,7 @@ analyze_boot() {
     else
         echo "  (systemd-analyze not available)"
     fi
-    
+
     echo "==================================="
 }
 
@@ -216,17 +211,17 @@ analyze_boot() {
 search_pattern() {
     local pattern="$1"
     local lines="${2:-20}"
-    
+
     if [ -z "$pattern" ]; then
         log_error "Search pattern required."
         return 1
     fi
-    
+
     log_info "Searching logs for pattern: '$pattern' (last $lines matches)"
     echo "==================================="
-    
+
     "$JOURNALCTL_CMD" --no-pager -n 1000 2>/dev/null | "$GREP_CMD" -i "$pattern" | tail -n "$lines"
-    
+
     echo "==================================="
 }
 
@@ -235,19 +230,19 @@ search_pattern() {
 full_report() {
     log_info "=== Full Log Analysis Report ==="
     echo ""
-    
+
     echo "1. Error Summary:"
     analyze_errors 20
     echo ""
-    
+
     echo "2. Security Summary:"
     analyze_security
     echo ""
-    
+
     echo "3. Boot Summary:"
     analyze_boot
     echo ""
-    
+
     log_info "=== Report Complete ==="
 }
 
@@ -291,10 +286,10 @@ HELP
 
 main() {
     check_analyzer_deps
-    
+
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         errors|error)
             local lines="${1:-50}"

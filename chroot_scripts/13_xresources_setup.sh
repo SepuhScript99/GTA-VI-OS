@@ -28,7 +28,7 @@ main() {
     install_xres_config() {
         local home_dir="$1"
         local owner="$2"
-        
+
         cp "$xres_src" "$home_dir/.Xresources"
         chown "$owner" "$home_dir/.Xresources"
         chmod 644 "$home_dir/.Xresources"

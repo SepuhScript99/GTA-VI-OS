@@ -7,29 +7,13 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 CPU_DIR="/sys/devices/system/cpu"
 BLOCK_DIR="/sys/block"
 SYSCTL_CMD="sysctl"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Performance tuning failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
 
 # --- Helper Functions ---
 
@@ -42,7 +26,7 @@ check_tuner_deps() {
 show_status() {
     log_info "Performance Status:"
     echo "==================================="
-    
+
     # CPU Governors
     echo "CPU Governors:"
     for cpu in "$CPU_DIR"/cpu[0-9]*; do
@@ -53,7 +37,7 @@ show_status() {
             printf "  %-8s %s\n" "$cpu_num:" "$gov"
         fi
     done
-    
+
     echo ""
     echo "I/O Schedulers:"
     for dev in sda sdb nvme0n1 nvme0n2; do
@@ -63,13 +47,13 @@ show_status() {
             printf "  %-8s %s\n" "$dev:" "$sched"
         fi
     done
-    
+
     echo ""
     echo "Kernel Parameters:"
     printf "  Swappiness:       %s\n" "$(cat /proc/sys/vm/swappiness)"
     printf "  Caches:          %s\n" "$(cat /proc/sys/vm/vfs_cache_pressure)"
-    printf "  Max Map Count:   %s\n" "$(cat /proc/sys/vm/max_map_count"
-    
+    printf "  Max Map Count:   %s\n" "$(cat /proc/sys/vm/max_map_count)"
+
     echo "==================================="
 }
 
@@ -77,14 +61,14 @@ show_status() {
 
 set_governor() {
     local governor="$1"
-    
+
     if [ -z "$governor" ]; then
         log_error "Governor required (e.g., performance, powersave, schedutil)."
         return 1
     fi
-    
+
     log_info "Setting CPU governor to: $governor"
-    
+
     local set_count=0
     for cpu in "$CPU_DIR"/cpu[0-9]*; do
         if [ -f "$cpu/cpufreq/scaling_governor" ]; then
@@ -93,7 +77,7 @@ set_governor() {
             fi
         fi
     done
-    
+
     if [ "$set_count" -gt 0 ]; then
         log_success "Governor set to '$governor' on $set_count CPU(s)."
     else
@@ -107,35 +91,35 @@ set_governor() {
 set_io_scheduler() {
     local scheduler="$1"
     local device="${2:-all}"
-    
+
     if [ -z "$scheduler" ]; then
         log_error "Scheduler required (e.g., mq-deadline, kyber, none)."
         return 1
     fi
-    
+
     log_info "Setting I/O scheduler to: $scheduler"
-    
+
     local set_count=0
     for dev in "$BLOCK_DIR"/*; do
         local dev_name
         dev_name=$(basename "$dev")
-        
+
         # Skip loop/ram devices
         if [[ "$dev_name" == loop* ]] || [[ "$dev_name" == ram* ]]; then
             continue
         fi
-        
+
         if [ -f "$dev/queue/scheduler" ]; then
             local current
             current=$(cat "$dev/queue/scheduler" 2>/dev/null || echo "")
-            
+
             if echo "$scheduler" > "$dev/queue/scheduler" 2>/dev/null; then
                 log_info "  $dev_name: $scheduler"
-                set_count=$((set_count + 1)
+                set_count=$((set_count + 1))
             fi
         fi
     done
-    
+
     if [ "$set_count" -gt 0 ]; then
         log_success "I/O scheduler set on $set_count device(s)."
     else
@@ -148,14 +132,14 @@ set_io_scheduler() {
 
 set_swappiness() {
     local value="$1"
-    
+
     if ! [[ "$value" =~ ^[0-9]+$ ]] || [ "$value" -lt 0 ] || [ "$value" -gt 200 ]; then
         log_error "Swappiness must be a number between 0 and 200."
         return 1
     fi
-    
+
     log_info "Setting vm.swappiness to: $value"
-    
+
     "$SYSCTL_CMD" -w vm.swappiness="$value" > /dev/null 2>&1
     log_success "Swappiness set to: $value"
 }
@@ -164,14 +148,14 @@ set_swappiness() {
 
 apply_profile() {
     local profile="$1"
-    
+
     if [ -z "$profile" ]; then
         log_error "Profile required (performance, balanced, powersave)."
         return 1
     fi
-    
+
     log_info "Applying performance profile: $profile"
-    
+
     case "$profile" in
         performance)
             set_governor "performance"
@@ -243,11 +227,15 @@ HELP
 # --- Main ---
 
 main() {
-    check_tuner_deps
-    
     local command="${1:-help}"
+    if [ "$command" = "help" ] || [ "$command" = "--help" ] || [ "$command" = "-h" ]; then
+        show_help
+        exit 0
+    fi
     shift || true
-    
+
+    check_tuner_deps
+
     case "$command" in
         status|info)
             show_status
@@ -276,7 +264,7 @@ main() {
             fi
             set_swappiness "$val"
             ;;
-        apply-profile|profile)
+        apply-profile|profile|set-profile)
             local prof="${1:-}"
             if [ -z "$prof" ]; then
                 log_error "Profile name required."

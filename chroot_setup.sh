@@ -4,8 +4,8 @@ set -Eeuo pipefail
 # ============================================================================
 # GTA VI OS (Vice OS) Chroot Orchestrator
 # Version: 1.0 Stable
-# 
-# Mounts virtual filesystems, stages the payload, and executes modular 
+#
+# Mounts virtual filesystems, stages the payload, and executes modular
 # configuration scripts located in the chroot_scripts/ directory.
 # Utilizes lib/state_manager.sh for granular resumability.
 # ============================================================================
@@ -26,19 +26,29 @@ if [ ! -f "$WORKDIR/lib/state_manager.sh" ]; then
 fi
 source "$WORKDIR/lib/state_manager.sh"
 
+# --- Safe Unmount Helper ---
+safe_umount() {
+    local target="$1"
+    if mountpoint -q "$target" 2>/dev/null; then
+        umount "$target" 2>/dev/null || umount -l "$target" 2>/dev/null || true
+    fi
+}
+
 # --- Cleanup Function ---
 cleanup() {
     local exit_code=$?
     log_info "Cleaning up chroot mounts..."
-    
+
     # Prevent apt from keeping locks if we exit early
     rm -f "$CHROOTDIR/var/lib/dpkg/lock-frontend" 2>/dev/null || true
     rm -f "$CHROOTDIR/var/lib/apt/lists/lock" 2>/dev/null || true
-    
-    umount "$CHROOTDIR/dev" 2>/dev/null || true
-    umount "$CHROOTDIR/proc" 2>/dev/null || true
-    umount "$CHROOTDIR/sys" 2>/dev/null || true
-    
+
+    # Unmount virtual filesystems in reverse order
+    safe_umount "$CHROOTDIR/dev/pts"
+    safe_umount "$CHROOTDIR/dev"
+    safe_umount "$CHROOTDIR/proc"
+    safe_umount "$CHROOTDIR/sys"
+
     if [ $exit_code -eq 0 ]; then
         log_success "Chroot orchestration completed successfully."
     else
@@ -60,8 +70,38 @@ main() {
         exit 1
     fi
 
+    # Read target architecture from build configuration if present
+    local target_arch="amd64"
+    if [ -f "$CHROOTDIR/etc/vice-build.conf" ]; then
+        source "$CHROOTDIR/etc/vice-build.conf"
+        target_arch="${DEBIAN_ARCH:-amd64}"
+    fi
+
+    # If cross-building for ARM64 on x86_64 host, ensure qemu-aarch64-static is in place
+    local host_arch
+    host_arch=$(dpkg --print-architecture 2>/dev/null || uname -m)
+    case "$host_arch" in
+        x86_64|amd64) host_arch="amd64" ;;
+        aarch64|arm64) host_arch="arm64" ;;
+    esac
+
+    if [ "$target_arch" != "$host_arch" ]; then
+        log_info "Cross-architecture chroot ($host_arch -> $target_arch): ensuring qemu static binary..."
+        local qemu_src="/usr/bin/qemu-${target_arch}-static"
+        if [ "$target_arch" = "arm64" ]; then
+            qemu_src="/usr/bin/qemu-aarch64-static"
+        fi
+        if [ -f "$qemu_src" ] && [ ! -f "$CHROOTDIR/usr/bin/$(basename "$qemu_src")" ]; then
+            mkdir -p "$CHROOTDIR/usr/bin"
+            cp "$qemu_src" "$CHROOTDIR/usr/bin/"
+            chmod +x "$CHROOTDIR/usr/bin/$(basename "$qemu_src")"
+        fi
+    fi
+
     log_info "Mounting virtual filesystems..."
     mount --bind /dev "$CHROOTDIR/dev"
+    mkdir -p "$CHROOTDIR/dev/pts"
+    mount --bind /dev/pts "$CHROOTDIR/dev/pts"
     mount --bind /proc "$CHROOTDIR/proc"
     mount --bind /sys "$CHROOTDIR/sys"
 
@@ -78,13 +118,22 @@ main() {
     cp -r "$WORKDIR/config" "$CHROOTDIR/vice_payload/"
     cp -r "$WORKDIR/assets" "$CHROOTDIR/vice_payload/"
     cp -r "$WORKDIR/desktop" "$CHROOTDIR/vice_payload/"
+    cp -r "$WORKDIR/apps" "$CHROOTDIR/vice_payload/"
     cp -r "$WORKDIR/system_scripts" "$CHROOTDIR/vice_payload/"
+    cp -r "$WORKDIR/recovery" "$CHROOTDIR/vice_payload/"
     cp -r "$WORKDIR/lib" "$CHROOTDIR/vice_payload/"
     cp -r "$WORKDIR/chroot_scripts" "$CHROOTDIR/vice_payload/"
+
+    if [ -d "$WORKDIR/system_utils" ]; then
+        cp -r "$WORKDIR/system_utils" "$CHROOTDIR/vice_payload/"
+        chmod +x "$CHROOTDIR"/vice_payload/system_utils/*.sh 2>/dev/null || true
+    fi
 
     # Ensure all scripts in the payload are executable
     chmod +x "$CHROOTDIR"/vice_payload/chroot_scripts/*.sh 2>/dev/null || true
     chmod +x "$CHROOTDIR"/vice_payload/system_scripts/*.sh 2>/dev/null || true
+    chmod +x "$CHROOTDIR"/vice_payload/apps/*.sh 2>/dev/null || true
+    chmod +x "$CHROOTDIR"/vice_payload/recovery/*.sh 2>/dev/null || true
     chmod +x "$CHROOTDIR"/vice_payload/desktop/*.sh 2>/dev/null || true
     chmod +x "$CHROOTDIR"/vice_payload/desktop/*.py 2>/dev/null || true
 
@@ -94,12 +143,12 @@ main() {
         local script_name=$(basename "$script")
         # Create a state key based on the script name (e.g., CHROOT_00_base_config)
         local state_key="CHROOT_${script_name%.sh}"
-        
+
         if state_is_complete "$state_key"; then
             log_warn "Skipping completed chroot script: $script_name"
             continue
         fi
-        
+
         log_info "Executing chroot script: $script_name"
         if chroot "$CHROOTDIR" /bin/bash "/vice_payload/chroot_scripts/$script_name"; then
             state_mark_complete "$state_key"

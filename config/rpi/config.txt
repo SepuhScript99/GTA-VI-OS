@@ -1,0 +1,29 @@
+# GTA VI OS (Vice OS) Raspberry Pi Boot Configuration
+# Used on ARM64 Raspberry Pi 3, 4, 400, 5, Compute Modules, and Zero 2 W
+# Syntax: Standard Raspberry Pi config.txt
+
+# --- Architecture & Kernel ---
+arm_64bit=1
+kernel=vmlinuz
+initramfs initrd.img followkernel
+auto_initramfs=1
+
+# --- Video & Graphics (Full KMS) ---
+dtoverlay=vc4-kms-v3d
+max_framebuffers=2
+disable_overscan=1
+hdmi_force_hotplug=1
+
+# --- Audio & Interfaces ---
+dtparam=audio=on
+dtparam=i2c_arm=on
+dtparam=spi=on
+
+# --- Console & Debugging ---
+enable_uart=1
+uart_2ndstage=1
+
+# --- Memory & Power ---
+gpu_mem=128
+arm_boost=1
+os_check=0

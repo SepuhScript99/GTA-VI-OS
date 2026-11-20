@@ -1,41 +1,75 @@
-Changelog
+# Changelog
+
 All notable changes to this project will be documented in this file.
 
-The format is based on Keep a Changelog,and this project adheres to Semantic Versioning.
+The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-Unreleased
-1.0.0 - 2024-05-24
-Added
-Modular Build Pipeline: Build phases are now isolated in build/create_squashfs.sh, build/create_bootloader.sh, and build/pack_iso.sh.
-Modular Chroot Configuration: chroot_setup.sh now orchestrates numbered scripts in chroot_scripts/ (e.g., 00_base_config.sh to 07_polkit_setup.sh).
-Shared Libraries: Centralized Bash utilities in lib/common.sh and Python utilities in lib/python/vice_utils.py to enforce DRY principles.
-Testing & Validation Layer: Added tests/validate_iso.sh for structural integrity checks and tests/smoke_test_qemu.sh for runtime boot tests.
-Recovery Layer: Added recovery/rebuild_grub.sh and recovery/reset_network.sh for first-class system recovery.
-Backup Utility: Added system_scripts/backup_home.sh for user data snapshots.
-CI/CD Automation: Added .github/workflows/ci.yml to automate building, testing, and artifact uploading on GitHub.
-Desktop Session Fixes: Added desktop/dbus_session.sh to properly initialize DBus and Pipewire/PulseAudio before Openbox starts.
-XDG Autostart: Migrated compositor, wallpaper, and shell startup logic to standard .desktop entries in config/.
-Polkit Rules: Added config/polkit-1.preset to grant sudo and netdev groups desktop privileges without root passwords.
-Sudoers Config: Added config/sudoers snippet with secure_path for safer privilege escalation.
-Documentation: Added docs/ARCHITECTURE.md, docs/RECOVERY.md, and docs/CONTRIBUTING.md.
-VCS & IDE Config: Added .gitignore and .editorconfig for standardized development.
-Changed
-Login Flow: desktop/login.py now launches dbus_session.sh instead of openbox-session directly, fixing audio and DBus integration.
-NetworkManager: Disabled systemd-resolved in favor of NetworkManager DNS management to prevent race conditions on Live ISO.
-System Tuning: sysctl.conf updated with vm.page-cluster=0 for ZRAM optimization, TCP BBR, and expanded vm.max_map_count for gaming/containers.
-Installer Robustness: apps/vp-installer.sh now validates disk types, creates BIOS boot partitions correctly, and validates sudoers syntax before finishing.
-QSS Theme: desktop/style.qss expanded to cover toolbars, status bars, tabs, and sliders for a consistent neon aesthetic across all Qt apps.
-Fixed
-DNS Resolution: Fixed intermittent DNS failures on Live ISO by resolving NetworkManager and systemd-resolved conflicts.
-Focus Stealing: Fixed desktop shell stealing keyboard focus on boot by adding Qt.WA_ShowWithoutActivating.
-SquashFS Corruption: Fixed issue where failed SquashFS builds left partial artifacts that broke subsequent ISO packing.
-Login UI Freeze: Fixed authentication UI freeze by using QProcess and waitForStarted instead of blocking subprocess.Popen.
-Audio/DBus Failure: Fixed broken audio and desktop IPC by ensuring dbus-update-activation-environment is called before launching the window manager.
-0.1.0 - 2023-10-15
-Added
-Initial Alpha release of GTA VI OS (Vice OS).
-Monolithic build_iso.sh and chroot_setup.sh scripts.
-Basic PyQt5 desktop shell (vice_shell.py) and login screen (login.py).
-Debian Bookworm base with Openbox window manager.
-Basic Neon Miami aesthetic (wallpaper, picom config, QSS theme).
-Physical installer script (apps/vp-installer.sh).
+---
+
+## Unreleased
+
+### Added
+
+- Build Pipeline Hardening & Test Suite (`tests/test_build_pipeline.sh` — 13/13 passed):
+  - ARM64 cross-architecture support with two-stage debootstrap and `qemu-aarch64-static` staging.
+  - Deterministic SquashFS compression via `-all-root` and `-mkfs-time "$SOURCE_DATE_EPOCH"`.
+  - Retention of `/boot` in SquashFS for offline target installation via `vp-installer.sh`.
+  - Reproducible `efiboot.img` FAT generation with fixed volume ID (`-i 47544136`).
+  - Added `.gitignore` entries for obsolete snapshot directories (`iso_build_prep/`, `state/`).
+- Installer & Applications Hardening (`tests/test_apps.sh` — 21/21 passed):
+  - Live media detection and anti-self-overwrite protection in `apps/vp-installer.sh`.
+  - Safe partition unmounting (swapoff + umount) before disk partitioning.
+  - Dedicated 1024MB `/boot` partition when LUKS2 encryption is selected.
+  - Credential injection prevention via secure `chpasswd` stdin piping.
+  - Hardened sudoers configuration with `visudo` validation and root account locking.
+  - Machine-ID and SSH host key regeneration on target systems.
+  - Dynamic Docker repository architecture generation in `vp-docker.sh` and flock concurrency protection.
+- Recovery Framework Hardening (`tests/test_recovery_suite.sh` — all passed):
+  - Concurrency flock lock state protection (`LOCKED` and `MOUNTED` state tracking).
+  - Option 7 in `vice-recovery.sh`: "Restore Boot Themes (GRUB & Plymouth)".
+  - Chroot mount isolation using `--rbind` and `--make-rslave`.
+- Desktop application suite expanded to 81 components:
+  - Dual session architecture: X11 (Openbox) + Wayland (`labwc` compositor, `swaybg`, `swayidle`/`swaylock`).
+  - Session-aware animated login greeter (`desktop/login.py`) with dropdown session selection.
+  - 28-page Settings Center (`desktop/vice_settings.py`).
+  - First-boot welcome wizard (`desktop/welcome_wizard.py`).
+  - 69 dedicated PyQt5 tools across system, media, settings, and networking.
+- Validation Framework Enhancement:
+  - 6 validation scripts (`run_all.sh`, `validate_packages.sh`, `validate_rootfs.sh`, `validate_kernel.sh`, `validate_initramfs.sh`, `validate_iso.sh`).
+  - Resilient unified runner with pipeline error handling.
+
+### Changed
+
+- Reconciled all documentation drift across 19 files in `docs/` and root governance files (`PROJECT_STATUS.md`, `ROADMAP.md`, `TODO.md`, `README.md`, `ARCHITECTURE.md`).
+- Scripts across `system_utils/`, `system_scripts/`, `apps/`, `recovery/`, and `build/` migrated to working shared-library preamble.
+- `chroot_setup.sh` stages full `/vice_payload/` including `system_utils/` and `recovery/`.
+- `build_iso.sh` scopes `/proc`, `/sys`, `/dev` mounts for initramfs generation and dynamically resolves kernel images.
+
+### Fixed
+
+- Fixed `validation/run_all.sh` crashing under `pipefail` when `$ISODIR` is absent, and corrected skip counter (3 chroot + 1 ISO validator).
+- Fixed clobbering EXIT traps in `validation/validate_iso.sh` which previously destroyed `lib/common.sh` cleanup handlers.
+- Fixed destructive flock trap bug in `recovery/` scripts where secondary processes tearing down unmounted the active instance's filesystems.
+- Fixed stdout pollution in `vice-recovery.sh` partition selection capturing prompt text into device variables.
+- Fixed unhandled exit codes under `set -e` in `vice-recovery.sh` causing premature TUI termination.
+- Fixed `build/create_rootfs.sh` debootstrap retry failure by cleanly wiping dirty target directories before retrying.
+- Fixed BIOS GRUB rescue drop by embedding `search_fs_file`, `part_gpt`, `fat`, and display modules into `grub-mkstandalone`.
+- Fixed ARM64 El Torito boot entry ordering in `build/pack_iso.sh`.
+- Fixed unbound variable crash (`kernel_img`) in `build_iso.sh` on resumed builds.
+- Fixed security eval injection risk in `input_manager.sh` and unsafe home dir expansion in `user_manager.sh`.
+
+---
+
+## v0.3
+
+### Added
+
+- Validation framework.
+
+### Changed
+
+- Repository architecture.
+
+### Fixed
+
+- Various build improvements.

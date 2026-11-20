@@ -1,0 +1,15 @@
+# Vice OS ARM64 Additional Packages
+# Appended to config/packages.list when building with DEBIAN_ARCH=arm64
+# Provides ARM64-specific kernel, firmware, and bootloader packages.
+
+# --- ARM64 Kernel ---
+linux-image-arm64
+linux-headers-arm64
+
+# --- Raspberry Pi Firmware ---
+raspi-firmware
+firmware-brcm80211
+firmware-misc-nonfree
+
+# --- ARM64 Bootloader ---
+u-boot-rpi

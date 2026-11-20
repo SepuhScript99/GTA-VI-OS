@@ -28,9 +28,9 @@ main() {
     install_gtk_config() {
         local dest_dir="$1"
         local owner="$2"
-        
+
         mkdir -p "$dest_dir"
-        
+
         for file in settings.ini gtk.css; do
             if [ -f "$gtk_src_dir/$file" ]; then
                 cp "$gtk_src_dir/$file" "$dest_dir/$file"

@@ -33,15 +33,18 @@ main() {
         # 1. Copy all contents, including hidden files and nested directories
         cp -r "$skel_src_dir"/. "$dest_dir"/
         chown -R "$owner" "$dest_dir"
-        
+
         # 2. Ensure standard permissions: 755 for dirs, 644 for files
         find "$dest_dir" -type d -exec chmod 755 {} \;
         find "$dest_dir" -type f -exec chmod 644 {} \;
-        
+
         # 3. CRITICAL FIX: Restore executable permissions for scripts
-        # The openbox 'autostart' script must be executable to run on login
+        # The openbox and labwc 'autostart' scripts must be executable to run on login
         if [ -f "$dest_dir/.config/openbox/autostart" ]; then
             chmod 755 "$dest_dir/.config/openbox/autostart"
+        fi
+        if [ -f "$dest_dir/.config/labwc/autostart" ]; then
+            chmod 755 "$dest_dir/.config/labwc/autostart"
         fi
     }
 

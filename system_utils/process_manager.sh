@@ -7,24 +7,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Process operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
+install_cleanup
 
 # --- Helper Functions ---
 
@@ -56,12 +40,12 @@ list_all() {
 
 list_by_user() {
     local user="$1"
-    
+
     if [ -z "$user" ]; then
         log_error "Username required."
         return 1
     fi
-    
+
     log_info "Processes for user: $user"
     echo "==================================="
     ps -u "$user" -f
@@ -72,24 +56,24 @@ list_by_user() {
 
 find_by_name() {
     local name="$1"
-    
+
     if [ -z "$name" ]; then
         log_error "Process name required."
         return 1
     fi
-    
+
     log_info "Processes matching: $name"
     echo "==================================="
-    
+
     local results
     results=$(pgrep -a "$name")
-    
+
     if [ -z "$results" ]; then
         log_info "No processes found matching '$name'."
     else
         echo "$results"
     fi
-    
+
     echo "==================================="
 }
 
@@ -98,36 +82,36 @@ find_by_name() {
 kill_pid() {
     local pid="$1"
     local signal="${2:-TERM}"
-    
+
     validate_pid "$pid" || return 1
-    
+
     log_info "Sending $signal signal to PID $pid..."
-    
+
     if ! kill -"$signal" "$pid"; then
         log_error "Failed to send signal to PID $pid."
         log_info "Try running with sudo or use signal KILL."
         return 1
     fi
-    
+
     log_success "Signal $signal sent to PID $pid."
 }
 
 kill_by_name() {
     local name="$1"
     local signal="${2:-TERM}"
-    
+
     if [ -z "$name" ]; then
         log_error "Process name required."
         return 1
     fi
-    
+
     log_info "Sending $signal signal to processes matching: $name..."
-    
+
     if ! pkill -"$signal" "$name"; then
         log_error "Failed to send signal. No processes matched or permission denied."
         return 1
     fi
-    
+
     log_success "Signal $signal sent to matching processes."
 }
 
@@ -147,12 +131,12 @@ force_kill_name() {
 
 top_cpu() {
     local count="${1:-10}"
-    
+
     if ! [[ "$count" =~ ^[0-9]+$ ]]; then
         log_error "Count must be a number."
         return 1
     fi
-    
+
     log_info "Top $count processes by CPU usage:"
     echo "==================================="
     ps -eo pid,ppid,user,%cpu,%mem,cmd --sort=-%cpu | head -n $((count + 1))
@@ -161,12 +145,12 @@ top_cpu() {
 
 top_mem() {
     local count="${1:-10}"
-    
+
     if ! [[ "$count" =~ ^[0-9]+$ ]]; then
         log_error "Count must be a number."
         return 1
     fi
-    
+
     log_info "Top $count processes by Memory usage:"
     echo "==================================="
     ps -eo pid,ppid,user,%cpu,%mem,cmd --sort=-%mem | head -n $((count + 1))
@@ -218,10 +202,10 @@ HELP
 
 main() {
     check_process_deps
-    
+
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         list|all)
             list_all

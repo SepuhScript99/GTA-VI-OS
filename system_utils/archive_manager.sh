@@ -8,24 +8,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Archive operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
+install_cleanup
 
 # --- Helper Functions ---
 
@@ -48,14 +32,14 @@ create_archive() {
     local source_path="$1"
     local archive_name="${2:-}"
     local compression="${3:-gz}" # gz, bz2, xz, zip
-    
+
     validate_path "$source_path" || return 1
-    
+
     local parent_dir
     parent_dir=$(dirname "$source_path")
     local base_name
     base_name=$(basename "$source_path")
-    
+
     # Auto-generate archive name if not provided
     if [ -z "$archive_name" ]; then
         case "$compression" in
@@ -66,9 +50,9 @@ create_archive() {
             *)   log_error "Unsupported compression: $compression"; return 1 ;;
         esac
     fi
-    
+
     log_info "Creating archive: $archive_name from $source_path"
-    
+
     case "$compression" in
         gz)
             if ! tar -czf "$archive_name" -C "$parent_dir" "$base_name"; then
@@ -104,7 +88,7 @@ create_archive() {
             return 1
             ;;
     esac
-    
+
     log_success "Archive created: $archive_name"
     ls -lh "$archive_name" | awk '{print "Size:", $5}'
 }
@@ -114,15 +98,15 @@ create_archive() {
 extract_archive() {
     local archive="$1"
     local dest_dir="${2:-.}"
-    
+
     validate_path "$archive" || return 1
-    
+
     if [ ! -d "$dest_dir" ]; then
         mkdir -p "$dest_dir"
     fi
-    
+
     log_info "Extracting $archive to $dest_dir..."
-    
+
     case "$archive" in
         *.tar.gz|*.tgz)
             tar -xzf "$archive" -C "$dest_dir"
@@ -149,12 +133,12 @@ extract_archive() {
             return 1
             ;;
     esac
-    
+
     if [ $? -ne 0 ]; then
         log_error "Failed to extract archive."
         return 1
     fi
-    
+
     log_success "Archive extracted successfully to: $dest_dir"
 }
 
@@ -162,12 +146,12 @@ extract_archive() {
 
 list_archive() {
     local archive="$1"
-    
+
     validate_path "$archive" || return 1
-    
+
     log_info "Contents of $archive:"
     echo "==================================="
-    
+
     case "$archive" in
         *.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz|*.tar)
             tar -tf "$archive"
@@ -184,7 +168,7 @@ list_archive() {
             return 1
             ;;
     esac
-    
+
     echo "==================================="
 }
 
@@ -223,10 +207,10 @@ HELP
 
 main() {
     check_archive_deps
-    
+
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         create|archive)
             local source="${1:-}"

@@ -1,15 +1,15 @@
-// GTA VI OS (Vice OS) APT Configuration
-// Globally disables the installation of "Recommends" and "Suggests" packages.
-// This enforces the lightweight philosophy of the OS, ensuring that users
-// only get exactly what they ask for when installing software.
+# GTA VI OS (Vice OS) APT Configuration
+# Globally disables the installation of "Recommends" and "Suggests" packages.
+# This enforces the lightweight philosophy of the OS, ensuring that users
+# only get exactly what they ask for when installing software.
 
 APT::Install-Recommends "false";
 APT::Install-Suggests "false";
 
-// Ensure autoremove cleans up suggests/recommends if they were pulled in
+# Ensure autoremove cleans up suggests/recommends if they were pulled in
 APT::AutoRemove::Recommends "true";
 APT::AutoRemove::Suggests "true";
 
-// Automatically retry downloads up to 3 times on transient network errors.
-// This significantly improves the user experience on flaky connections.
+# Automatically retry downloads up to 3 times on transient network errors.
+# This significantly improves the user experience on flaky connections.
 Acquire::Retries "3";

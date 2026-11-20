@@ -6,6 +6,8 @@ image/
 scratch/
 out/
 backups/
+state/
+iso_build_prep/
 
 # Logs
 *.log

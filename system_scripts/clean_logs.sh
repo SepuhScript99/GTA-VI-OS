@@ -7,13 +7,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 LOCKFILE="/var/lock/vice-clean-logs.lock"
 
@@ -34,10 +29,25 @@ cleanup() {
 trap cleanup EXIT SIGINT SIGTERM
 
 # --- Main ---
+show_help() {
+    cat <<HELP
+GTA VI OS System Log Cleaner
+
+Usage: $0
+Options:
+  help, --help, -h   Show this help message
+HELP
+}
+
 main() {
+    if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+        show_help
+        exit 0
+    fi
+
     check_root
     check_dependencies "systemctl" "find" "stat" "truncate"
-    
+
     # Prevent concurrent execution
     exec 9>"$LOCKFILE"
     if ! flock -n 9; then
@@ -62,7 +72,7 @@ main() {
     # Truncate large active log files to free space without breaking the daemon
     log_info "Truncating active log files larger than 50MB..."
     local max_size_bytes=$((50 * 1024 * 1024)) # 50MB in bytes
-    
+
     while IFS= read -r -d '' logfile; do
         local size
         size=$(stat -c%s "$logfile" 2>/dev/null || echo 0)

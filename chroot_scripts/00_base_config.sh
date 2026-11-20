@@ -13,7 +13,8 @@ if [ ! -f /vice_payload/lib/common.sh ]; then
 fi
 source /vice_payload/lib/common.sh
 
-log_info "Installing base configuration files..."
+main() {
+    log_info "Installing base configuration files..."
 
 # 1. Hostname
 if [ -f /vice_payload/config/hostname ]; then
@@ -45,7 +46,18 @@ else
     exit 1
 fi
 
-# 4. APT Sources
+# 4. GRUB Defaults
+if [ -f /vice_payload/config/default/grub ]; then
+    mkdir -p /etc/default
+    cp /vice_payload/config/default/grub /etc/default/grub
+    chown root:root /etc/default/grub
+    chmod 644 /etc/default/grub
+    log_info "Installed GRUB defaults."
+else
+    log_warn "config/default/grub not found in payload. Using defaults."
+fi
+
+# 5. APT Sources
 if [ -f /vice_payload/config/apt/sources.list ]; then
     cp /vice_payload/config/apt/sources.list /etc/apt/sources.list
     chown root:root /etc/apt/sources.list
@@ -62,4 +74,7 @@ if ! apt-get update; then
     apt-get update
 fi
 
-log_success "Base configuration completed."
+    log_success "Base configuration completed."
+}
+
+main "$@"

@@ -1,77 +1,81 @@
-User Guide - GTA VI OS (Vice OS)
-Welcome to Vice OS! This guide will help you navigate and use the custom Neon Miami desktop environment.
+# User Guide - GTA VI OS (Vice OS)
 
-🖥️ The Desktop Environment
-Vice OS uses a lightweight Openbox environment customized with a PyQt5 desktop shell.
+Welcome to Vice OS! This guide will help you navigate and master the Neon Miami desktop environment.
 
-TopBar
-Located at the top of the screen, the TopBar displays:
+---
 
-System Info: Real-time CPU and RAM usage (Magenta).
-Clock: Current date and time (Cyan).
-Exit Button: Click "Exit" to log out of the session.
-Dock
-Located at the bottom center of the screen, the Dock contains quick-launch icons for:
+## 🖥️ The Desktop Environment
 
-Terminal (xterm)
-Web Browser (firefox)
-File Manager (thunar)
-Editor (geany)
-Note: The Dock only displays applications that are currently installed.
+Vice OS offers two session profiles:
+1. **X11 Session**: Openbox stacking window manager combined with a custom PyQt5 desktop shell and panel.
+2. **Wayland Session**: Modern `labwc` compositor providing Wayland performance, `swaybg` wallpaper, and `swayidle`/`swaylock` security.
 
-⌨️ Keyboard Shortcuts
-Vice OS includes comprehensive keyboard shortcuts for power users.
+### TopBar & Panel
+- **System Metrics**: Real-time CPU, RAM, and disk utilization monitors.
+- **System Tray**: NetworkManager (`nm-applet`), PipeWire volume (`pavucontrol`), and battery indicator.
+- **Clock**: Date and time with quick calendar flyout.
+- **Exit**: Click the logout button to open the Vice Session Manager dialog.
 
-Window Management
-Super + T: Open Terminal
-Super + E: Open File Manager
-Super + F: Open Web Browser
-Super + Space: Open Run Menu (type a command and press Enter)
-Super + D: Toggle Show Desktop (Minimize/Restore all)
-Alt + Tab: Cycle through windows
-Alt + F4: Close active window
-Super + Left: Snap window to left half
-Super + Right: Snap window to right half
-Super + Up: Maximize window
-Super + Down: Unmaximize / Snap to bottom half
-Super + V: Toggle Vertical Maximize
-Desktop Navigation
-Ctrl + Alt + Left/Right: Switch between virtual desktops
-Media Keys
-Volume Up/Down/Mute: Controls system volume (via PipeWire/PulseAudio)
-Brightness Up/Down: Controls screen backlight (on laptops)
-Print Screen: Launches the screenshot tool (gnome-screenshot)
-🖱️ Mouse Actions
-Right-Click Desktop: Opens the root menu (Applications, Settings, Exit).
-Left-Click Desktop: Focuses the desktop.
-Middle-Click Titlebar: Sends the window to the back.
-Drag Titlebar: Moves the window.
-Drag Window Border: Resizes the window.
-⚙️ Vice OS Settings Menu
-The Settings Menu is a text-based user interface (TUI) for system administration.
+### Dock
+Located at the bottom of the screen, the dock provides quick access to frequently used applications:
+- Vice Terminal / xterm
+- Firefox Web Browser
+- Thunar File Manager
+- Vice Settings Center
+- Vice Software Center
 
-Accessing the Menu
-Right-click the desktop and select Vice OS Settings.
-Or, open a terminal and run sudo /usr/local/bin/vice-os-menu.sh.
-Options
-Install Vice OS to Disk: Launches the physical installer.
-Install Visual Studio Code: Installs the VS Code editor.
-Install Docker Engine: Installs Docker and Docker Compose.
-Backup Home Directory: Creates a compressed archive of /home/vice.
-Manual System Update: Runs apt update and apt upgrade.
-Reset Network Configuration: Resets all network settings to defaults.
-Reset User Password: Resets the password for a specified user (requires root).
-Reinstall GRUB Bootloader: Repairs a broken GRUB installation.
-Clean System Logs: Removes old journal entries and log files.
-Repair Broken Packages: Fixes dpkg and apt database issues.
-View System Status: Displays OS version, uptime, CPU load, memory, and disk usage.
-Exit: Closes the menu.
-🌐 Network Configuration
-Vice OS uses NetworkManager to handle network connections.
+---
 
-Wi-Fi: Use nmtui in the terminal or install a network applet (like nm-applet) to connect to Wi-Fi networks.
-Ethernet: Wired connections should be configured automatically via DHCP.
-🔊 Audio
-Vice OS uses PipeWire with PulseAudio compatibility for audio.
+## ⌨️ Keyboard Shortcuts
 
-Volume Control: Use the media keys on your keyboard or run pavucontrol in the terminal to open the PulseAudio Volume Control panel.
+### Window Management
+- `Super + Space`: Open Run Menu / Application Launcher
+- `Super + T`: Open Terminal
+- `Super + E`: Open File Manager
+- `Super + F`: Open Web Browser
+- `Super + D`: Show Desktop (Minimize all windows)
+- `Alt + Tab`: Cycle through open windows
+- `Alt + F4`: Close active window
+- `Super + Left`: Snap window to left half
+- `Super + Right`: Snap window to right half
+- `Super + Up`: Maximize window
+- `Super + Down`: Unmaximize / Restore window
+
+### Session & Locking
+- `Super + L` or `Ctrl + Alt + L`: Lock screen (`swaylock` under Wayland, or session locker under X11)
+- `Ctrl + Alt + Del`: Launch Vice Task Manager
+
+### Media & Hardware Keys
+- `Volume Up / Down / Mute`: Adjust system volume via PipeWire
+- `Brightness Up / Down`: Adjust display backlight
+- `Print Screen`: Launch Vice Screenshot tool
+
+---
+
+## ⚙️ Vice OS Settings & Control Center
+
+### Graphical Settings Center (`vice_settings.py`)
+Launch from the dock or run menu. Features 28 dedicated configuration pages:
+- **Display**: Resolution, refresh rate, rotation, multi-monitor layout.
+- **Sound**: Default output/input devices, per-app volume sliders.
+- **Appearance & Themes**: 8 neon color presets, fonts, icon themes.
+- **Network**: Wi-Fi connections, VPN profiles, network shares.
+- **Power**: Battery health, power profiles, sleep/suspend timeouts.
+- **Diagnostics**: 19-test hardware and system integrity suite.
+
+### TUI Administration Menu (`vice-os-menu.sh`)
+For terminal environments:
+```bash
+sudo /usr/local/bin/vice-os-menu.sh
+```
+
+---
+
+## 📦 Installing & Managing Applications
+
+- **Vice Software Center** (`vice_software_center.py`): Discover and install Debian packages and Flatpak applications.
+- **Flatpak Integration**: Enable thousands of sandboxed applications via `vp-flatpak.sh`.
+- **APT Package Manager**: Standard Debian commands:
+  ```bash
+  sudo apt update && sudo apt install <package-name>
+  ```

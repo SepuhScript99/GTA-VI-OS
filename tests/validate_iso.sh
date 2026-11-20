@@ -30,11 +30,16 @@ main() {
         exit 1
     fi
 
-    # 2. Check file size (must be > 0)
+    # 2. Check file size (minimum 500MB for a functional Live ISO)
     local size_bytes
     size_bytes=$(stat -c%s "$ISO_PATH")
+    local min_size=$((500 * 1024 * 1024))
     if [ "$size_bytes" -le 0 ]; then
         log_error "ISO file is zero bytes."
+        exit 1
+    fi
+    if [ "$size_bytes" -lt "$min_size" ]; then
+        log_error "ISO is too small ($(du -sh "$ISO_PATH" | awk '{print $1}')). Expected at least 500MB."
         exit 1
     fi
     local size_human
@@ -68,7 +73,7 @@ main() {
     fi
 
     # Check for EFI boot image
-    if echo "$xorriso_report" | grep -q "EFI boot image"; then
+    if echo "$xorriso_report" | grep -qiE "EFI boot|UEFI|efiboot\.img"; then
         log_success "EFI boot image found."
     else
         log_error "EFI boot image MISSING."
@@ -85,15 +90,57 @@ main() {
     # 5. Verify critical payload files exist inside the ISO
     log_info "Checking critical payload files inside ISO..."
     local critical_files=("/vmlinuz" "/initrd.img" "/VICE_OS" "/live/filesystem.squashfs" "/boot/grub/grub.cfg")
-    
+
     for file in "${critical_files[@]}"; do
-        if xorriso -indev "$ISO_PATH" -find "/=$file" 2>/dev/null | grep -q "$file"; then
+        if xorriso -indev "$ISO_PATH" -find "$file" -maxdepth 0 2>/dev/null | grep -q "$file"; then
             log_success "Found: $file"
         else
             log_error "Missing critical file in ISO: $file"
             exit 1
         fi
     done
+
+    # 6. Validate SquashFS filesystem integrity
+    log_info "Validating SquashFS filesystem integrity..."
+    local squashfs_size_bytes
+    squashfs_size_bytes=$(xorriso -indev "$ISO_PATH" -find /live/filesystem.squashfs -ls 2>/dev/null | awk '/filesystem.squashfs/{print $5}')
+    if [ -z "$squashfs_size_bytes" ] || [ "$squashfs_size_bytes" -le 1000000 ]; then
+        log_error "SquashFS is too small or missing (${squashfs_size_bytes:-0} bytes)."
+        exit 1
+    fi
+    log_success "SquashFS size: $(awk "BEGIN {printf \"%.1fM\", $squashfs_size_bytes / 1048576}")"
+
+    # 7. Validate kernel and initramfs sizes
+    log_info "Validating kernel and initramfs sizes..."
+    local kernel_size_bytes
+    kernel_size_bytes=$(xorriso -indev "$ISO_PATH" -find /vmlinuz -ls 2>/dev/null | awk '/vmlinuz/{print $5}')
+    local initrd_size_bytes
+    initrd_size_bytes=$(xorriso -indev "$ISO_PATH" -find /initrd.img -ls 2>/dev/null | awk '/initrd.img/{print $5}')
+
+    if [ -z "$kernel_size_bytes" ] || [ "$kernel_size_bytes" -lt 5000000 ]; then
+        log_error "Kernel image is too small or missing (${kernel_size_bytes:-0} bytes)."
+        exit 1
+    fi
+    log_success "Kernel size: $(awk "BEGIN {printf \"%.1fM\", $kernel_size_bytes / 1048576}")"
+
+    if [ -z "$initrd_size_bytes" ] || [ "$initrd_size_bytes" -lt 1000000 ]; then
+        log_error "Initramfs image is too small or missing (${initrd_size_bytes:-0} bytes)."
+        exit 1
+    fi
+    log_success "Initramfs size: $(awk "BEGIN {printf \"%.1fM\", $initrd_size_bytes / 1048576}")"
+
+    # 8. Check for single kernel version (no stale kernels)
+    log_info "Checking for stale kernel files..."
+    local vmlinuz_count
+    vmlinuz_count=$(xorriso -indev "$ISO_PATH" -find /vmlinuz* -ls 2>/dev/null | grep -c "vmlinuz" || true)
+    local initrd_count
+    initrd_count=$(xorriso -indev "$ISO_PATH" -find /initrd* -ls 2>/dev/null | grep -c "initrd" || true)
+    if [ "$vmlinuz_count" -gt 1 ]; then
+        log_warn "Multiple vmlinuz images found ($vmlinuz_count). Only the latest is used."
+    fi
+    if [ "$initrd_count" -gt 1 ]; then
+        log_warn "Multiple initrd images found ($initrd_count). Only the latest is used."
+    fi
 
     log_success "=== ISO Validation Complete: Artifact is structurally sound ==="
 }

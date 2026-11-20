@@ -12,6 +12,7 @@ if [ -f /opt/vice-os/lib/common.sh ]; then
     source /opt/vice-os/lib/common.sh
 else
     log_info() { echo "[INFO] $1"; }
+    log_warn() { echo "[WARN] $1" >&2; }
     log_error() { echo "[ERROR] $1" >&2; }
 fi
 
@@ -80,7 +81,16 @@ main() {
         fi
     fi
 
-    # 7. Hand off to the window manager
+    # 7. Launch session watchdog (auto-restarts vice_shell.py on crash)
+    if [ -f /opt/vice-os/session_watchdog.py ]; then
+        log_info "Starting session watchdog..."
+        nohup python3 /opt/vice-os/session_watchdog.py > /dev/null 2>&1 &
+        disown
+    else
+        log_warn "session_watchdog.py not found. Shell crash recovery disabled."
+    fi
+
+    # 8. Hand off to the window manager
     log_info "Launching Openbox session..."
     if command -v openbox-session > /dev/null 2>&1; then
         exec openbox-session

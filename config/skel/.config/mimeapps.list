@@ -1,13 +1,13 @@
 [Default Applications]
 # Web
-text/html=firefox.desktop
-x-scheme-handler/http=firefox.desktop
-x-scheme-handler/https=firefox.desktop
-x-scheme-handler/about=firefox.desktop
-x-scheme-handler/unknown=firefox.desktop
+text/html=firefox-esr.desktop
+x-scheme-handler/http=firefox-esr.desktop
+x-scheme-handler/https=firefox-esr.desktop
+x-scheme-handler/about=firefox-esr.desktop
+x-scheme-handler/unknown=firefox-esr.desktop
 
 # Documents / PDF
-application/pdf=firefox.desktop
+application/pdf=firefox-esr.desktop
 
 # Video / Audio
 video/mp4=mpv.desktop

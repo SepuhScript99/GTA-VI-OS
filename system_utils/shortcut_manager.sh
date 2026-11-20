@@ -7,28 +7,12 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 APP_DIR="${HOME}/.local/share/applications"
 DESKTOP_DIR="${HOME}/Desktop"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Shortcut operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
 
 # --- Helper Functions ---
 
@@ -39,15 +23,15 @@ ensure_dirs() {
 
 validate_exec() {
     local exec_cmd="$1"
-    
+
     # Extract the binary path (first word before space, ignore variables like %f)
     local binary
     binary=$(echo "$exec_cmd" | awk '{print $1}')
-    
+
     # Remove quotes if present
     binary="${binary//\"/}"
     binary="${binary//\'/}"
-    
+
     # Check if it's an absolute path or a command in PATH
     if [[ "$binary" == /* ]]; then
         if [ ! -x "$binary" ]; then
@@ -71,24 +55,24 @@ create_shortcut() {
     local exec_cmd="$2"
     local icon="${3:-applications-other}"
     local terminal="${4:-false}"
-    local categories="${5:-Utility;"
+    local categories="${5:-Utility;}"
     local put_on_desktop="${6:-no}"
-    
+
     if [ -z "$name" ] || [ -z "$exec_cmd" ]; then
         log_error "Name and Exec command are required."
         return 1
     fi
-    
+
     ensure_dirs
-    
+
     local filename
     filename=$(sanitize_filename "$name")
     local desktop_file="${APP_DIR}/${filename}.desktop"
-    
+
     log_info "Creating shortcut: $name ($desktop_file)"
-    
+
     validate_exec "$exec_cmd"
-    
+
     # Write the .desktop file
     cat <<DESKTOP_FILE > "$desktop_file"
 [Desktop Entry]
@@ -100,16 +84,16 @@ Icon=$icon
 Terminal=$terminal
 Categories=$categories
 DESKTOP_FILE
-    
+
     chmod +x "$desktop_file"
-    
+
     # Optionally copy to Desktop
     if [ "$put_on_desktop" == "yes" ] || [ "$put_on_desktop" == "--desktop" ]; then
         cp "$desktop_file" "${DESKTOP_DIR}/"
         chmod +x "${DESKTOP_DIR}/${filename}.desktop"
         log_info "Shortcut also placed on Desktop."
     fi
-    
+
     log_success "Shortcut created successfully."
 }
 
@@ -118,9 +102,9 @@ DESKTOP_FILE
 list_shortcuts() {
     log_info "User Application Shortcuts:"
     echo "==================================="
-    
+
     ensure_dirs
-    
+
     local found=false
     for file in "$APP_DIR"/*.desktop; do
         if [ -f "$file" ]; then
@@ -132,11 +116,11 @@ list_shortcuts() {
             found=true
         fi
     done
-    
+
     if [ "$found" == false ]; then
         log_info "No user shortcuts found."
     fi
-    
+
     echo "==================================="
 }
 
@@ -144,23 +128,23 @@ list_shortcuts() {
 
 remove_shortcut() {
     local name="$1"
-    
+
     if [ -z "$name" ]; then
         log_error "Shortcut name required."
         return 1
     fi
-    
+
     local filename
     filename=$(sanitize_filename "$name")
     local desktop_file="${APP_DIR}/${filename}.desktop"
     local desktop_link="${DESKTOP_DIR}/${filename}.desktop"
-    
+
     if [ ! -f "$desktop_file" ]; then
         log_error "Shortcut '$name' not found."
         log_info "Use '$0 list' to see available shortcuts."
         return 1
     fi
-    
+
     log_info "Removing shortcut: $name"
     rm -f "$desktop_file" "$desktop_link"
     log_success "Shortcut removed."
@@ -207,7 +191,7 @@ HELP
 main() {
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         create|add)
             local name="${1:-}"
@@ -222,14 +206,14 @@ main() {
             local terminal="${2:-false}"
             local categories="${3:-Utility;}"
             local desktop="no"
-            
+
             # Check for --desktop flag in remaining args
             for arg in "$@"; do
                 if [ "$arg" == "--desktop" ]; then
                     desktop="yes"
                 fi
             done
-            
+
             create_shortcut "$name" "$exec_cmd" "$icon" "$terminal" "$categories" "$desktop"
             ;;
         list|ls)

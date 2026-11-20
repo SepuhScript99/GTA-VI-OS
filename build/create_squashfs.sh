@@ -7,13 +7,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Arguments ---
 CHROOTDIR="${1:?Error: CHROOTDIR argument required}"
@@ -42,14 +37,31 @@ main() {
     # Remove existing squashfs to prevent using stale artifacts
     rm -f "$SQUASHFS_TARGET"
 
-    # Attempt XZ compression (high ratio, slower)
-    if ! mksquashfs "$CHROOTDIR" "$SQUASHFS_TARGET" -comp xz -e boot; then
+    # Reproducibility and exclude options
+    local epoch="${SOURCE_DATE_EPOCH:-$(date +%s)}"
+    local common_opts=("-all-root" "-mkfs-time" "$epoch")
+
+    # Exclude temporary payload and caches if present; retain /boot by default for offline installer support
+    local exclude_args=("-e" "vice_payload")
+    if [ "${EXCLUDE_BOOT:-false}" = "true" ]; then
+        log_info "EXCLUDE_BOOT=true: Excluding /boot from SquashFS."
+        exclude_args+=("boot")
+    fi
+
+    # Attempt Zstd compression (fastest decompression, good ratio)
+    # Zstd is supported by Linux kernel since 5.19 (Bookworm has 6.1).
+    if mksquashfs "$CHROOTDIR" "$SQUASHFS_TARGET" -comp zstd -Xcompression-level 15 "${common_opts[@]}" "${exclude_args[@]}"; then
+        log_success "SquashFS created with Zstd compression."
+    elif mksquashfs "$CHROOTDIR" "$SQUASHFS_TARGET" -comp xz "${common_opts[@]}" "${exclude_args[@]}"; then
+        log_warn "Zstd not available. Falling back to XZ compression."
+        log_success "SquashFS created with XZ compression."
+    else
         log_warn "XZ compression failed. Falling back to GZIP..."
-        # Fallback to GZIP (lower ratio, faster)
-        if ! mksquashfs "$CHROOTDIR" "$SQUASHFS_TARGET" -comp gzip -e boot; then
-            log_error "SquashFS creation failed with both XZ and GZIP."
+        if ! mksquashfs "$CHROOTDIR" "$SQUASHFS_TARGET" -comp gzip "${common_opts[@]}" "${exclude_args[@]}"; then
+            log_error "SquashFS creation failed with Zstd, XZ, and GZIP."
             exit 1
         fi
+        log_success "SquashFS created with GZIP compression."
     fi
 
     local size

@@ -1,9 +1,13 @@
 [Desktop Entry]
 Type=Application
 Name=Vice OS Settings
-Comment=Open the Vice OS system configuration and installation menu
-Exec=xterm -title "Vice OS Settings" -e /usr/local/bin/vice-os-menu.sh
+Comment=System configuration and settings
+Exec=/opt/vice-os/vice_settings.py
 Icon=preferences-system
 Terminal=false
 StartupNotify=false
 Categories=Settings;System;
+
+[Desktop Action TUI]
+Name=Terminal Settings Menu
+Exec=xterm -title "Vice OS Settings" -e /usr/local/bin/vice-os-menu.sh

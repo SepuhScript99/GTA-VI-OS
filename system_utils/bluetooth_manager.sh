@@ -8,34 +8,18 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 BTLCTL_CMD="bluetoothctl"
 SYSTEMCTL_CMD="systemctl"
 
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Bluetooth operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
-
 # --- Helper Functions ---
 
 check_bluetooth_deps() {
     check_dependencies "bluetoothctl"
-    
+
     # Check if bluetooth service is running
     if ! $SYSTEMCTL_CMD is-active --quiet bluetooth 2>/dev/null; then
         log_warn "Bluetooth service is not running. Attempting to start..."
@@ -87,22 +71,22 @@ get_power_status() {
 
 scan_devices() {
     log_info "Scanning for Bluetooth devices (10 seconds)..."
-    
+
     # Start scan
     echo -e "power on\nscan on\nquit" | $BTLCTL_CMD > /dev/null 2>&1
-    
+
     # Wait for discovery
     sleep 10
-    
+
     # Stop scan and get devices
     local devices
     devices=$(echo -e "scan off\ndevices\nquit" | $BTLCTL_CMD 2>/dev/null | grep "Device" | sed 's/Device //')
-    
+
     if [ -z "$devices" ]; then
         log_warn "No Bluetooth devices found."
         return 1
     fi
-    
+
     log_info "Discovered Devices:"
     echo "==================================="
     echo "$devices"
@@ -112,15 +96,15 @@ scan_devices() {
 list_paired_devices() {
     log_info "Paired Bluetooth Devices:"
     echo "==================================="
-    
+
     local devices
     devices=$(echo -e "devices Paired\nquit" | $BTLCTL_CMD 2>/dev/null | grep "Device" | sed 's/Device //')
-    
+
     if [ -z "$devices" ]; then
         log_warn "No paired devices found."
         return 1
     fi
-    
+
     echo "$devices"
     echo "==================================="
 }
@@ -129,94 +113,94 @@ list_paired_devices() {
 
 pair_device() {
     local mac="$1"
-    
+
     validate_mac "$mac" || return 1
-    
+
     log_info "Pairing with device: $mac"
-    
+
     # Set agent to default and attempt pairing
     if ! echo -e "agent on\ndefault-agent\npair $mac\nquit" | $BTLCTL_CMD 2>&1 | grep -q "Pairing successful"; then
         log_error "Failed to pair with $mac."
         log_info "Ensure the device is in pairing mode."
         return 1
     fi
-    
+
     log_success "Successfully paired with $mac."
 }
 
 trust_device() {
     local mac="$1"
-    
+
     validate_mac "$mac" || return 1
-    
+
     log_info "Trusting device: $mac"
-    
+
     if ! echo -e "trust $mac\nquit" | $BTLCTL_CMD 2>&1 | grep -q "trust succeeded"; then
         log_error "Failed to trust $mac."
         return 1
     fi
-    
+
     log_success "Device $mac trusted."
 }
 
 untrust_device() {
     local mac="$1"
-    
+
     validate_mac "$mac" || return 1
-    
+
     log_info "Untrusting device: $mac"
-    
+
     if ! echo -e "untrust $mac\nquit" | $BTLCTL_CMD > /dev/null 2>&1; then
         log_error "Failed to untrust $mac."
         return 1
     fi
-    
+
     log_success "Device $mac untrusted."
 }
 
 connect_device() {
     local mac="$1"
-    
+
     validate_mac "$mac" || return 1
-    
+
     log_info "Connecting to device: $mac"
-    
+
     if ! echo -e "connect $mac\nquit" | $BTLCTL_CMD 2>&1 | grep -q "Connection successful"; then
         log_error "Failed to connect to $mac."
         log_info "Ensure the device is powered on and in range."
         return 1
     fi
-    
+
     log_success "Connected to $mac."
 }
 
 disconnect_device() {
     local mac="$1"
-    
+
     validate_mac "$mac" || return 1
-    
+
     log_info "Disconnecting from device: $mac"
-    
+
     if ! echo -e "disconnect $mac\nquit" | $BTLCTL_CMD 2>&1 | grep -q "Disconnected"; then
         log_error "Failed to disconnect from $mac."
         return 1
     fi
-    
+
     log_success "Disconnected from $mac."
 }
 
 remove_device() {
     local mac="$1"
-    
+
     validate_mac "$mac" || return 1
-    
+
     log_info "Removing device: $mac"
-    
+
     if ! echo -e "remove $mac\nquit" | $BTLCTL_CMD 2>&1 | grep -q "Device removed"; then
         log_error "Failed to remove $mac."
         return 1
     fi
-    
+
     log_success "Device $mac removed."
 }
 
@@ -224,9 +208,9 @@ remove_device() {
 
 show_device_info() {
     local mac="$1"
-    
+
     validate_mac "$mac" || return 1
-    
+
     log_info "Device Information: $mac"
     echo "==================================="
     echo -e "info $mac\nquit" | $BTLCTL_CMD 2>/dev/null | grep -v "^\[" | grep -v "^Agent" | grep -v "^Menu"
@@ -237,7 +221,7 @@ show_device_info() {
 
 show_help() {
     cat <<HELP
-GTA VI OS (Vice OS) Bluetooth Manager
+GTA VI OS (Vice OS) Bluetooth Manager (Bluetooth Control)
 
 Usage: $0 <command> [options]
 
@@ -277,11 +261,15 @@ HELP
 # --- Main ---
 
 main() {
-    check_bluetooth_deps
-    
     local command="${1:-help}"
+    if [ "$command" = "help" ] || [ "$command" = "--help" ] || [ "$command" = "-h" ]; then
+        show_help
+        exit 0
+    fi
     shift || true
-    
+
+    check_bluetooth_deps
+
     case "$command" in
         power-on)
             power_on

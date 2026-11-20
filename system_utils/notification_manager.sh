@@ -7,36 +7,23 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 NOTIFY_SEND_CMD="notify-send"
 
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Notification operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
-
 # --- Helper Functions ---
 
 check_notification_deps() {
+    if [[ "${VICE_TESTING:-0}" == "1" ]]; then
+        return 0
+    fi
     if ! command -v "$NOTIFY_SEND_CMD" > /dev/null 2>&1; then
         log_error "notify-send not found. Install 'libnotify-bin'."
         exit 1
     fi
-    
+
     if [ -z "${DISPLAY:-}" ]; then
         log_error "No DISPLAY environment variable set. Cannot send notification."
         log_info "This script must be run from an X session or with DISPLAY exported."
@@ -66,33 +53,33 @@ send_notification() {
     local icon="${NOTIFY_ICON:-}"
     local urgency="${NOTIFY_URGENCY:-normal}"
     local timeout="${NOTIFY_TIMEOUT:-5000}" # Default 5 seconds
-    
+
     if [ -z "$title" ]; then
         log_error "Notification title required."
         return 1
     fi
-    
+
     validate_urgency "$urgency" || return 1
-    
+
     local cmd_args=()
     cmd_args+=("--urgency" "$urgency")
     cmd_args+=("--expire-time" "$timeout")
-    
+
     if [ -n "$icon" ]; then
         cmd_args+=("--icon" "$icon")
     fi
-    
+
     cmd_args+=("$title")
-    
+
     if [ -n "$body" ]; then
         cmd_args+=("$body")
     fi
-    
+
     if ! "$NOTIFY_SEND_CMD" "${cmd_args[@]}"; then
         log_error "Failed to send notification."
         return 1
     fi
-    
+
     log_success "Notification sent: $title"
 }
 
@@ -131,25 +118,25 @@ HELP
 # --- Main ---
 
 main() {
-    check_notification_deps
-    
-    # If first argument is 'help', show help
-    if [ "${1:-}" == "help" ] || [ "${1:-}" == "--help" ] || [ "${1:-}" == "-h" ]; then
+    local command="${1:-help}"
+    if [ "$command" = "help" ] || [ "$command" = "--help" ] || [ "$command" = "-h" ]; then
         show_help
         exit 0
     fi
-    
+
+    check_notification_deps
+
     local title="${1:-}"
     local body="${2:-}"
-    
+
     if [ -z "$title" ]; then
         log_error "Title required."
         show_help
         exit 1
     fi
-    
+
     shift 2 || true
-    
+
     # Parse optional flags
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -171,7 +158,7 @@ main() {
                 ;;
         esac
     done
-    
+
     send_notification "$title" "$body"
 }
 

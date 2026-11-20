@@ -7,13 +7,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 XINPUT_CMD="xinput"
@@ -22,22 +17,11 @@ SETXKBMAP_CMD="setxkbmap"
 CONFIG_DIR="${HOME}/.config/vice-os"
 INPUT_STATE="${CONFIG_DIR}/input.state"
 
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Input operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
-
 # --- Helper Functions ---
 
 check_input_deps() {
     check_dependencies "xinput" "xset"
-    
+
     if [ -z "${DISPLAY:-}" ]; then
         log_error "No DISPLAY environment variable set."
         exit 1
@@ -55,16 +39,16 @@ ensure_config_dir() {
 list_devices() {
     log_info "Input Devices:"
     echo "==================================="
-    
+
     "$XINPUT_CMD" list 2>/dev/null || true
-    
+
     echo "==================================="
 }
 
 list_keyboards() {
     log_info "Keyboard Devices:"
     echo "==================================="
-    
+
     "$XINPUT_CMD" list 2>/dev/null | grep -i "keyboard" || true
     echo "==================================="
 }
@@ -72,7 +56,7 @@ list_keyboards() {
 list_mice() {
     log_info "Mouse Devices:"
     echo "==================================="
-    
+
     "$XINPUT_CMD" list 2>/dev/null | grep -i "mouse" || true
     echo "==================================="
 }
@@ -80,7 +64,7 @@ list_mice() {
 list_touchpads() {
     log_info "Touchpad Devices:"
     echo "==================================="
-    
+
     "$XINPUT_CMD" list 2>/dev/null | grep -i "touchpad" || true
     echo "==================================="
 }
@@ -89,12 +73,12 @@ list_touchpads() {
 
 device_info() {
     local device_name="$1"
-    
+
     if [ -z "$device_name" ]; then
         log_error "Device name required."
         return 1
     fi
-    
+
     log_info "Device Information: $device_name"
     echo "==================================="
     "$XINPUT_CMD" list "$device_name" 2>/dev/null || true
@@ -107,14 +91,14 @@ device_info() {
 
 enable_device() {
     local device_name="$1"
-    
+
     if [ -z "$device_name" ]; then
         log_error "Device name required."
         return 1
     fi
-    
+
     log_info "Enabling input device: $device_name"
-    
+
     if "$XINPUT_CMD" enable "$device_name" 2>/dev/null; then
         log_success "Device '$device_name' enabled."
     else
@@ -125,14 +109,14 @@ enable_device() {
 
 disable_device() {
     local device_name="$1"
-    
+
     if [ -z "$device_name" ]; then
         log_error "Device name required."
         return 1
     fi
-    
+
     log_info "Disabling input device: $device_name"
-    
+
     if "$XINPUT_CMD" disable "$device_name" 2>/dev/null; then
         log_success "Device '$device_name' disabled."
     else
@@ -143,20 +127,20 @@ disable_device() {
 
 toggle_touchpad() {
     log_info "Toggling touchpad..."
-    
+
     # Find touchpad device name
     local touchpad_name
     touchpad_name=$("$XINPUT_CMD" list 2>/dev/null | grep -i "touchpad" | head -n 1 | sed 's/.*id=\([0-9]*\).*/\1/')
-    
+
     if [ -z "$touchpad_name" ]; then
         log_error "No touchpad found."
         return 1
     fi
-    
+
     # Check current state
     local current_state
     current_state=$("$XINPUT_CMD" list-props "$touchpad_name" 2>/dev/null | grep "Device Enabled" | awk '{print $NF}')
-    
+
     if [ "$current_state" == "1" ]; then
         disable_device "$touchpad_name"
     else
@@ -169,25 +153,25 @@ toggle_touchpad() {
 set_keyboard_layout() {
     local layout="$1"
     local variant="${2:-}"
-    
+
     if [ -z "$layout" ]; then
         log_error "Layout required (e.g., us, de, fr)."
         return 1
     fi
-    
+
     if ! command -v "$SETXKBMAP_CMD" > /dev/null 2>&1; then
         log_error "setxkbmap not found. Install 'x11-xkb-utils'."
         return 1
     fi
-    
+
     log_info "Setting keyboard layout: $layout"
-    
+
     if [ -n "$variant" ]; then
         "$SETXKBMAP_CMD" -layout "$layout" -variant "$variant"
     else
         "$SETXKBMAP_CMD" -layout "$layout"
     fi
-    
+
     log_success "Keyboard layout set to: $layout"
     if [ -n "$variant" ]; then
         log_info "Variant: $variant"
@@ -197,28 +181,28 @@ set_keyboard_layout() {
 set_repeat_rate() {
     local delay="${1:-250}"
     local rate="${2:-25}"
-    
+
     if ! [[ "$delay" =~ ^[0-9]+$ ]]; then
         log_error "Delay must be a number (milliseconds)."
         return 1
     fi
-    
+
     if ! [[ "$rate" =~ ^[0-9]+$ ]]; then
         log_error "Rate must be a number (keys per second)."
         return 1
     fi
-    
+
     log_info "Setting keyboard repeat rate: delay=${delay}ms rate=${rate}/s"
-    
+
     "$XSET_CMD" r rate "$delay" "$rate"
-    
+
     log_success "Repeat rate set. Delay: ${delay}ms, Rate: ${rate}/s"
 }
 
 show_repeat_rate() {
     log_info "Current Keyboard Settings:"
     echo "==================================="
-    
+
     # xset q shows the current settings
     "$XSET_CMD" q 2>/dev/null | grep -A 5 "auto repeat"
     echo "==================================="
@@ -227,11 +211,11 @@ show_repeat_rate() {
 # --- Mouse Configuration Functions ---
 
 set_mouse_accel() {
-    local acceleration="${1:-1.0"
-    local threshold="${2:-0"
-    
+    local acceleration="${1:-1.0}"
+    local threshold="${2:-0}"
+
     log_info "Setting mouse acceleration: $acceleration (threshold: $threshold)"
-    
+
     "$XSET_CMD" m "$acceleration" "$threshold"
     log_success "Mouse acceleration set."
 }
@@ -239,7 +223,7 @@ set_mouse_accel() {
 show_mouse_settings() {
     log_info "Current Mouse Settings:"
     echo "==================================="
-    
+
     "$XSET_CMD" q 2>/dev/null | grep -A 5 "Pointer"
     echo "==================================="
 }
@@ -248,19 +232,19 @@ show_mouse_settings() {
 
 save_settings() {
     local profile_name="${1:-default}"
-    
+
     ensure_config_dir
-    
+
     local state_file="${INPUT_STATE}.${profile_name}"
-    
+
     log_info "Saving input settings as profile: $profile_name"
-    
+
     # Save xset settings
     {
         echo "# Vice OS Input Settings - $profile_name ($(date))"
         echo "# Generated by input_manager.sh"
         echo ""
-        
+
         # Extract repeat rate from xset q
         local delay rate
         delay=$("$XSET_CMD" q 2>/dev/null | grep "auto repeat" | awk '{print $4}')
@@ -274,32 +258,37 @@ save_settings() {
         echo "# Keyboard layout"
         "$SETXKBMAP_CMD" -query 2>/dev/null | grep "layout:" | sed 's/layout:/setxkbmap -layout/' >> "$state_file"
     } > "$state_file"
-    
+
     log_success "Input settings saved to: $state_file"
 }
 
 load_settings() {
     local profile_name="${1:-default}"
-    
+
     local state_file="${INPUT_STATE}.${profile_name}"
-    
+
     if [ ! -f "$state_file" ]; then
         log_error "Settings profile '$profile_name' not found."
         return 1
     fi
-    
+
     log_info "Loading input settings: $profile_name"
-    
+
     while IFS= read -r line; do
         # Skip comments and empty lines
         if [[ "$line" =~ ^# ]] || [[ -z "$line" ]]; then
             continue
         fi
-        
-        log_info "Applying: $line"
-        eval "$line" 2>/dev/null || true
+
+        # Validate the line: only allow xset/setxkbmap commands from trusted config
+        if [[ "$line" =~ ^(xset|setxkbmap)\ [a-zA-Z0-9._\ -]+$ ]]; then
+            log_info "Applying: $line"
+            $line 2>/dev/null || true
+        else
+            log_warn "Skipping untrusted line: $line"
+        fi
     done < "$state_file"
-    
+
     log_success "Input settings loaded."
 }
 
@@ -360,11 +349,15 @@ HELP
 # --- Main ---
 
 main() {
-    check_input_deps
-    
     local command="${1:-help}"
+    if [ "$command" = "help" ] || [ "$command" = "--help" ] || [ "$command" = "-h" ]; then
+        show_help
+        exit 0
+    fi
     shift || true
-    
+
+    check_input_deps
+
     case "$command" in
         list|ls|devices)
             list_devices

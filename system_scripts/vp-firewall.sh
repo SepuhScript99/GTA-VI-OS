@@ -7,13 +7,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 LOCKFILE="/var/lock/vice-firewall.lock"
 
@@ -34,7 +29,22 @@ cleanup() {
 trap cleanup EXIT SIGINT SIGTERM
 
 # --- Main ---
+show_help() {
+    cat <<HELP
+GTA VI OS Firewall Setup Utility
+
+Usage: $0
+Options:
+  help, --help, -h   Show this help message
+HELP
+}
+
 main() {
+    if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+        show_help
+        exit 0
+    fi
+
     check_root
     check_dependencies "ufw"
 
@@ -68,7 +78,7 @@ main() {
 
     # 5. Persistently drop invalid packets for both IPv4 and IPv6
     log_info "Adding persistent invalid packet dropping rules..."
-    
+
     local rule4="-A ufw-before-input -m conntrack --ctstate INVALID -j DROP"
     local rule6="-A ufw6-before-input -m conntrack --ctstate INVALID -j DROP"
 

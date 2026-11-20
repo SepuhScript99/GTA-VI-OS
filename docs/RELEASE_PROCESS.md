@@ -1,45 +1,80 @@
-Release Process - GTA VI OS (Vice OS)
-This document outlines the step-by-step process for cutting a new stable release of Vice OS.
+# Release Process - GTA VI OS (Vice OS)
 
-🚀 Pre-Release Checklist
-Update Version Numbers:
-Update VERSION and VERSION_ID in config/os-release.
-Update DISTRIB_RELEASE in config/lsb-release.
-Update the version string in desktop/login.py (if hardcoded).
-Ensure docs/CHANGELOG.md is updated with the new version and release date.
-Run Local Tests:
-Run all unit tests: python3 -m unittest discover -s tests -p "test_*.py"
-Run linters: flake8 and shellcheck.
-Clean Build:
-Perform a clean build to ensure no stale artifacts affect the release:
-sudo bash build_iso.sh --clean
-Verify the ISO:
-Validate ISO structure: bash tests/validate_iso.sh out/gta-vi-os-amd64.iso
-Run QEMU smoke test: bash tests/smoke_test_qemu.sh out/gta-vi-os-amd64.iso
-Manually test in VMware/VirtualBox (boot, login, test apps, run installer).
-📦 Release Steps
-Create Release Branch (Optional but recommended for major versions):
-git checkout -b release/v1.0git push origin release/v1.0
-Merge to Main:Ensure all release prep changes are merged into the main branch.
-Tag the Release:
-git tag -a v1.0.0 -m "Release v1.0.0 Stable"git push origin v1.0.0
-Create GitHub Release:
-Go to the GitHub repository -> Releases -> Draft a new release.
-Select the tag created in the previous step.
-Title the release (e.g., v1.0.0 Stable).
-Copy the relevant changelog entries from docs/CHANGELOG.md into the release description.
-Upload the following artifacts from the out/ directory:
-gta-vi-os-amd64.iso
-SHA256SUMS
-build_info.txt
-Publish the release.
-Post-Release Announcement:
-Announce the release on official channels (forums, social media, website).
-Update the project website to link to the new ISO.
-🛠️ CI/CD Pipeline Role
-The .github/workflows/ci.yml workflow will automatically trigger on the tag push. It will:
+This document outlines the step-by-step process for cutting and publishing a new release of Vice OS.
 
-Build the ISO from scratch.
-Run the validation and smoke tests.
-Upload the final ISO as a workflow artifact.
-If the CI pipeline fails, the release tag should be considered broken. Delete the tag, fix the issues, and start the release steps again.
+---
+
+## 🚀 Pre-Release Checklist
+
+1. **Verify Version Identifiers**:
+   - `config/os-release`: `VERSION` and `VERSION_ID`
+   - `config/lsb-release`: `DISTRIB_RELEASE`
+   - `docs/CHANGELOG.md` and root `CHANGELOG.md`: ensure unreleased changes are grouped under the release header with date.
+2. **Execute Full Test Suite**:
+   ```bash
+   python3 -m unittest discover -s tests -p "test_*.py"
+   bash tests/test_validation.sh
+   bash tests/test_common_sh.sh
+   bash tests/test_system_utils.sh
+   bash tests/test_system_utils_runtime.sh
+   bash tests/test_apps.sh
+   bash tests/test_recovery_suite.sh
+   ```
+3. **Run Validation Suite**:
+   ```bash
+   bash validation/run_all.sh
+   ```
+
+---
+
+## 📦 Automated Release with `scripts/release.sh`
+
+The project includes an automated release script that executes pre-flight checks, clean builds, Git tagging, and GitHub Releases:
+
+```bash
+# Dry run: verifies tests and environment without cutting a release
+bash scripts/release.sh v1.0.0 --dry-run
+
+# Full release: builds ISO, verifies checksums, tags repository
+bash scripts/release.sh v1.0.0
+```
+
+---
+
+## 🛠️ Manual Release Steps
+
+If performing a manual release:
+
+1. **Clean Build**:
+   ```bash
+   sudo bash build_iso.sh --clean
+   ```
+
+2. **Verify the ISO**:
+   ```bash
+   bash validation/validate_iso.sh out/gta-vi-os-amd64.iso
+   bash tests/smoke_test_qemu.sh out/gta-vi-os-amd64.iso
+   ```
+
+3. **Tag the Release**:
+   ```bash
+   git tag -a v1.0.0 -m "Release v1.0.0 Stable"
+   git push origin v1.0.0
+   ```
+
+4. **Publish GitHub Release**:
+   - Create a new release referencing tag `v1.0.0`.
+   - Title: `Vice OS v1.0.0 Stable`.
+   - Upload build artifacts from `out/`:
+     - `gta-vi-os-amd64.iso`
+     - `SHA256SUMS`
+     - `build_info.txt`
+
+---
+
+## ⚙️ CI/CD Release Automation
+
+Pushing a version tag (`v*`) automatically triggers the `.github/workflows/ci.yml` release job:
+1. Rebuilds the ISO in a clean Debian container.
+2. Runs all unit, integration, and smoke tests.
+3. Automatically attaches `gta-vi-os-amd64.iso`, `SHA256SUMS`, and release notes to the GitHub Release.

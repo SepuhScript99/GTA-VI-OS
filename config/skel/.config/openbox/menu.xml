@@ -2,7 +2,7 @@
 <openbox_menu xmlns="http://openbox.org/3.4/menu">
   <!-- GTA VI OS (Vice OS) Static Fallback Menu -->
   <!-- This menu is used if the dynamic pipe menu (ob_menu.py) fails. -->
-  
+
   <menu id="root-menu" label="Vice OS">
     <item label="Terminal">
       <action name="Execute"><command>xterm</command></action>
@@ -30,4 +30,4 @@
       <action name="Exit" />
     </item>
   </menu>
-</openbox_config>
+</openbox_menu>

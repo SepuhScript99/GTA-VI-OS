@@ -7,28 +7,12 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 CONFIG_DIR="${HOME}/.config/vice-os"
 PANEL_FILE="${CONFIG_DIR}/panel.conf"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Panel operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
 
 # --- Helper Functions ---
 
@@ -50,15 +34,15 @@ get_setting() {
 set_setting() {
     local key="$1"
     local value="$2"
-    
+
     ensure_config_dir
-    
+
     # If file doesn't exist, just write the setting
     if [ ! -f "$PANEL_FILE" ]; then
         echo "${key}=${value}" > "$PANEL_FILE"
         return 0
     fi
-    
+
     # If key exists, replace it; otherwise, append it
     if grep -q "^${key}=" "$PANEL_FILE"; then
         sed -i "s|^${key}=.*|${key}=${value}|" "$PANEL_FILE"
@@ -72,12 +56,12 @@ set_setting() {
 show_settings() {
     log_info "Current Panel Settings:"
     echo "==================================="
-    
+
     if [ ! -f "$PANEL_FILE" ]; then
         log_info "No panel configuration found. Using defaults."
         return 0
     fi
-    
+
     cat "$PANEL_FILE"
     echo "==================================="
 }
@@ -86,7 +70,7 @@ show_settings() {
 
 set_clock_format() {
     local format="$1"
-    
+
     case "$format" in
         12h|24h)
             ;;
@@ -95,12 +79,12 @@ set_clock_format() {
             return 1
             ;;
     esac
-    
+
     local strftime_format="%H:%M:%S"
     if [ "$format" == "12h" ]; then
         strftime_format="%I:%M:%S %p"
     fi
-    
+
     log_info "Setting clock format to: $format ($strftime_format)"
     set_setting "clock_format" "$strftime_format"
     log_success "Clock format updated. Restart shell to apply."
@@ -108,7 +92,7 @@ set_clock_format() {
 
 set_position() {
     local position="$1"
-    
+
     case "$position" in
         top|bottom)
             ;;
@@ -117,7 +101,7 @@ set_position() {
             return 1
             ;;
     esac
-    
+
     log_info "Setting panel position to: $position"
     set_setting "position" "$position"
     log_success "Position updated. Restart shell to apply."
@@ -126,7 +110,7 @@ set_position() {
 toggle_widget() {
     local widget="$1"
     local enabled="${2:-true}"
-    
+
     case "$widget" in
         cpu|ram|clock|exit)
             ;;
@@ -135,7 +119,7 @@ toggle_widget() {
             return 1
             ;;
     esac
-    
+
     case "$enabled" in
         true|false)
             ;;
@@ -144,7 +128,7 @@ toggle_widget() {
             return 1
             ;;
     esac
-    
+
     log_info "Setting widget '$widget' visibility to: $enabled"
     set_setting "show_${widget}" "$enabled"
     log_success "Widget visibility updated. Restart shell to apply."
@@ -152,12 +136,12 @@ toggle_widget() {
 
 set_height() {
     local height="$1"
-    
+
     if ! [[ "$height" =~ ^[0-9]+$ ]] || [ "$height" -lt 20 ] || [ "$height" -gt 60 ]; then
         log_error "Height must be a number between 20 and 60."
         return 1
     fi
-    
+
     log_info "Setting panel height to: $height"
     set_setting "height" "$height"
     log_success "Height updated. Restart shell to apply."
@@ -168,7 +152,7 @@ set_height() {
 reset_panel() {
     log_warn "Resetting panel to default configuration."
     rm -f "$PANEL_FILE"
-    
+
     ensure_config_dir
     cat <<DEFAULTS > "$PANEL_FILE"
 position=top
@@ -179,7 +163,7 @@ show_ram=true
 show_clock=true
 show_exit=true
 DEFAULTS
-    
+
     log_success "Panel reset to defaults."
 }
 
@@ -219,7 +203,7 @@ HELP
 main() {
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         show|status)
             show_settings

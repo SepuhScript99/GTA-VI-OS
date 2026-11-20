@@ -1,0 +1,109 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+# ============================================================================
+# GTA VI OS (Vice OS) Labwc Autostart Script
+# Executed by labwc upon Wayland session start.
+# Mirrors the Openbox autostart but uses Wayland-native utilities.
+#
+# Key differences from the X11 (Openbox) autostart:
+#   - Wallpaper uses swaybg instead of feh/nitrogen
+#   - No separate compositor (labwc IS the compositor, replaces picom)
+#   - vice_shell runs as a native Wayland client (via qtwayland5)
+# ============================================================================
+
+# 1. Start Core UI Components explicitly to ensure proper ordering
+#    (swaybg replaces feh/nitrogen for Wayland wallpaper)
+WALLPAPER_DIR="/usr/share/backgrounds"
+if command -v swaybg > /dev/null 2>&1 && [ -d "$WALLPAPER_DIR" ]; then
+    WP_IMAGE=""
+    for ext in jpg jpeg png webp bmp; do
+        found=$(find "$WALLPAPER_DIR" -maxdepth 1 -name "*.$ext" 2>/dev/null | sort | head -1)
+        if [ -n "$found" ]; then
+            WP_IMAGE="$found"
+            break
+        fi
+    done
+    if [ -n "$WP_IMAGE" ]; then
+        swaybg -i "$WP_IMAGE" -m fill > /dev/null 2>&1 &
+    fi
+fi
+
+# Idle screen locking via swayidle & swaylock
+if command -v swayidle > /dev/null 2>&1 && command -v swaylock > /dev/null 2>&1; then
+    swayidle -w \
+        timeout 600 'swaylock -f -c 1a1b26' \
+        timeout 900 'wlopm --off \*' \
+        resume 'wlopm --on \*' \
+        before-sleep 'swaylock -f -c 1a1b26' > /dev/null 2>&1 &
+fi
+
+# Start the desktop shell (native Wayland client)
+/usr/bin/python3 /opt/vice-os/vice_shell.py &
+
+# 2. Export DBus environment if not already set (fallback for manual starts)
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -x /usr/bin/dbus-launch ]; then
+    eval "$(/usr/bin/dbus-launch --sh-syntax --exit-with-session)"
+fi
+
+# 2.5 Start the Vice notification daemon (owns org.freedesktop.Notifications).
+#     Runs AFTER DBus export so the session bus is guaranteed available.
+#     Exits gracefully if another notification daemon already owns the name.
+if [ -x /opt/vice-os/vice_notification_daemon.py ]; then
+    /usr/bin/python3 /opt/vice-os/vice_notification_daemon.py > /dev/null 2>&1 &
+fi
+
+# 2.6 Start the system notifier (battery/disk/temperature alerts via notify-send).
+if [ -x /opt/vice-os/vice_system_notifier.py ]; then
+    /usr/bin/python3 /opt/vice-os/vice_system_notifier.py > /dev/null 2>&1 &
+fi
+
+# 3. Execute XDG Autostart entries (System-wide + User-specific)
+#    Same logic as the Openbox autostart — process user first, then system-wide.
+declare -A started_apps
+
+process_autostart_dir() {
+    local dir="$1"
+    if [ -d "$dir" ]; then
+        for f in "$dir"/*.desktop; do
+            if [ -f "$f" ]; then
+                local app_name
+                app_name=$(basename "$f")
+
+                # Skip if already started (e.g., user override processed first)
+                if [ -n "${started_apps[$app_name]:-}" ]; then
+                    continue
+                fi
+
+                # Skip if Hidden=true
+                if grep -q "Hidden=true" "$f"; then
+                    continue
+                fi
+
+                # Skip Wayland session — picom compositing is X11-only and handled
+                # by labwc internally. The wallpaper is handled by swaybg above.
+                case "$app_name" in
+                    vice-os-compositor.desktop|vice-os-wallpaper.desktop|vice-os-shell.desktop)
+                        continue
+                        ;;
+                esac
+
+                # Extract Exec line, remove %f, %u, etc.
+                local cmd
+                cmd=$(grep -m 1 "^Exec=" "$f" | sed 's/^Exec=//;s/ %.*//')
+                if [ -n "$cmd" ]; then
+                    eval "$cmd &" 2>/dev/null
+                    started_apps[$app_name]=1
+                fi
+            fi
+        done
+    fi
+}
+
+# Process user-specific autostart (takes precedence)
+process_autostart_dir "$HOME/.config/autostart"
+
+# Process system-wide autostart
+process_autostart_dir "/etc/xdg/autostart"
+
+exit 0

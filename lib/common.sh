@@ -2,7 +2,7 @@
 # ============================================================================
 # GTA VI OS (Vice OS) Common Bash Library
 # Version: 1.0 Stable
-# 
+#
 # Provides shared logging, error handling, and validation utilities.
 # This file should be sourced by other scripts, not executed directly.
 # ============================================================================
@@ -30,13 +30,13 @@ __log() {
     local color="$2"
     local message="$3"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
+
     local formatted_msg="${color}[${level}]${NC} ${message}"
     local log_entry="${timestamp} - [${level}] - ${message}"
 
     # Print to console
     echo -e "$formatted_msg"
-    
+
     # Safely append to log file if the variable is set
     if [[ -n "${LOG_FILE:-}" ]]; then
         local log_dir
@@ -78,6 +78,9 @@ common_error_handler() {
 # --- Validation Functions ---
 
 check_root() {
+    if [[ "${VICE_TESTING:-0}" == "1" || "${VICE_SKIP_ROOT_CHECK:-0}" == "1" ]]; then
+        return 0
+    fi
     if [[ "$EUID" -ne 0 ]]; then
         log_error "Please run this script as root (sudo)."
         exit 1
@@ -94,7 +97,7 @@ check_host() {
 check_internet() {
     local domain="${1:-deb.debian.org}"
     log_info "Checking internet connection to ${domain}..."
-    
+
     # Use getent (part of libc-bin, always installed) to check DNS resolution.
     # This avoids a hard dependency on curl/ping for the check itself.
     if ! getent hosts "$domain" > /dev/null 2>&1; then
@@ -107,11 +110,11 @@ check_internet() {
 check_disk_space() {
     local path="${1:-$PWD}"
     local required_gb="${2:-10}"
-    
+
     local available_gb
     # Use --output=avail for robust parsing, -BG for gigabyte blocks
     available_gb=$(df --output=avail -BG "$path" | tail -n 1 | tr -dc '0-9')
-    
+
     if [[ "$available_gb" -lt "$required_gb" ]]; then
         log_error "Insufficient disk space. Required: ${required_gb}GB, Available: ${available_gb}GB"
         exit 1
@@ -120,9 +123,12 @@ check_disk_space() {
 
 # Args: $1...$N = dependencies
 check_dependencies() {
+    if [[ "${VICE_TESTING:-0}" == "1" || "${VICE_SKIP_DEP_CHECK:-0}" == "1" ]]; then
+        return 0
+    fi
     local deps=("$@")
     local missing=()
-    
+
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" > /dev/null 2>&1; then
             missing+=("$dep")
@@ -149,7 +155,7 @@ check_dependencies() {
 check_command() {
     local cmds=("$@")
     local missing=()
-    
+
     for cmd in "${cmds[@]}"; do
         if ! command -v "$cmd" > /dev/null 2>&1; then
             missing+=("$cmd")
@@ -161,4 +167,82 @@ check_command() {
         return 1
     fi
     return 0
+}
+
+# --- Initialization Helpers ---
+
+# Resolves the project root directory based on the calling script's location.
+# Sources lib/common.sh from the resolved path.
+# Usage: eval "$(init_script "$(dirname "${BASH_SOURCE[0]}")")"
+# Returns: WORKDIR as an exported variable
+init_script() {
+    local script_dir="$1"
+    local workdir
+    workdir="$(cd "$script_dir/.." && pwd)"
+    if [ ! -f "$workdir/lib/common.sh" ]; then
+        echo "Error: lib/common.sh not found at $workdir/lib/common.sh" >&2
+        exit 1
+    fi
+    echo "WORKDIR=\"$workdir\""
+}
+
+# Installs a default cleanup trap that logs failure and exits.
+# Can be overridden by defining a cleanup() function before calling.
+install_cleanup() {
+    if ! declare -F cleanup > /dev/null 2>&1; then
+        eval "$(cat <<'CLEANUP'
+cleanup() {
+    local exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        log_error "Operation failed with exit code $exit_code."
+    fi
+    exit $exit_code
+}
+CLEANUP
+)"
+    fi
+    trap cleanup EXIT SIGINT SIGTERM
+}
+
+# Convenience: calls init_script and install_cleanup in one step.
+# Usage: eval "$(bootstrap_script "$(dirname "${BASH_SOURCE[0]}")")"
+bootstrap_script() {
+    init_script "$1"
+    echo "source \"\$WORKDIR/lib/common.sh\""
+    echo 'install_cleanup'
+}
+
+# --- Utility Functions ---
+
+# Returns a compact UTC timestamp string (e.g., 2026-07-23_14-30-00)
+get_timestamp() {
+    date '+%Y-%m-%d_%H-%M-%S'
+}
+
+# Args: $1 = max_attempts, $2 = initial_delay (seconds), remaining args = command
+# Retries a command with exponential backoff on failure.
+# Example: retry_command 3 5 apt-get install -y firefox
+retry_command() {
+    local max_attempts="${1:-3}"
+    local delay="${2:-5}"
+    shift 2 || true
+
+    local attempt=1
+    local cmd=("$@")
+
+    while [[ $attempt -le $max_attempts ]]; do
+        if "${cmd[@]}"; then
+            return 0
+        fi
+
+        if [[ $attempt -lt $max_attempts ]]; then
+            log_warn "Command failed (attempt $attempt/$max_attempts). Retrying in ${delay}s..."
+            sleep "$delay"
+            delay=$((delay * 2))
+        else
+            log_error "Command failed after $max_attempts attempts: ${cmd[*]}"
+            return 1
+        fi
+        ((attempt++))
+    done
 }

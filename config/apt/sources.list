@@ -2,7 +2,7 @@
 # Base Distribution: Debian 12 (Bookworm)
 
 # Base Repository
-# Includes main (DFSG-compliant), contrib (DFSG-compliant deps on non-free), 
+# Includes main (DFSG-compliant), contrib (DFSG-compliant deps on non-free),
 # non-free (non-DFSG), and non-free-firmware (firmware blobs for hardware support).
 deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
 

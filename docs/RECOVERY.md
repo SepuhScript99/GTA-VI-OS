@@ -1,69 +1,106 @@
-GTA VI OS (Vice OS) Recovery Guide
-This document outlines the procedures and utilities available for recovering a Vice OS installation in the event of a system failure, misconfiguration, or lost password.
+# GTA VI OS (Vice OS) Recovery Guide
 
-🚨 Prerequisites
-To use the physical recovery tools, you will need:
+This document outlines the procedures, tools, and recovery utilities available for restoring a Vice OS installation in the event of system failure, misconfiguration, bootloader corruption, or forgotten credentials.
 
-A Vice OS Live USB/CD (the installation ISO works for this).
-Physical or virtual console access to the machine.
-Root privileges (sudo).
-💻 Accessing Recovery Tools (GUI Menu)
-The easiest way to access all recovery tools is through the Vice OS Settings Menu.
+---
 
-Boot the Live ISO.
-Right-click the desktop and select Vice OS Settings.
-Choose the desired recovery option (e.g., "Reset User Password", "Reinstall GRUB Bootloader").
-If you are in a terminal-only environment (e.g., via SSH or a TTY), you can launch the same menu by running:
+## 🚨 Prerequisites
 
-sudo /usr/local/bin/vice-os-menu.sh
-🛠️ Recovery Utilities
-Vice OS includes several first-class recovery scripts. If you are booted into the Live ISO, these scripts are located in the extracted payload or can be run from the project repository.
+To use the physical recovery tools:
+1. A Vice OS Live USB/CD (the installation ISO works for all recovery tasks).
+2. Physical or virtual console access to the target machine.
+3. Root privileges (`sudo`).
 
-1. Password Reset (recovery/reset_password.sh)
-If you forget your vice or root password, you can reset it from the Live ISO.
+---
 
-Usage:
-Boot the Live ISO, open a terminal, and run: 
-sudo ./recovery/reset_password.sh /dev/sdXN username
+## 💻 Accessing Recovery Tools
 
-/dev/sdXN: Your Linux root partition (e.g., /dev/sda2, /dev/nvme0n1p2). Use lsblk to find it.
-username: The user whose password you want to reset (e.g., vice).
-The script will mount the partition, chroot into your system, and prompt you to enter a new password.
+### 1. Unified Recovery Menu (`vice-recovery.sh`)
+The recommended recovery environment is the unified interactive TUI recovery tool:
+```bash
+sudo ./recovery/vice-recovery.sh
+```
+This tool provides a centralized menu with flock-based single-instance locking:
+- **1. Filesystem Check & Repair (`fsck`)**: Safely unmounts and scans all detected Linux partitions.
+- **2. GRUB Bootloader Repair**: Reinstalls and reconfigures GRUB on EFI or BIOS systems.
+- **3. Reset User Password**: Chroots into target root partition and resets user or root passwords.
+- **4. Network Configuration Reset**: Flushes broken interfaces and restores DNS/NetworkManager defaults.
+- **5. Repair Broken Packages**: Fixes interrupted dpkg locks and repairs unconfigured apt packages.
+- **6. Run System Diagnostics**: Runs hardware, disk, memory, and service health checks.
+- **7. Restore Boot Themes**: Reinstalls and configures cyberpunk GRUB and Plymouth themes.
 
-2. GRUB Bootloader Repair (recovery/rebuild_grub.sh)
-If your system fails to boot (e.g., "Operating System not found", "GRUB rescue>" prompt, or a botched Windows update overwrote the MBR), use this tool to reinstall and reconfigure GRUB.
+### 2. GUI Recovery from the Live Desktop
+- Boot the Live ISO into the desktop.
+- Launch **Vice OS Settings** from the dock or right-click desktop menu.
+- Navigate to the **Diagnostics & Recovery** section.
+- Alternatively, launch `vice_diagnostics.py` or `vice-os-menu.sh` from the terminal.
 
-Usage:
-Boot the Live ISO, open a terminal, and run:
-# Identify your root and (if UEFI) EFI partitions using 'lsblk' or 'sudo fdisk -l'
-sudo ./recovery/rebuild_grub.sh /dev/sdXN [/dev/sdXY]
+---
 
-3. Network Configuration Reset (recovery/reset_network.sh)
-If your network interfaces are misconfigured, DNS is broken, or NetworkManager is failing to connect, this tool resets all network configurations to factory defaults.
+## 🛠️ Standalone Recovery Utilities
 
-Usage: sudo ./recovery/reset_network.sh
+All recovery scripts are located in `recovery/`:
 
-What it does:
+### 1. Unified Recovery TUI (`recovery/vice-recovery.sh`)
+- Central interactive rescue console for live and headless environments.
+- Supports both interactive navigation and direct non-interactive CLI flags.
 
-Backs up existing configs to /root/vice-os-network-backup-[timestamp]/.
-Flushes all network interfaces.
-Restores default interfaces and resolv.conf (Cloudflare/Google DNS).
-Clears NetworkManager profiles and restarts the service.
-4. Home Directory Backup (system_scripts/backup_home.sh)
-While not strictly a recovery tool, running this before major system updates or risky configurations can save your data.
+### 2. GRUB Bootloader Repair (`recovery/rebuild_grub.sh`)
+Reinstalls and reconfigures GRUB if the bootloader is overwritten (e.g. by Windows updates) or corrupted:
+```bash
+# Usage: sudo ./recovery/rebuild_grub.sh /dev/sdXN [/dev/sdXY]
+sudo ./recovery/rebuild_grub.sh /dev/sda2 /dev/sda1
+```
+- Automatically detects BIOS vs UEFI systems.
+- Mounts pseudo-filesystems (`/dev`, `/proc`, `/sys`, `/sys/firmware/efi/efivars`).
+- Reinstalls GRUB to disk and regenerates `/boot/grub/grub.cfg`.
 
-Usage: sudo ./system_scripts/backup_home.sh /mnt/usb
+### 3. Password Reset (`recovery/reset_password.sh`)
+Resets forgotten user or root passwords:
+```bash
+# Usage: sudo ./recovery/reset_password.sh /dev/sdXN username
+sudo ./recovery/reset_password.sh /dev/sda2 vice
+```
+- Mounts the root partition in a temporary namespace.
+- Chroots into the system to invoke `passwd <username>`.
 
-Creates a compressed tar.xz archive of /home/vice, excluding caches, and keeps the 3 most recent backups.
+### 4. Network Configuration Reset (`recovery/reset_network.sh`)
+Restores factory network settings when DNS, Wi-Fi, or NetworkManager fail:
+```bash
+sudo ./recovery/reset_network.sh
+```
+- Creates a timestamped backup in `/root/vice-os-network-backup-[timestamp]/`.
+- Flushes network interfaces and resets routing tables.
+- Restores default `/etc/resolv.conf` (Cloudflare / Google DNS).
+- Clears conflicting NetworkManager connection profiles.
 
-💡 General Troubleshooting
-Switching to a TTY
-If the graphical desktop environment freezes or crashes, switch to a virtual terminal:
+### 5. Boot Theming Tools (`vice_grub_theme.sh` & `vice_plymouth_theme.sh`)
+- `recovery/vice_grub_theme.sh`: Installs the cyberpunk neon Vice OS GRUB theme.
+- `recovery/vice_plymouth_theme.sh`: Configures Plymouth animated splash themes for boot and shutdown.
 
-Press Ctrl + Alt + F3 (or F4, F5, F6).
-Log in with your username and password.
-You can now run recovery scripts or restart the display manager.
-Checking Logs
-If a service fails to start, check the systemd journal:
-sudo journalctl -u NetworkManager -e  # Check NetworkManager logs
-sudo journalctl -b -p err             # Check all error logs from the current boot
+### 6. Desktop Crash Recovery (`desktop/session_watchdog.py`)
+- Automatically monitors `vice_shell.py`.
+- If the shell crashes or terminates unexpectedly, the watchdog restarts it with exponential backoff.
+- Maximum 10 retries before safe degradation.
+
+---
+
+## 💡 Emergency Troubleshooting
+
+### Switching to a Virtual Terminal (TTY)
+If the graphical desktop freezes:
+1. Press `Ctrl + Alt + F3` (or `F4`, `F5`, `F6`).
+2. Log in with user `vice` or `root`.
+3. Restart the session or run recovery utilities:
+   ```bash
+   sudo systemctl restart lightdm || sudo pkill -u vice
+   ```
+
+### Emergency Logs Inspection
+```bash
+# Review system errors from current boot
+sudo journalctl -b -p err
+
+# Review desktop session errors
+cat ~/.xsession-errors
+```

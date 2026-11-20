@@ -8,24 +8,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Clipboard operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
+install_cleanup
 
 # --- Helper Functions ---
 
@@ -52,19 +36,19 @@ copy_to_clipboard() {
     local input
     local backend
     backend=$(detect_backend)
-    
+
     # Read from argument or stdin
     if [ $# -gt 0 ]; then
         input="$*"
     else
         input=$(cat)
     fi
-    
+
     if [ -z "$input" ]; then
         log_error "No input provided to copy."
         return 1
     fi
-    
+
     case "$backend" in
         "xclip")
             echo -n "$input" | xclip -selection clipboard
@@ -77,7 +61,7 @@ copy_to_clipboard() {
             return 1
             ;;
     esac
-    
+
     log_success "Copied to clipboard: ${input:0:50}..."
 }
 
@@ -86,7 +70,7 @@ copy_to_clipboard() {
 paste_from_clipboard() {
     local backend
     backend=$(detect_backend)
-    
+
     case "$backend" in
         "xclip")
             xclip -selection clipboard -o
@@ -116,9 +100,9 @@ show_clipboard() {
 clear_clipboard() {
     local backend
     backend=$(detect_backend)
-    
+
     log_info "Clearing clipboard..."
-    
+
     case "$backend" in
         "xclip")
             # Clear by writing empty string
@@ -132,7 +116,7 @@ clear_clipboard() {
             return 1
             ;;
     esac
-    
+
     log_success "Clipboard cleared."
 }
 
@@ -141,7 +125,7 @@ clear_clipboard() {
 pipe_to_clipboard() {
     local backend
     backend=$(detect_backend)
-    
+
     case "$backend" in
         "xclip")
             xclip -selection clipboard
@@ -154,7 +138,7 @@ pipe_to_clipboard() {
             return 1
             ;;
     esac
-    
+
     log_success "Data piped to clipboard."
 }
 
@@ -192,11 +176,15 @@ HELP
 # --- Main ---
 
 main() {
-    check_clipboard_deps
-    
     local command="${1:-help}"
+    if [ "$command" = "help" ] || [ "$command" = "--help" ] || [ "$command" = "-h" ]; then
+        show_help
+        exit 0
+    fi
     shift || true
-    
+
+    check_clipboard_deps
+
     case "$command" in
         copy|set)
             if [ $# -gt 0 ]; then

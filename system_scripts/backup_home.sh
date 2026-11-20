@@ -7,13 +7,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 BACKUP_SOURCE="/home/vice"
@@ -29,12 +24,12 @@ cleanup() {
     if [ -f "$LOCKFILE" ]; then
         rm -f "$LOCKFILE"
     fi
-    
+
     if [ $exit_code -ne 0 ] && [ -f "$BACKUP_FILE" ]; then
         log_warn "Backup failed. Removing partial archive..."
         rm -f "$BACKUP_FILE"
     fi
-    
+
     if [ $exit_code -eq 0 ]; then
         log_success "=== Backup Process Complete ==="
     else
@@ -46,10 +41,25 @@ cleanup() {
 trap cleanup EXIT SIGINT SIGTERM
 
 # --- Main ---
+show_help() {
+    cat <<HELP
+GTA VI OS Home Directory Backup Utility
+
+Usage: $0 [dest_dir]
+Options:
+  help, --help, -h   Show this help message
+HELP
+}
+
 main() {
+    if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+        show_help
+        exit 0
+    fi
+
     check_root
     check_dependencies "tar" "find"
-    
+
     # Prevent concurrent execution
     exec 9>"$LOCKFILE"
     if ! flock -n 9; then
@@ -84,8 +94,8 @@ main() {
     log_success "Backup created successfully (Size: $size)"
 
     log_info "Rotating old backups (keeping $KEEP_COUNT)..."
-    
-    # Use find to list files, sort by modification time (newest first), 
+
+    # Use find to list files, sort by modification time (newest first),
     # skip the first KEEP_COUNT, and safely delete the rest.
     # This is robust against filenames with spaces or special characters.
     find "$BACKUP_DEST_DIR" -name "vice_home_backup_*.tar.xz" -printf "%T@ %p\n" | \

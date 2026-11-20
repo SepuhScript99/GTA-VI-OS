@@ -19,6 +19,15 @@ main() {
     local src_dir="/vice_payload/config/systemd/system"
     local dest_dir="/etc/systemd/system"
 
+    # Install zram-setup.conf environment file referenced by zram-setup.service
+    if [ -f /vice_payload/config/systemd/zram-setup.conf ]; then
+        cp /vice_payload/config/systemd/zram-setup.conf /etc/systemd/zram-setup.conf
+        chmod 644 /etc/systemd/zram-setup.conf
+        log_info "Installed: zram-setup.conf"
+    else
+        log_warn "zram-setup.conf not found in payload!"
+    fi
+
     if [ ! -d "$src_dir" ]; then
         log_error "Systemd source directory missing: $src_dir! Aborting."
         exit 1
@@ -39,9 +48,10 @@ main() {
     done
 
     log_info "Enabling custom systemd units..."
-        
+
     # ZRAM Setup
     systemctl enable zram-setup.service 2>/dev/null || { log_error "Failed to enable zram-setup.service"; exit 1; }
+    mkdir -p /etc/modules-load.d
     echo "zram" > /etc/modules-load.d/zram.conf
 
     # Vice OS Auto-Update Timer

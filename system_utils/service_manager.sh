@@ -7,27 +7,11 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 SYSTEMCTL_CMD="systemctl"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Service operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
 
 # --- Helper Functions ---
 
@@ -41,13 +25,13 @@ validate_service_name() {
         log_error "Service name required."
         return 1
     fi
-    
+
     # Basic validation to prevent command injection
     if ! [[ "$service" =~ ^[a-zA-Z0-9@_-]+(\.service)?$ ]]; then
         log_error "Invalid service name: $service"
         return 1
     fi
-    
+
     # Automatically append .service if not present
     if [[ "$service" != *.service ]]; then
         echo "${service}.service"
@@ -61,7 +45,7 @@ validate_service_name() {
 show_status() {
     local service
     service=$(validate_service_name "$1") || return 1
-    
+
     log_info "Status for service: $service"
     $SYSTEMCTL_CMD status "$service" --no-pager
 }
@@ -69,7 +53,7 @@ show_status() {
 is_active() {
     local service
     service=$(validate_service_name "$1") || return 1
-    
+
     if $SYSTEMCTL_CMD is-active --quiet "$service"; then
         log_success "Service '$service' is active (running)."
         return 0
@@ -82,7 +66,7 @@ is_active() {
 is_enabled() {
     local service
     service=$(validate_service_name "$1") || return 1
-    
+
     if $SYSTEMCTL_CMD is-enabled --quiet "$service" 2>/dev/null; then
         log_success "Service '$service' is enabled (starts on boot)."
         return 0
@@ -106,7 +90,7 @@ list_failed() {
     echo "==================================="
     local failed
     failed=$($SYSTEMCTL_CMD list-units --type=service --state=failed --no-pager --no-legend | awk '{print $1}')
-    
+
     if [ -z "$failed" ]; then
         log_success "No failed services found."
     else
@@ -127,7 +111,7 @@ list_all() {
 start_service() {
     local service
     service=$(validate_service_name "$1") || return 1
-    
+
     log_info "Starting service: $service"
     if ! $SYSTEMCTL_CMD start "$service"; then
         log_error "Failed to start '$service'."
@@ -139,7 +123,7 @@ start_service() {
 stop_service() {
     local service
     service=$(validate_service_name "$1") || return 1
-    
+
     log_info "Stopping service: $service"
     if ! $SYSTEMCTL_CMD stop "$service"; then
         log_error "Failed to stop '$service'."
@@ -151,7 +135,7 @@ stop_service() {
 restart_service() {
     local service
     service=$(validate_service_name "$1") || return 1
-    
+
     log_info "Restarting service: $service"
     if ! $SYSTEMCTL_CMD restart "$service"; then
         log_error "Failed to restart '$service'."
@@ -163,7 +147,7 @@ restart_service() {
 reload_service() {
     local service
     service=$(validate_service_name "$1") || return 1
-    
+
     log_info "Reloading service configuration: $service"
     if ! $SYSTEMCTL_CMD reload "$service"; then
         log_error "Failed to reload '$service'."
@@ -176,7 +160,7 @@ reload_service() {
 enable_service() {
     local service
     service=$(validate_service_name "$1") || return 1
-    
+
     log_info "Enabling service (start on boot): $service"
     if ! $SYSTEMCTL_CMD enable "$service"; then
         log_error "Failed to enable '$service'."
@@ -188,7 +172,7 @@ enable_service() {
 disable_service() {
     local service
     service=$(validate_service_name "$1") || return 1
-    
+
     log_info "Disabling service (won't start on boot): $service"
     if ! $SYSTEMCTL_CMD disable "$service"; then
         log_error "Failed to disable '$service'."
@@ -242,10 +226,10 @@ HELP
 
 main() {
     check_service_deps
-    
+
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         status)
             local service="${1:-}"

@@ -1,4 +1,6 @@
 # GTA VI OS (Vice OS) APT Source for Visual Studio Code
+# NOTE: This file is NOT installed during chroot build. The app installer
+# (apps/vp-code.sh) regenerates it dynamically with the correct architecture.
 # The GPG key is installed by apps/vp-code.sh to /usr/share/keyrings/packages.microsoft.gpg
 
 deb [arch=amd64 signed-by=/usr/share/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main

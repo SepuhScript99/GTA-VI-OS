@@ -7,29 +7,13 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 USER_FONT_DIR="${HOME}/.local/share/fonts"
 FC_LIST_CMD="fc-list"
 FC_CACHE_CMD="fc-cache"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Font operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
 
 # --- Helper Functions ---
 
@@ -48,60 +32,60 @@ ensure_font_dir() {
 list_fonts() {
     log_info "Installed Fonts (Family names):"
     echo "==================================="
-    
+
     # Use fc-list, extract family name, sort unique
     "$FC_LIST_CMD" : family | sort -u | while read -r family; do
         echo "  $family"
     done
-    
+
     echo "==================================="
 }
 
 search_fonts() {
     local query="$1"
-    
+
     if [ -z "$query" ]; then
         log_error "Search query required."
         return 1
     fi
-    
+
     log_info "Searching fonts matching: '$query'"
     echo "==================================="
-    
+
     local results
     results=$("$FC_LIST_CMD" | grep -i "$query")
-    
+
     if [ -z "$results" ]; then
         log_info "No fonts found matching '$query'."
     else
         echo "$results"
     fi
-    
+
     echo "==================================="
 }
 
 install_font() {
     local source_path="$1"
-    
+
     if [ -z "$source_path" ]; then
         log_error "Font file path required."
         return 1
     fi
-    
+
     # Resolve absolute path
     if [[ "$source_path" != /* ]]; then
         source_path="$(pwd)/${source_path}"
     fi
-    
+
     if [ ! -f "$source_path" ]; then
         log_error "Font file not found: $source_path"
         return 1
     fi
-    
+
     # Validate extension
     local ext="${source_path##*.}"
     ext=$(echo "$ext" | tr '[:upper:]' '[:lower:]')
-    
+
     case "$ext" in
         ttf|otf|ttc)
             ;;
@@ -110,45 +94,45 @@ install_font() {
             return 1
             ;;
     esac
-    
+
     ensure_font_dir
-    
+
     local filename
     filename=$(basename "$source_path")
     local dest_path="${USER_FONT_DIR}/${filename}"
-    
+
     log_info "Installing font: $filename to $USER_FONT_DIR"
-    
+
     cp "$source_path" "$dest_path"
-    
+
     # Rebuild cache for the user directory
     log_info "Rebuilding font cache..."
     "$FC_CACHE_CMD" -f "$USER_FONT_DIR" > /dev/null 2>&1
-    
+
     log_success "Font '$filename' installed successfully."
 }
 
 remove_font() {
     local font_name="$1"
-    
+
     if [ -z "$font_name" ]; then
         log_error "Font filename required."
         return 1
     fi
-    
+
     local font_path="${USER_FONT_DIR}/${font_name}"
-    
+
     if [ ! -f "$font_path" ]; then
         log_error "Font '$font_name' not found in $USER_FONT_DIR."
         return 1
     fi
-    
+
     log_info "Removing font: $font_name"
     rm -f "$font_path"
-    
+
     log_info "Rebuilding font cache..."
     "$FC_CACHE_CMD" -f "$USER_FONT_DIR" > /dev/null 2>&1
-    
+
     log_success "Font removed successfully."
 }
 
@@ -191,10 +175,10 @@ HELP
 
 main() {
     check_font_deps
-    
+
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         list|ls)
             list_fonts

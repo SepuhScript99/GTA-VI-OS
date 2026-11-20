@@ -8,24 +8,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Kernel operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
+install_cleanup
 
 # --- Helper Functions ---
 
@@ -46,21 +30,21 @@ show_running_kernel() {
 list_installed_kernels() {
     log_info "Installed Kernels:"
     echo "==================================="
-    
+
     local running_kernel
     running_kernel=$(uname -r)
-    
+
     dpkg -l | grep 'linux-image-[0-9]' | awk '{print $2, $3}' | while read -r pkg ver; do
         # Extract version from package name (e.g., linux-image-6.1.0-13-amd64 -> 6.1.0-13-amd64)
         local ver_name="${pkg#linux-image-}"
-        
+
         if [ "$ver_name" == "$running_kernel" ]; then
             echo "  [Running] $ver_name"
         else
             echo "  [Old]    $ver_name"
         fi
     done
-    
+
     echo "==================================="
 }
 
@@ -76,9 +60,9 @@ show_cmdline() {
 
 update_initramfs() {
     local kernel="${1:-all}"
-    
+
     log_info "Updating initramfs for kernel: $kernel..."
-    
+
     if [ "$kernel" == "all" ]; then
         if ! update-initramfs -u -k all; then
             log_error "Failed to update initramfs for all kernels."
@@ -90,16 +74,16 @@ update_initramfs() {
             return 1
         fi
     fi
-    
+
     log_success "Initramfs updated successfully."
 }
 
 remove_old_kernels() {
     log_info "Checking for old kernels to remove..."
-    
+
     local running_kernel
     running_kernel=$(uname -r)
-    
+
     # Find installed linux-image packages excluding the running one
     local old_kernels=()
     while IFS= read -r pkg; do
@@ -108,35 +92,35 @@ remove_old_kernels() {
             old_kernels+=("$pkg")
         fi
     done < <(dpkg -l | grep '^ii' | grep 'linux-image-[0-9]' | awk '{print $2}')
-    
+
     if [ ${#old_kernels[@]} -eq 0 ]; then
         log_info "No old kernels found to remove."
         return 0
     fi
-    
+
     log_info "Found old kernels:"
     for pkg in "${old_kernels[@]}"; do
         echo "  - $pkg"
     done
     echo ""
-    
+
     read -p "Remove these old kernels? (y/N): " confirm
     if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
         log_info "Aborted."
         return 1
     fi
-    
+
     log_info "Removing old kernels..."
-    
+
     # Add --no-install-recommends to prevent pulling in new packages
     if ! apt-get purge -y --no-install-recommends "${old_kernels[@]}"; then
         log_error "Failed to remove some old kernels."
         log_warn "You may need to manually run 'apt --fix-broken install'."
         return 1
     fi
-    
+
     log_success "Old kernels removed successfully."
-    
+
     # Optionally run autoremove to clean up dependencies
     log_info "Cleaning up unused dependencies..."
     apt-get autoremove -y --no-install-recommends || log_warn "Autoremove completed with warnings."
@@ -153,58 +137,58 @@ list_modules() {
 
 load_module() {
     local module="$1"
-    
+
     if [ -z "$module" ]; then
         log_error "Module name required."
         return 1
     fi
-    
+
     log_info "Loading kernel module: $module..."
-    
+
     if ! modprobe "$module"; then
         log_error "Failed to load module '$module'."
         log_info "Check if the module exists or if dependencies are missing."
         return 1
     fi
-    
+
     log_success "Module '$module' loaded."
 }
 
 unload_module() {
     local module="$1"
-    
+
     if [ -z "$module" ]; then
         log_error "Module name required."
         return 1
     fi
-    
+
     log_info "Unloading kernel module: $module..."
-    
+
     if ! modprobe -r "$module"; then
         log_error "Failed to unload module '$module'."
         log_info "The module might be in use by the system."
         return 1
     fi
-    
+
     log_success "Module '$module' unloaded."
 }
 
 module_info() {
     local module="$1"
-    
+
     if [ -z "$module" ]; then
         log_error "Module name required."
         return 1
     fi
-    
+
     log_info "Information for module: $module"
     echo "==================================="
-    
+
     if ! modinfo "$module"; then
         log_error "Module '$module' not found."
         return 1
     fi
-    
+
     echo "==================================="
 }
 
@@ -248,10 +232,10 @@ HELP
 
 main() {
     check_kernel_deps
-    
+
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         running|current)
             show_running_kernel

@@ -7,13 +7,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 WALLPAPER_DIR="/usr/share/backgrounds"
@@ -21,22 +16,14 @@ CONFIG_DIR="${HOME}/.config/vice-os"
 STATE_FILE="${CONFIG_DIR}/wallpaper.state"
 FEH_CMD="feh"
 
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Wallpaper operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
-
 # --- Helper Functions ---
 
 check_wallpaper_deps() {
+    if [[ "${VICE_TESTING:-0}" == "1" ]]; then
+        return 0
+    fi
     check_dependencies "feh"
-    
+
     if [ -z "${DISPLAY:-}" ]; then
         log_error "No DISPLAY environment variable set. Cannot set wallpaper."
         exit 1
@@ -68,21 +55,21 @@ save_wallpaper_state() {
 list_wallpapers() {
     log_info "Available Wallpapers:"
     echo "==================================="
-    
+
     if [ ! -d "$WALLPAPER_DIR" ]; then
         log_error "Wallpaper directory $WALLPAPER_DIR does not exist."
         return 1
     fi
-    
+
     local current
     current=$(get_current_wallpaper)
-    
+
     local found=false
     for file in "$WALLPAPER_DIR"/*; do
         if [ -f "$file" ]; then
             local name
             name=$(basename "$file")
-            
+
             if [ "$file" == "$current" ]; then
                 echo "  [Active] $name"
             else
@@ -91,23 +78,23 @@ list_wallpapers() {
             found=true
         fi
     done
-    
+
     if [ "$found" == false ]; then
         log_info "No wallpapers found in $WALLPAPER_DIR."
     fi
-    
+
     echo "==================================="
 }
 
 set_wallpaper() {
     local image_path="$1"
     local mode="${2:-fill}"
-    
+
     if [ -z "$image_path" ]; then
         log_error "Image path required."
         return 1
     fi
-    
+
     # Resolve to absolute path
     if [[ "$image_path" != /* ]]; then
         # Check if it's a filename in the wallpaper dir
@@ -117,12 +104,12 @@ set_wallpaper() {
             image_path="$(pwd)/${image_path}"
         fi
     fi
-    
+
     if [ ! -f "$image_path" ]; then
         log_error "Image file not found: $image_path"
         return 1
     fi
-    
+
     # Validate mode
     case "$mode" in
         fill|scale|center|max|tile)
@@ -132,9 +119,9 @@ set_wallpaper() {
             return 1
             ;;
     esac
-    
+
     log_info "Setting wallpaper: $(basename "$image_path") (mode: $mode)"
-    
+
     # Map mode to feh flags
     local feh_mode
     case "$mode" in
@@ -144,71 +131,71 @@ set_wallpaper() {
         max)    feh_mode="--bg-max" ;;
         tile)   feh_mode="--bg-tile" ;;
     esac
-    
+
     if ! "$FEH_CMD" "$feh_mode" "$image_path" > /dev/null 2>&1; then
         log_error "Failed to set wallpaper."
         return 1
     fi
-    
+
     save_wallpaper_state "$image_path"
     log_success "Wallpaper set successfully."
 }
 
 set_random_wallpaper() {
     local mode="${1:-fill}"
-    
+
     log_info "Selecting random wallpaper..."
-    
+
     if [ ! -d "$WALLPAPER_DIR" ]; then
         log_error "Wallpaper directory $WALLPAPER_DIR does not exist."
         return 1
     fi
-    
+
     # Collect all image files
     local images=()
-    for file in "$WALLPAPER_DIR"/*.{jpg,jpeg,png,bmp} 2>/dev/null; do
+    for file in "$WALLPAPER_DIR"/*.{jpg,jpeg,png,bmp}; do
         if [ -f "$file" ]; then
             images+=("$file")
         fi
     done
-    
+
     if [ ${#images[@]} -eq 0 ]; then
         log_error "No image files found in $WALLPAPER_DIR."
         return 1
     fi
-    
+
     # Pick a random one
     local random_index=$((RANDOM % ${#images[@]}))
     local random_image="${images[$random_index]}"
-    
+
     set_wallpaper "$random_image" "$mode"
 }
 
 restore_wallpaper() {
     local current
     current=$(get_current_wallpaper)
-    
+
     if [ -z "$current" ]; then
         log_info "No saved wallpaper state. Setting default..."
         set_wallpaper "${WALLPAPER_DIR}/vice_neon.jpg" "fill"
         return $?
     fi
-    
+
     if [ ! -f "$current" ]; then
         log_warn "Saved wallpaper file no longer exists: $current"
         log_info "Setting default..."
         set_wallpaper "${WALLPAPER_DIR}/vice_neon.jpg" "fill"
         return $?
     fi
-    
+
     log_info "Restoring wallpaper: $(basename "$current")"
-    
+
     # We need to determine the mode used. For simplicity, default to fill on restore.
     if ! "$FEH_CMD" --bg-fill "$current" > /dev/null 2>&1; then
         log_error "Failed to restore wallpaper."
         return 1
     fi
-    
+
     log_success "Wallpaper restored."
 }
 
@@ -216,7 +203,7 @@ restore_wallpaper() {
 
 show_help() {
     cat <<HELP
-GTA VI OS (Vice OS) Wallpaper Manager
+GTA VI OS (Vice OS) Wallpaper Manager (Desktop Wallpaper)
 
 Usage: $0 <command> [options]
 
@@ -245,11 +232,15 @@ HELP
 # --- Main ---
 
 main() {
-    check_wallpaper_deps
-    
     local command="${1:-help}"
+    if [ "$command" = "help" ] || [ "$command" = "--help" ] || [ "$command" = "-h" ]; then
+        show_help
+        exit 0
+    fi
     shift || true
-    
+
+    check_wallpaper_deps
+
     case "$command" in
         list|ls)
             list_wallpapers
@@ -257,7 +248,7 @@ main() {
         set|apply)
             local image="${1:-}"
             if [ -z "$image" ]; then
-                log_error "Image path or name required."
+                log_error "Image path required."
                 exit 1
             fi
             local mode="${2:-fill}"

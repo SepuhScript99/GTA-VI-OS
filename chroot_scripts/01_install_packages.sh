@@ -29,15 +29,49 @@ APT_OPTS=(
 )
 
 main() {
+    # Read build configuration
+    local build_arch="amd64"
+    if [ -f /etc/vice-build.conf ]; then
+        source /etc/vice-build.conf
+        build_arch="${DEBIAN_ARCH:-amd64}"
+    fi
+    log_info "Build architecture: ${build_arch}"
+
+    local kernel_pkg="linux-image-amd64"
+    local headers_pkg="linux-headers-amd64"
+    if [ "${build_arch}" = "arm64" ]; then
+        kernel_pkg="linux-image-arm64"
+        headers_pkg="linux-headers-arm64"
+    fi
+
     log_info "Installing live-boot BEFORE kernel..."
     # live-boot must be present before the kernel package triggers initramfs generation
-    # Explicitly use --no-install-recommends to avoid pulling in unnecessary live-boot extras
     apt-get "${APT_OPTS[@]}" install -y --no-install-recommends live-boot live-config
 
-    log_info "Installing kernel and firmware..."
+    log_info "Installing kernel and firmware (${build_arch})..."
     apt-get "${APT_OPTS[@]}" install -y --no-install-recommends \
-        linux-image-amd64 linux-headers-amd64 initramfs-tools \
+        "${kernel_pkg}" "${headers_pkg}" initramfs-tools \
         firmware-linux firmware-misc-nonfree
+
+    log_info "Installing bootloader and installer prerequisites (${build_arch})..."
+    local core_infra_candidates=("grub2-common" "dosfstools" "parted" "cryptsetup" "rsync" "whiptail")
+    if [ "${build_arch}" = "arm64" ]; then
+        core_infra_candidates+=("grub-efi-arm64-bin")
+    else
+        core_infra_candidates+=("grub-pc-bin" "grub-efi-amd64-bin")
+    fi
+
+    local core_infra_pkgs=()
+    for pkg in "${core_infra_candidates[@]}"; do
+        if apt-cache show "$pkg" >/dev/null 2>&1; then
+            core_infra_pkgs+=("$pkg")
+        else
+            log_warn "Prerequisite package unavailable in current Debian suite, skipping: $pkg"
+        fi
+    done
+    if [ "${#core_infra_pkgs[@]}" -gt 0 ]; then
+        apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "${core_infra_pkgs[@]}"
+    fi
 
     log_info "Installing packages from list..."
     if [ ! -f /vice_payload/config/packages.list ]; then
@@ -45,15 +79,48 @@ main() {
         exit 1
     fi
 
-    # Read packages line by line, ignoring comments and empty lines.
-    # Use --no-run-if-empty to prevent apt-get from crashing if the list is empty.
-    # Explicitly use --no-install-recommends as the global apt config isn't installed yet.
-    grep -vE '^\s*#' /vice_payload/config/packages.list | xargs --no-run-if-empty apt-get "${APT_OPTS[@]}" install -y --no-install-recommends
+    # Collect candidate packages (append ARM64 list and filter x86-only packages on ARM64)
+    local pkg_list="/vice_payload/config/packages.list"
+    local list_files=("$pkg_list")
+    if [ "${build_arch}" = "arm64" ] && [ -f /vice_payload/config/packages.arm64.list ]; then
+        log_info "Appending ARM64-specific packages and filtering x86-only packages..."
+        list_files+=("/vice_payload/config/packages.arm64.list")
+    fi
+
+    local available_pkgs=()
+    local pkg_line=""
+    while IFS= read -r pkg_line || [ -n "$pkg_line" ]; do
+        pkg_line="${pkg_line%%#*}"
+        pkg_line="${pkg_line//[[:space:]]/}"
+        [ -z "$pkg_line" ] && continue
+
+        if [ "${build_arch}" = "arm64" ]; then
+            case "$pkg_line" in
+                virtualbox-guest-utils|virtualbox-guest-x11|xserver-xorg-video-vmware|xserver-xorg-video-vboxvideo)
+                    continue
+                    ;;
+            esac
+        fi
+
+        if apt-cache show "$pkg_line" >/dev/null 2>&1; then
+            available_pkgs+=("$pkg_line")
+        else
+            log_warn "Package unavailable in current Debian suite, skipping: $pkg_line"
+        fi
+    done < <(cat "${list_files[@]}")
+
+    if [ "${#available_pkgs[@]}" -gt 0 ]; then
+        apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "${available_pkgs[@]}"
+    fi
 
     log_info "Generating locales..."
     # Ensure locales package is installed before trying to generate
     apt-get "${APT_OPTS[@]}" install -y --no-install-recommends locales
-    sed -i 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+    if grep -q "# en_US.UTF-8 UTF-8" /etc/locale.gen; then
+        sed -i 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+    elif ! grep -q "^en_US.UTF-8 UTF-8" /etc/locale.gen; then
+        echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+    fi
     locale-gen
 
     log_info "Installing default locale configuration..."
@@ -76,7 +143,7 @@ main() {
         chmod 644 /etc/default/keyboard
         # Ensure console-setup is installed and apply the config
         apt-get "${APT_OPTS[@]}" install -y --no-install-recommends console-setup keyboard-configuration
-        setupcon --save
+        setupcon --save 2>/dev/null || true
     else
         log_warn "config/default/keyboard not found in payload!"
     fi

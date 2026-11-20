@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  GTA VI OS (Vice OS) Labwc Root Menu
+  Right-click desktop menu — mirrors the Openbox root-menu.
+  Appears when right-clicking on an empty desktop area.
+-->
+<openbox_menu>
+  <menu id="root-menu" label="Vice OS">
+    <item label="Terminal">
+      <action name="Execute" command="xterm" />
+    </item>
+    <item label="Web Browser">
+      <action name="Execute" command="firefox" />
+    </item>
+    <item label="File Manager">
+      <action name="Execute" command="thunar" />
+    </item>
+    <item label="Editor">
+      <action name="Execute" command="geany" />
+    </item>
+    <separator/>
+    <item label="Vice OS Settings">
+      <action name="Execute" command="xterm -title 'Vice OS Settings' -e /usr/local/bin/vice-os-menu.sh" />
+    </item>
+    <item label="GUI Settings">
+      <action name="Execute" command="python3 /opt/vice-os/vice_settings.py" />
+    </item>
+    <item label="Screenshot">
+      <action name="Execute" command="gnome-screenshot -i" />
+    </item>
+    <separator/>
+    <item label="Reconfigure Labwc">
+      <action name="Reconfigure" />
+    </item>
+    <item label="Exit Labwc">
+      <action name="Exit" />
+    </item>
+  </menu>
+</openbox_menu>

@@ -8,30 +8,14 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 APT_CMD="apt-get"
 DPKG_CMD="dpkg"
 LOCK_TIMEOUT=60
 LOG_FILE="/var/log/vice-os-package-manager.log"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Package operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
 
 # --- Helper Functions ---
 
@@ -53,44 +37,46 @@ get_apt_opts() {
 
 update_package_lists() {
     log_info "Updating package lists..."
-    
+
     local apt_opts
     apt_opts=$(get_apt_opts | tr '\n' ' ')
-    
+
     if ! $APT_CMD $apt_opts update; then
         log_error "Failed to update package lists."
         log_info "Check your network connection and repository configuration."
         return 1
     fi
-    
+
     log_success "Package lists updated successfully."
 }
 
 upgrade_packages() {
     log_info "Upgrading installed packages..."
-    
+
     local apt_opts
     apt_opts=$(get_apt_opts | tr '\n' ' ')
-    
+
     if ! $APT_CMD $apt_opts upgrade; then
         log_error "Failed to upgrade packages."
+        log_info "Check network connection, held packages, or disk space."
+        log_info "Try: sudo apt-get upgrade"
         return 1
     fi
-    
+
     log_success "Package upgrade completed successfully."
 }
 
 full_update() {
     log_info "Performing full system update (update + upgrade + autoremove)..."
-    
+
     update_package_lists || return 1
     upgrade_packages || return 1
-    
+
     log_info "Cleaning up unused packages..."
     local apt_opts
     apt_opts=$(get_apt_opts | tr '\n' ' ')
     $APT_CMD $apt_opts autoremove || log_warn "Autoremove completed with warnings."
-    
+
     log_success "Full system update completed."
 }
 
@@ -98,50 +84,54 @@ full_update() {
 
 install_packages() {
     local packages=("$@")
-    
+
     if [ ${#packages[@]} -eq 0 ]; then
         log_error "No packages specified for installation."
         return 1
     fi
-    
+
     log_info "Installing package(s): ${packages[*]}"
-    
+
     local apt_opts
     apt_opts=$(get_apt_opts | tr '\n' ' ')
-    
+
     if ! $APT_CMD $apt_opts install "${packages[@]}"; then
         log_error "Failed to install package(s): ${packages[*]}"
+        log_info "Check that the package names are correct and repositories are up to date."
+        log_info "Try: sudo apt-get update && sudo apt-get install ${packages[*]}"
         return 1
     fi
-    
+
     log_success "Package(s) installed successfully: ${packages[*]}"
 }
 
 remove_packages() {
     local packages=("$@")
     local purge="${PURGE:-no}"
-    
+
     if [ ${#packages[@]} -eq 0 ]; then
         log_error "No packages specified for removal."
         return 1
     fi
-    
+
     log_info "Removing package(s): ${packages[*]}"
-    
+
     local apt_opts
     apt_opts=$(get_apt_opts | tr '\n' ' ')
-    
+
     local action="remove"
     if [ "$purge" == "yes" ]; then
         action="purge"
         log_info "Purging configuration files as well."
     fi
-    
+
     if ! $APT_CMD $apt_opts $action "${packages[@]}"; then
         log_error "Failed to remove package(s): ${packages[*]}"
+        log_info "The package may be a dependency of another package."
+        log_info "Try: sudo apt-get remove ${packages[*]}"
         return 1
     fi
-    
+
     log_success "Package(s) removed successfully: ${packages[*]}"
 }
 
@@ -154,39 +144,39 @@ purge_packages() {
 
 search_packages() {
     local query="$1"
-    
+
     if [ -z "$query" ]; then
         log_error "Search query required."
         return 1
     fi
-    
+
     log_info "Searching for packages matching: $query"
     echo "==================================="
-    
+
     # Use apt-cache for searching (doesn't require root)
     apt-cache search "$query" | sort
-    
+
     echo "==================================="
 }
 
 show_package_info() {
     local package="$1"
-    
+
     if [ -z "$package" ]; then
         log_error "Package name required."
         return 1
     fi
-    
+
     log_info "Package Information: $package"
     echo "==================================="
-    
+
     apt-cache show "$package" 2>/dev/null | head -n 30
-    
+
     if [ $? -ne 0 ]; then
         log_error "Package '$package' not found."
         return 1
     fi
-    
+
     echo "==================================="
 }
 
@@ -201,18 +191,18 @@ list_installed() {
 
 list_upgradable() {
     log_info "Checking for upgradable packages..."
-    
+
     # Update lists first to get accurate results
     $APT_CMD -qq update > /dev/null 2>&1 || true
-    
+
     local upgradable
     upgradable=$($APT_CMD -qq list --upgradable 2>/dev/null | grep -v "Listing")
-    
+
     if [ -z "$upgradable" ]; then
         log_info "All packages are up to date."
         return 0
     fi
-    
+
     log_info "Upgradable Packages:"
     echo "==================================="
     echo "$upgradable"
@@ -221,7 +211,7 @@ list_upgradable() {
 
 list_recently_installed() {
     local count="${1:-20}"
-    
+
     log_info "Recently Installed Packages (last $count):"
     echo "==================================="
     grep " install " /var/log/dpkg.log 2>/dev/null | tail -n "$count" | awk '{print $4}'
@@ -233,13 +223,13 @@ list_recently_installed() {
 list_repositories() {
     log_info "Configured APT Repositories:"
     echo "==================================="
-    
+
     # Show main sources.list
     if [ -f /etc/apt/sources.list ]; then
         echo "--- /etc/apt/sources.list ---"
         grep -v "^#" /etc/apt/sources.list | grep -v "^$"
     fi
-    
+
     # Show sources.list.d
     for file in /etc/apt/sources.list.d/*.list; do
         if [ -f "$file" ]; then
@@ -247,22 +237,22 @@ list_repositories() {
             grep -v "^#" "$file" | grep -v "^$"
         fi
     done
-    
+
     echo "==================================="
 }
 
 add_repository() {
     local repo_line="$1"
     local name="${2:-custom}"
-    
+
     if [ -z "$repo_line" ]; then
         log_error "Repository line required."
         log_info "Example: deb http://deb.debian.org/debian bookworm main"
         return 1
     fi
-    
+
     local repo_file="/etc/apt/sources.list.d/${name}.list"
-    
+
     if [ -f "$repo_file" ]; then
         log_warn "Repository file '$repo_file' already exists."
         read -p "Overwrite? (y/N): " confirm
@@ -271,29 +261,29 @@ add_repository() {
             return 1
         fi
     fi
-    
+
     log_info "Adding repository to $repo_file..."
     echo "$repo_line" > "$repo_file"
-    
+
     log_success "Repository added."
     log_info "Run '$0 update' to refresh package lists."
 }
 
 remove_repository() {
     local name="$1"
-    
+
     if [ -z "$name" ]; then
         log_error "Repository name required."
         return 1
     fi
-    
+
     local repo_file="/etc/apt/sources.list.d/${name}.list"
-    
+
     if [ ! -f "$repo_file" ]; then
         log_error "Repository file '$repo_file' not found."
         return 1
     fi
-    
+
     log_info "Removing repository: $repo_file"
     rm -f "$repo_file"
     log_success "Repository removed."
@@ -304,13 +294,13 @@ remove_repository() {
 
 clean_cache() {
     log_info "Cleaning APT cache..."
-    
+
     local apt_opts
     apt_opts=$(get_apt_opts | tr '\n' ' ')
-    
+
     $APT_CMD $apt_opts clean
     $APT_CMD $apt_opts autoremove
-    
+
     log_success "APT cache cleaned."
 }
 
@@ -318,12 +308,12 @@ clean_cache() {
 
 check_dependencies() {
     local package="$1"
-    
+
     if [ -z "$package" ]; then
         log_error "Package name required."
         return 1
     fi
-    
+
     log_info "Checking dependencies for: $package"
     echo "==================================="
     apt-cache depends "$package" 2>/dev/null || log_error "Package '$package' not found."
@@ -332,12 +322,12 @@ check_dependencies() {
 
 show_reverse_dependencies() {
     local package="$1"
-    
+
     if [ -z "$package" ]; then
         log_error "Package name required."
         return 1
     fi
-    
+
     log_info "Packages that depend on: $package"
     echo "==================================="
     apt-cache rdepends "$package" 2>/dev/null || log_error "Package '$package' not found."
@@ -349,21 +339,21 @@ show_reverse_dependencies() {
 download_package() {
     local package="$1"
     local target_dir="${2:-.}"
-    
+
     if [ -z "$package" ]; then
         log_error "Package name required."
         return 1
     fi
-    
+
     log_info "Downloading package: $package to $target_dir"
-    
+
     cd "$target_dir"
-    
+
     if ! apt-get download "$package"; then
         log_error "Failed to download package '$package'."
         return 1
     fi
-    
+
     log_success "Package downloaded to: $(pwd)/${package}_*.deb"
 }
 
@@ -424,10 +414,10 @@ HELP
 
 main() {
     check_package_deps
-    
+
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         update)
             update_package_lists

@@ -63,9 +63,11 @@ def create_wallpaper(output_dir: str = "/usr/share/backgrounds") -> None:
             )
 
     # Add a subtle horizon glow
-    glow = Image.new('RGB', (width, 100), (255, 0, 255))
-    glow = glow.filter(ImageFilter.GaussianBlur(radius=20))
-    img.paste(glow, (0, height // 2 - 50), glow)
+    glow = Image.new('RGBA', (width, 160), (0, 0, 0, 0))
+    glow_draw = ImageDraw.Draw(glow)
+    glow_draw.rectangle([(0, 60), (width, 100)], fill=(255, 0, 255, 180))
+    glow = glow.filter(ImageFilter.GaussianBlur(radius=25))
+    img.paste(glow, (0, height // 2 - 80), glow)
 
     # Grid Floor (Cyan) - Perspective lines
     draw.line(

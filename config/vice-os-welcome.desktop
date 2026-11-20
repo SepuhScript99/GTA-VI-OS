@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Vice OS Welcome
+Comment=First-boot setup wizard for Vice OS
+Exec=/opt/vice-os/welcome_wizard.sh
+Type=Application
+Categories=Settings;
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

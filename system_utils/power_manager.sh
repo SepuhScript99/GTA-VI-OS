@@ -8,13 +8,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 POWER_PROFILES_DIR="/sys/firmware/acpi/platform_profile"
@@ -23,22 +18,11 @@ BATTERY_PATH="/sys/class/power_supply/BAT0"
 UPOWER_CMD="upower"
 SYSTEMCTL_CMD="systemctl"
 
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Power management operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
-
 # --- Helper Functions ---
 
 check_power_dependencies() {
     check_dependencies "systemctl"
-    
+
     # Check for upower (optional, for battery reporting)
     if ! command -v "$UPOWER_CMD" > /dev/null 2>&1; then
         log_warn "upower not found. Battery status features will be limited."
@@ -67,7 +51,7 @@ do_suspend() {
 
 do_hibernate() {
     log_info "Hibernating system to disk..."
-    
+
     # Check if swap space is available for hibernation
     if ! swapon --show | grep -q "swap"; then
         log_error "No swap space detected. Hibernation requires swap space."
@@ -75,7 +59,7 @@ do_hibernate() {
         log_info "Consider adding a disk swap partition for hibernation support."
         return 1
     fi
-    
+
     if ! "$SYSTEMCTL_CMD" hibernate; then
         log_error "Failed to hibernate system."
         return 1
@@ -85,13 +69,13 @@ do_hibernate() {
 
 do_hybrid_sleep() {
     log_info "Entering hybrid sleep (suspend + hibernate)..."
-    
+
     if ! swapon --show | grep -q "swap"; then
         log_warn "No swap space for hibernation fallback. Falling back to suspend only."
         do_suspend
         return $?
     fi
-    
+
     if ! "$SYSTEMCTL_CMD" hybrid-sleep; then
         log_error "Failed to enter hybrid sleep."
         return 1
@@ -101,13 +85,13 @@ do_hybrid_sleep() {
 
 do_suspend_then_hibernate() {
     log_info "Entering suspend-then-hibernate mode..."
-    
+
     if ! swapon --show | grep -q "swap"; then
         log_warn "No swap space for hibernation. Falling back to suspend only."
         do_suspend
         return $?
     fi
-    
+
     if ! "$SYSTEMCTL_CMD" suspend-then-hibernate; then
         log_error "Failed to enter suspend-then-hibernate."
         return 1
@@ -119,7 +103,7 @@ do_suspend_then_hibernate() {
 
 set_power_profile() {
     local profile="$1"
-    
+
     case "$profile" in
         performance|balanced|power-saver)
             ;;
@@ -129,7 +113,7 @@ set_power_profile() {
             return 1
             ;;
     esac
-    
+
     # Try ACPI platform profile first (modern laptops)
     if [ -f "$POWER_PROFILES_DIR" ]; then
         log_info "Setting ACPI platform profile to: $profile"
@@ -140,7 +124,7 @@ set_power_profile() {
             return 0
         fi
     fi
-    
+
     # Fallback: Set CPU governor manually
     local governor
     case "$profile" in
@@ -154,7 +138,7 @@ set_power_profile() {
             governor="powersave"
             ;;
     esac
-    
+
     if [ -f "$CPU_GOVERNOR_DIR" ]; then
         log_info "Setting CPU governor to: $governor"
         for cpu_dir in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
@@ -192,29 +176,29 @@ get_battery_status() {
     if ! check_battery_present; then
         return 1
     fi
-    
+
     local status capacity rate time_to_empty time_to_full
     status=$(cat "$BATTERY_PATH/status" 2>/dev/null || echo "Unknown")
     capacity=$(cat "$BATTERY_PATH/capacity" 2>/dev/null || echo "N/A")
-    
+
     echo "==================================="
     echo "     Battery Status Report"
     echo "==================================="
     echo "Status:       $status"
     echo "Capacity:     $capacity%"
-    
+
     # Try upower for detailed info
     if command -v "$UPOWER_CMD" > /dev/null 2>&1; then
         local upower_info
         upower_info=$("$UPOWER_CMD" -i "$("$UPOWER_CMD" -e | grep BAT)" 2>/dev/null || true)
-        
+
         if [ -n "$upower_info" ]; then
             local energy_rate
             energy_rate=$(echo "$upower_info" | grep "energy-rate" | awk '{print $2}')
             if [ -n "$energy_rate" ]; then
                 echo "Discharge:    ${energy_rate} W"
             fi
-            
+
             local time_empty
             time_empty=$(echo "$upower_info" | grep "time to empty" | sed 's/.*: *//')
             if [ -n "$time_empty" ]; then
@@ -222,7 +206,7 @@ get_battery_status() {
             fi
         fi
     fi
-    
+
     echo "==================================="
 }
 
@@ -251,12 +235,12 @@ is_on_ac_power() {
 get_brightness() {
     local backlight_dir="/sys/class/backlight"
     local device
-    
+
     if [ ! -d "$backlight_dir" ]; then
         log_error "No backlight device found."
         return 1
     fi
-    
+
     for device in "$backlight_dir"/*/; do
         if [ -f "${device}brightness" ] && [ -f "${device}max_brightness" ]; then
             local current max percentage
@@ -269,32 +253,32 @@ get_brightness() {
             fi
         fi
     done
-    
+
     log_error "Could not read brightness level."
     return 1
 }
 
 set_brightness() {
     local level="$1"
-    
+
     if ! [[ "$level" =~ ^[0-9]+$ ]] || [ "$level" -lt 0 ] || [ "$level" -gt 100 ]; then
         log_error "Brightness must be a number between 0 and 100."
         return 1
     fi
-    
+
     local backlight_dir="/sys/class/backlight"
-    
+
     if [ ! -d "$backlight_dir" ]; then
         log_error "No backlight device found."
         return 1
     fi
-    
+
     for device in "$backlight_dir"/*/; do
         if [ -f "${device}brightness" ] && [ -f "${device}max_brightness" ]; then
             local max current
             max=$(cat "${device}max_brightness")
             local target=$((max * level / 100))
-            
+
             # Try writing directly first
             if ! echo "$target" > "${device}brightness" 2>/dev/null; then
                 # Fallback to xbacklight
@@ -305,12 +289,12 @@ set_brightness() {
                     return 1
                 fi
             fi
-            
+
             log_success "Brightness set to: $level%"
             return 0
         fi
     done
-    
+
     log_error "Could not set brightness."
     return 1
 }
@@ -319,7 +303,7 @@ set_brightness() {
 
 set_lid_action() {
     local action="$1"
-    
+
     case "$action" in
         suspend|hibernate|ignore|poweroff)
             ;;
@@ -329,33 +313,33 @@ set_lid_action() {
             return 1
             ;;
     esac
-    
+
     local handle_file="/etc/systemd/logind.conf"
     local tmp_file
-    
+
     tmp_file=$(mktemp)
-    
+
     if [ ! -f "$handle_file" ]; then
         log_error "logind.conf not found at $handle_file"
         return 1
     fi
-    
+
     # Update HandleLidSwitch setting
     sed "s/^#*HandleLidSwitch=.*/HandleLidSwitch=$action/" "$handle_file" > "$tmp_file"
-    
+
     if ! cp "$tmp_file" "$handle_file"; then
         log_error "Failed to update logind configuration."
         rm -f "$tmp_file"
         return 1
     fi
-    
+
     rm -f "$tmp_file"
-    
+
     # Reload systemd-logind
     if ! "$SYSTEMCTL_CMD" restart systemd-logind 2>/dev/null; then
         log_warn "Could not restart systemd-logind. Changes will take effect on next boot."
     fi
-    
+
     log_success "Lid action set to: $action"
 }
 
@@ -404,10 +388,10 @@ HELP
 
 main() {
     check_root
-    
+
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         suspend)
             do_suspend

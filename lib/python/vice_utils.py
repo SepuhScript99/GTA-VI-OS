@@ -22,7 +22,8 @@ NC = '\033[0m' # No Color
 __all__ = [
     'log_info', 'log_success', 'log_warn', 'log_error',
     'launch_command',
-    'SystemMetrics', 'get_cpu_usage', 'get_ram_usage'
+    'SystemMetrics', 'get_cpu_usage', 'get_ram_usage',
+    'get_battery_status', 'is_process_running', 'get_disk_usage',
 ]
 
 # --- Logging Functions ---
@@ -55,7 +56,7 @@ def launch_command(cmd_str: str) -> bool:
         args: List[str] = shlex.split(cmd_str)
         if not args:
             return False
-            
+
         # Verify the binary exists before execution
         if shutil.which(args[0]) is None:
             log_error(f"Command not found: {args[0]}")
@@ -85,22 +86,22 @@ class SystemMetrics:
         try:
             with open('/proc/stat', 'r') as f:
                 fields: List[str] = f.readline().split()[1:]
-            
+
             # idle + iowait
             idle: int = int(fields[3]) + int(fields[4])
             total: int = sum(int(i) for i in fields)
-            
+
             idle_delta: int = idle - self._prev_cpu_idle
             total_delta: int = total - self._prev_cpu_total
-            
+
             self._prev_cpu_idle = idle
             self._prev_cpu_total = total
-            
+
             if total_delta > 0:
                 usage: float = 100 - (100 * idle_delta / total_delta)
                 self._prev_cpu_usage = usage
                 return f"CPU: {int(usage)}%"
-            
+
             # If total_delta is 0 (called too fast), return last known usage
             return f"CPU: {int(self._prev_cpu_usage)}%"
         except Exception:
@@ -118,12 +119,12 @@ class SystemMetrics:
                         # Value is typically "  12345 kB", split and take first token
                         val: int = int(val_part.split()[0])
                         mem_info[key.strip()] = val
-            
+
             total: int = mem_info.get('MemTotal', 0) // 1024
             # MemAvailable is more accurate than MemFree (includes reclaimable cache)
             available: int = mem_info.get('MemAvailable', mem_info.get('MemFree', 0)) // 1024
             used: int = total - available
-            
+
             if total > 0:
                 return f"RAM: {used}MB / {total}MB"
             return "RAM: N/A"
@@ -140,3 +141,114 @@ def get_cpu_usage() -> str:
 def get_ram_usage() -> str:
     """Module-level wrapper for RAM usage."""
     return _metrics.get_ram_usage()
+
+# --- Extended Utilities ---
+
+_BATTERY_PATH = "/sys/class/power_supply"
+
+def get_battery_status() -> str:
+    """
+    Read battery status from sysfs with acpi fallback.
+
+    Returns a compact string:
+      - "Chrg 75%"  (charging)
+      - "Bat 42%"   (discharging)
+      - "100%"      (fully charged, on AC)
+      - "AC"        (no battery detected / desktop)
+    """
+    if not os.path.isdir(_BATTERY_PATH):
+        return "AC"
+
+    try:
+        for entry in sorted(os.listdir(_BATTERY_PATH)):
+            type_path = os.path.join(_BATTERY_PATH, entry, "type")
+            if not os.path.isfile(type_path):
+                continue
+            with open(type_path) as f:
+                if f.read().strip() != "Battery":
+                    continue
+
+            status = "Unknown"
+            status_path = os.path.join(_BATTERY_PATH, entry, "status")
+            if os.path.isfile(status_path):
+                with open(status_path) as f:
+                    status = f.read().strip()
+
+            capacity = 0
+            capacity_path = os.path.join(_BATTERY_PATH, entry, "capacity")
+            if os.path.isfile(capacity_path):
+                with open(capacity_path) as f:
+                    val = f.read().strip()
+                    if val:
+                        capacity = int(val)
+
+            if status == "Charging":
+                return f"Chrg {capacity}%"
+            elif status == "Discharging":
+                return f"Bat {capacity}%"
+            else:
+                return f"{capacity}%"
+    except Exception as e:
+        log_error(f"vice_utils: battery sysfs read failed: {e}")
+
+    if shutil.which("acpi"):
+        try:
+            result = subprocess.run(
+                ["acpi", "-b"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip().split(":")[-1].strip()
+        except Exception:
+            pass
+
+    return "AC"
+
+
+def is_process_running(process_name: str) -> bool:
+    """
+    Check whether a process matching *process_name* is running for the
+    current user. Uses pgrep for reliable PID-based detection.
+    Falls back to a global pgrep if getuid is unavailable (non-Linux).
+    """
+    try:
+        uid = os.getuid()
+        result = subprocess.run(
+            ["pgrep", "-u", str(uid), "-x", process_name],
+            capture_output=True, timeout=5
+        )
+        return result.returncode == 0
+    except AttributeError:
+        pass
+    except Exception:
+        return False
+
+    try:
+        result = subprocess.run(
+            ["pgrep", "-x", process_name],
+            capture_output=True, timeout=5
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def get_disk_usage() -> str:
+    """
+    Read root partition disk usage from df.
+
+    Returns a string like "45%" or "N/A" on failure.
+    """
+    try:
+        result = subprocess.run(
+            ["df", "-h", "--output=pcent", "/"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            lines = result.stdout.strip().splitlines()
+            if len(lines) >= 2:
+                return lines[1].strip()
+        return "N/A"
+    except Exception as e:
+        log_error(f"vice_utils: disk usage read failed: {e}")
+        return "N/A"

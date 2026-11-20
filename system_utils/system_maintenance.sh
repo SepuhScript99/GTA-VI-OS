@@ -6,14 +6,9 @@ set -Eeuo pipefail
 # Performs comprehensive system health checks, integrity verification, and audits.
 # ============================================================================
 
-WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd")
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
+WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 DPKG_CMD="dpkg"
@@ -44,15 +39,15 @@ check_maintenance_deps() {
 check_system_health() {
     log_info "System Health Check:"
     echo "==================================="
-    
+
     local passed=0
     local failed=0
-    
+
     # 1. Check systemd failed units
     echo "1. Systemd Failed Units:"
     local failed_units
     failed_units=$("$SYSTEMCTL_CMD" --failed --no-legend 2>/dev/null | awk '{print $1}')
-    
+
     if [ -z "$failed_units" ]; then
         echo "   [OK] No failed units."
         passed=$((passed + 1))
@@ -62,12 +57,12 @@ check_system_health() {
         failed=$((failed + 1))
     fi
     echo ""
-    
+
     # 2. Check disk space
     echo "2. Disk Space:"
     local disk_full
     disk_full=$(df -h / | awk 'NR==2 && $5 > 90 {print $5}')
-    
+
     if [ -z "$disk_full" ]; then
         echo "   [OK] Root partition < 90% full."
         passed=$((passed + 1))
@@ -76,14 +71,14 @@ check_system_health() {
         failed=$((failed + 1))
     fi
     echo ""
-    
+
     # 3. Check memory
     echo "3. Memory:"
     local mem_available
     mem_available=$(awk '/MemAvailable/{print $2}' /proc/meminfo)
     local mem_total
     mem_total=$(awk '/MemTotal/{print $2}' /proc/meminfo)
-    
+
     if [ "$mem_available" -gt $((mem_total / 10)) ]; then
         echo "   [OK] >10% memory available."
         passed=$((passed + 1))
@@ -92,7 +87,7 @@ check_system_health() {
         failed=$((failed + 1))
     fi
     echo ""
-    
+
     # 4. Check journal size
     echo "4. Journal Size:"
     local journal_size
@@ -100,7 +95,7 @@ check_system_health() {
     echo "   Journal: $journal_size"
     passed=$((passed + 1))
     echo ""
-    
+
     # 5. Check last boot time
     echo "5. Last Boot:"
     local uptime
@@ -108,9 +103,9 @@ check_system_health() {
     echo "   $uptime"
     passed=$((passed + 1))
     echo ""
-    
+
     echo "Summary: $passed passed, $failed failed."
-    
+
     if [ "$failed" -gt 0 ]; then
         log_warn "Health check found $failed issue(s)."
         return 1
@@ -125,15 +120,15 @@ check_system_health() {
 verify_package_integrity() {
     log_info "Package Integrity Verification:"
     echo "==================================="
-    
+
     if ! command -v "$DEBSUMS_CMD" > /dev/null 2>&1; then
         log_warn "debsums not installed. Install 'debsums' for integrity checking."
         return 1
     fi
-    
+
     local changed_files
     changed_files=$("$DEBSUMS_CMD" -c 2>/dev/null | head -n 20)
-    
+
     if [ -z "$changed_files" ]; then
         log_success "All package files are intact."
         return 0
@@ -147,11 +142,11 @@ verify_package_integrity() {
 verify_dpkg_database() {
     log_info "DPKG Database Audit:"
     echo "==================================="
-    
+
     # Check for broken packages
     local broken
     broken=$("$DPKG_CMD" -l | grep -c "^iF\|^iU\|^iH\|^rc " 2>/dev/null || echo "0")
-    
+
     if [ "$broken" -eq 0 ]; then
         log_success "No broken or half-installed packages."
     else
@@ -165,12 +160,12 @@ verify_dpkg_database() {
 audit_log_rotation() {
     log_info "Log Rotation Audit:"
     echo "==================================="
-    
+
     if ! command -v "$LOGROTATE_CMD" > /dev/null 2>&1; then
         log_warn "logrotate not installed."
         return 1
     fi
-    
+
     # Dry-run logrotate to check for errors
     if "$LOGROTATE_CMD" -d /etc/logrotate.conf 2>&1 | grep -q "error"; then
         log_error "Logrotate configuration has errors."
@@ -185,23 +180,22 @@ audit_log_rotation() {
 audit_services() {
     log_info "Service Audit:"
     echo "==================================="
-    
+
     # List enabled services
     echo "Enabled Services:"
-    "$SYSTEMCTL_CMD" list-unit-files --type=service --state=enabled --no-legend 2>/dev/null | awk '{print "  " $1}
     "$SYSTEMCTL_CMD" list-unit-files --type=service --state=enabled --no-legend 2>/dev/null | awk '{print "  " $1}'
-    
+
     echo ""
     echo "Failed Services:"
     local failed
     failed=$("$SYSTEMCTL_CMD" --failed --no-legend 2>/dev/null)
-    
+
     if [ -z "$failed" ]; then
         echo "  (none)"
     else
         echo "$failed" | sed 's/^/  /'
     fi
-    
+
     echo "==================================="
 }
 
@@ -210,10 +204,10 @@ audit_services() {
 full_maintenance() {
     log_info "=== Full System Maintenance ==="
     echo ""
-    
+
     local passed=0
     local failed=0
-    
+
     echo "1. System Health:"
     if check_system_health; then
         passed=$((passed + 1))
@@ -221,7 +215,7 @@ full_maintenance() {
         failed=$((failed + 1))
     fi
     echo ""
-    
+
     echo "2. Package Integrity:"
     if verify_package_integrity; then
         passed=$((passed + 1))
@@ -229,11 +223,11 @@ full_maintenance() {
         failed=$((failed + 1))
     fi
     echo ""
-    
+
     echo "3. DPKG Database:"
     verify_dpkg_database
     echo ""
-    
+
     echo "4. Log Rotation:"
     if audit_log_rotation; then
         passed=$((passed + 1))
@@ -241,15 +235,15 @@ full_maintenance() {
         failed=$((failed + 1))
     fi
     echo ""
-    
+
     echo "5. Service Audit:"
     audit_services
     echo ""
-    
+
     echo "=== Maintenance Summary ==="
     echo "Passed: $passed"
     echo "Failed: $failed"
-    
+
     if [ "$failed" -gt 0 ]; then
         log_warn "$failed maintenance check(s) failed."
         return 1
@@ -291,10 +285,10 @@ HELP
 
 main() {
     check_maintenance_deps
-    
+
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         health|health-check)
             check_system_health

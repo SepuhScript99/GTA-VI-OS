@@ -12,6 +12,18 @@ if [ -z "$DBUS_SESSION_BUS_ADDRESS" ] && [ -x /usr/bin/dbus-launch ]; then
     eval "$(/usr/bin/dbus-launch --sh-syntax --exit-with-session)"
 fi
 
+# 2.5 Start the Vice notification daemon (owns org.freedesktop.Notifications).
+#     Runs AFTER DBus export so the session bus is guaranteed available.
+#     Exits gracefully if another notification daemon already owns the name.
+if [ -x /opt/vice-os/vice_notification_daemon.py ]; then
+    /usr/bin/python3 /opt/vice-os/vice_notification_daemon.py > /dev/null 2>&1 &
+fi
+
+# 2.6 Start the system notifier (battery/disk/temperature alerts via notify-send).
+if [ -x /opt/vice-os/vice_system_notifier.py ]; then
+    /usr/bin/python3 /opt/vice-os/vice_system_notifier.py > /dev/null 2>&1 &
+fi
+
 # 3. Execute XDG Autostart entries (System-wide + User-specific)
 # We process user-specific entries first, then system-wide, ensuring
 # user overrides take precedence and avoiding duplicate executions.

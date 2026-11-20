@@ -8,24 +8,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Log operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
+install_cleanup
 
 # --- Helper Functions ---
 
@@ -54,12 +38,12 @@ view_kernel_logs() {
 view_service_logs() {
     local service="$1"
     local lines="${2:-50}"
-    
+
     if [ -z "$service" ]; then
         log_error "Service name required."
         return 1
     fi
-    
+
     log_info "Showing last $lines lines of logs for service: $service"
     journalctl -u "$service" -n "$lines" --no-pager
 }
@@ -72,13 +56,13 @@ view_errors() {
 
 view_boot_logs() {
     local boot_id="${1:-0}"
-    
+
     if [ "$boot_id" == "list" ]; then
         log_info "Available boots:"
         journalctl --list-boots
         return 0
     fi
-    
+
     # 0 = current boot, -1 = previous boot, etc.
     if [ "$boot_id" == "0" ]; then
         log_info "Showing logs from current boot..."
@@ -98,12 +82,12 @@ tail_system_logs() {
 
 tail_service_logs() {
     local service="$1"
-    
+
     if [ -z "$service" ]; then
         log_error "Service name required."
         return 1
     fi
-    
+
     log_info "Tailing logs for service: $service (Ctrl+C to exit)..."
     journalctl -u "$service" -f
 }
@@ -113,15 +97,15 @@ tail_service_logs() {
 clean_logs() {
     local time="${1:-7d}"
     local size="${2:-100M}"
-    
+
     log_info "Cleaning up old logs (older than $time or exceeding $size)..."
-    
+
     log_info "Vacuuming by time ($time)..."
     journalctl --vacuum-time="$time"
-    
+
     log_info "Vacuuming by size ($size)..."
     journalctl --vacuum-size="$size"
-    
+
     log_success "Log cleanup complete."
 }
 
@@ -134,7 +118,7 @@ show_disk_usage() {
 
 show_help() {
     cat <<HELP
-GTA VI OS (Vice OS) Log Manager
+GTA VI OS (Vice OS) Log Manager (Log Management)
 
 Usage: $0 <command> [options]
 
@@ -170,11 +154,15 @@ HELP
 # --- Main ---
 
 main() {
-    check_log_deps
-    
     local command="${1:-help}"
+    if [ "$command" = "help" ] || [ "$command" = "--help" ] || [ "$command" = "-h" ]; then
+        show_help
+        exit 0
+    fi
     shift || true
-    
+
+    check_log_deps
+
     case "$command" in
         system|all)
             local lines="${1:-50}"

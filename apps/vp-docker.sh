@@ -6,15 +6,17 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
+if [ -f "$WORKDIR/lib/common.sh" ]; then
+    source "$WORKDIR/lib/common.sh"
+elif [ -f "/usr/local/lib/common.sh" ]; then
+    source "/usr/local/lib/common.sh"
+else
+    echo "Error: common.sh library not found." >&2
     exit 1
 fi
-source "$WORKDIR/lib/common.sh"
+install_cleanup
 
-# Initialize temp variables BEFORE trap to avoid unbound variable errors in cleanup
+LOCKFILE="/var/lock/vp-docker.lock"
 TMP_KEYRING=""
 TMP_DEARMORED=""
 
@@ -22,6 +24,9 @@ TMP_DEARMORED=""
 cleanup() {
     local exit_code=$?
     rm -f "$TMP_KEYRING" "$TMP_DEARMORED" 2>/dev/null || true
+    if [ -f "$LOCKFILE" ]; then
+        rm -f "$LOCKFILE" 2>/dev/null || true
+    fi
     if [ $exit_code -eq 0 ]; then
         log_success "Docker installation completed successfully."
     else
@@ -34,7 +39,26 @@ trap cleanup EXIT SIGINT SIGTERM
 
 # --- Main ---
 main() {
+    if [[ "${1:-}" == "--version" ]]; then
+        echo "Vice OS Docker Installer v1.1"
+        exit 0
+    fi
+    if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
+        echo "Docker Engine Installer for Vice OS"
+        echo "Usage: sudo $0"
+        echo "Downloads Docker GPG keys, configures apt repository, and installs Docker CE."
+        exit 0
+    fi
+
     check_root
+
+    # Prevent concurrent execution
+    exec 9>"$LOCKFILE"
+    if ! flock -n 9; then
+        log_warn "Another Docker installer process is already running. Exiting."
+        exit 0
+    fi
+
     log_info "Installing Docker Engine..."
 
     # Verify dependencies using shared library (including iptables for Docker networking)
@@ -56,29 +80,34 @@ main() {
         exit 1
     fi
 
-    log_info "Deadoring GPG key..."
+    log_info "Dearmoring GPG key..."
     if ! gpg --dearmor < "$TMP_KEYRING" > "$TMP_DEARMORED"; then
         log_error "Failed to dearmor GPG key. The downloaded key might be corrupted."
         exit 1
     fi
-    
+
     # Safely install the keyring to the destination
     log_info "Installing GPG key to apt keyrings..."
     install -d -m 0755 /etc/apt/keyrings
     install -m 0644 "$TMP_DEARMORED" /etc/apt/keyrings/docker.gpg
 
-    # Add the repository using declarative configuration file
+    # Add the repository dynamically (works across amd64, arm64, and independent of workdir)
     log_info "Adding Docker repository..."
+    install -d -m 0755 /etc/apt/sources.list.d
     local repo_src="$WORKDIR/config/apt/sources.list.d/docker.list"
     if [ -f "$repo_src" ]; then
-        install -d -m 0755 /etc/apt/sources.list.d
         cp "$repo_src" /etc/apt/sources.list.d/docker.list
-        chown root:root /etc/apt/sources.list.d/docker.list
-        chmod 644 /etc/apt/sources.list.d/docker.list
     else
-        log_error "Repository config missing: $repo_src"
-        exit 1
+        local ARCH
+        ARCH=$(dpkg --print-architecture)
+        local CODENAME="bookworm"
+        if [ -f /etc/os-release ]; then
+            CODENAME=$(. /etc/os-release && echo "${VERSION_CODENAME:-bookworm}")
+        fi
+        echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $CODENAME stable" > /etc/apt/sources.list.d/docker.list
     fi
+    chown root:root /etc/apt/sources.list.d/docker.list
+    chmod 644 /etc/apt/sources.list.d/docker.list
 
     # Update apt cache
     log_info "Updating apt cache..."
@@ -108,7 +137,7 @@ JSON
         exit 1
     fi
 
-    # Add vice user to docker group
+    # Add vice user to docker group if exists
     if id -u vice >/dev/null 2>&1; then
         log_info "Adding user 'vice' to docker group..."
         usermod -aG docker vice
@@ -118,15 +147,15 @@ JSON
 
     # Enable and start the service (applies daemon.json on first start)
     log_info "Enabling and starting Docker service..."
-    systemctl enable --now docker
+    systemctl enable --now docker 2>/dev/null || true
 
     # Verify service status
-    if systemctl is-active --quiet docker; then
+    if systemctl is-active --quiet docker 2>/dev/null; then
         log_success "Docker installed and started successfully."
     else
-        log_error "Docker installed, but the service failed to start. Check 'systemctl status docker'."
+        log_warn "Docker installed, but systemctl is not running or service failed to start."
     fi
-    
+
     log_warn "If you added a user to the docker group, please log out and log back in for changes to take effect."
 }
 

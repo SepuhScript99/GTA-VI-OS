@@ -8,24 +8,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "System info retrieval failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
+install_cleanup
 
 # --- Helper Functions ---
 
@@ -61,14 +45,14 @@ show_uptime() {
 
 show_cpu_info() {
     print_header "CPU"
-    
+
     if ! command -v lscpu > /dev/null 2>&1; then
         log_warn "lscpu not found. Basic CPU info only."
-        echo "Model: $(grep "model name" /proc/cpuinfo | head -n 1 | cut -d: -f2 | xargs)
+        echo "Model: $(grep "model name" /proc/cpuinfo | head -n 1 | cut -d: -f2 | xargs)"
         echo "Cores: $(nproc 2>/dev/null || echo 'N/A')"
         return 0
     fi
-    
+
     lscpu | grep -E "^(Model name|CPU\(s\)|Thread|Core|Socket|CPU max MHz|Virtualization)"
 }
 
@@ -148,7 +132,7 @@ Usage: $0 <command>
 
 Commands:
   all            Show all system information (default)
-  os             Show operating system info
+  os             Show Operating System info
   kernel         Show kernel and architecture info
   uptime         Show system uptime and time
   cpu            Show CPU information
@@ -171,7 +155,7 @@ HELP
 main() {
     local command="${1:-all}"
     shift || true
-    
+
     case "$command" in
         all)
             show_all

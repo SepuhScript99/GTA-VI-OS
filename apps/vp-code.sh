@@ -6,15 +6,17 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
+if [ -f "$WORKDIR/lib/common.sh" ]; then
+    source "$WORKDIR/lib/common.sh"
+elif [ -f "/usr/local/lib/common.sh" ]; then
+    source "/usr/local/lib/common.sh"
+else
+    echo "Error: common.sh library not found." >&2
     exit 1
 fi
-source "$WORKDIR/lib/common.sh"
+install_cleanup
 
-# Initialize temp variables BEFORE trap to avoid unbound variable errors in cleanup
+LOCKFILE="/var/lock/vp-code.lock"
 TMP_KEYRING=""
 TMP_DEARMORED=""
 
@@ -22,6 +24,9 @@ TMP_DEARMORED=""
 cleanup() {
     local exit_code=$?
     rm -f "$TMP_KEYRING" "$TMP_DEARMORED" 2>/dev/null || true
+    if [ -f "$LOCKFILE" ]; then
+        rm -f "$LOCKFILE" 2>/dev/null || true
+    fi
     if [ $exit_code -eq 0 ]; then
         log_success "VS Code installation completed successfully."
     else
@@ -34,7 +39,26 @@ trap cleanup EXIT SIGINT SIGTERM
 
 # --- Main ---
 main() {
+    if [[ "${1:-}" == "--version" ]]; then
+        echo "Vice OS Code Installer v1.1"
+        exit 0
+    fi
+    if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
+        echo "Visual Studio Code Installer for Vice OS"
+        echo "Usage: sudo $0"
+        echo "Downloads Microsoft GPG keys, configures apt repository, and installs VS Code."
+        exit 0
+    fi
+
     check_root
+
+    # Prevent concurrent execution
+    exec 9>"$LOCKFILE"
+    if ! flock -n 9; then
+        log_warn "Another VS Code installer process is already running. Exiting."
+        exit 0
+    fi
+
     log_info "Installing Visual Studio Code..."
 
     # Verify dependencies using shared library (installs them if missing)
@@ -56,12 +80,12 @@ main() {
         exit 1
     fi
 
-    log_info "Deadoring GPG key..."
+    log_info "Dearmoring GPG key..."
     if ! gpg --dearmor < "$TMP_KEYRING" > "$TMP_DEARMORED"; then
         log_error "Failed to dearmor GPG key. The downloaded key might be corrupted."
         exit 1
     fi
-    
+
     # Safely install the keyring to the destination
     log_info "Installing GPG key to apt keyrings..."
     install -d -m 0755 /usr/share/keyrings
@@ -71,7 +95,10 @@ main() {
     log_info "Adding VS Code repository..."
     local ARCH
     ARCH=$(dpkg --print-architecture)
+    install -d -m 0755 /etc/apt/sources.list.d
     echo "deb [arch=$ARCH signed-by=/usr/share/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list
+    chown root:root /etc/apt/sources.list.d/vscode.list
+    chmod 644 /etc/apt/sources.list.d/vscode.list
 
     # Install VS Code
     log_info "Updating apt cache..."

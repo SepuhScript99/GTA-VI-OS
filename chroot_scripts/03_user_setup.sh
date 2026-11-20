@@ -34,7 +34,7 @@ main() {
     else
         log_warn "User 'vice' already exists. Skipping creation."
     fi
-    
+
     # Ensure vice has correct shell and groups regardless of creation path
     usermod -s /bin/bash vice
     usermod -aG sudo vice
@@ -44,7 +44,7 @@ main() {
         cp /vice_payload/config/sudoers /etc/sudoers.d/vice
         chown root:root /etc/sudoers.d/vice
         chmod 440 /etc/sudoers.d/vice
-        
+
         # Validate sudoers syntax to prevent locking out root access
         if ! visudo -cf /etc/sudoers.d/vice > /dev/null 2>&1; then
             log_error "Syntax error in /etc/sudoers.d/vice! Aborting."
@@ -64,10 +64,7 @@ main() {
     cp -r /vice_payload/desktop/* /opt/vice-os/
 
     # Ensure all desktop scripts and helpers are executable
-    chmod +x /opt/vice-os/dbus_session.sh
-    chmod +x /opt/vice-os/login.py
-    chmod +x /opt/vice-os/vice_shell.py
-    chmod +x /opt/vice-os/ob_menu.py
+    chmod +x /opt/vice-os/*.sh /opt/vice-os/*.py 2>/dev/null || true
 
     # Copy shared Python libraries so the desktop shell can import them at runtime
     mkdir -p /opt/vice-os/lib
@@ -84,6 +81,36 @@ main() {
     mkdir -p /home/vice/.config/openbox
     cp /vice_payload/config/openbox_rc.xml /home/vice/.config/openbox/rc.xml
     chown -R vice:vice /home/vice/.config
+
+    # Copy Labwc (Wayland compositor) configuration to system skeleton and vice user
+    # Labwc reads config from ~/.config/labwc/ — mirrors the Openbox config structure.
+    if [ -d /vice_payload/config/labwc ]; then
+        log_info "Installing Labwc Wayland compositor configuration..."
+        mkdir -p /etc/skel/.config/labwc
+        cp /vice_payload/config/labwc/* /etc/skel/.config/labwc/
+        chmod +x /etc/skel/.config/labwc/autostart 2>/dev/null || true
+
+        mkdir -p /home/vice/.config/labwc
+        cp /vice_payload/config/labwc/* /home/vice/.config/labwc/
+        chmod +x /home/vice/.config/labwc/autostart 2>/dev/null || true
+        chown -R vice:vice /home/vice/.config/labwc
+
+        # Also install labwc config system-wide as fallback (/etc/xdg/labwc/)
+        mkdir -p /etc/xdg/labwc
+        cp /vice_payload/config/labwc/* /etc/xdg/labwc/
+        chmod +x /etc/xdg/labwc/autostart 2>/dev/null || true
+        log_info "Labwc configuration installed to /etc/skel, /home/vice, and /etc/xdg."
+    else
+        log_warn "Labwc config directory not found in payload. Wayland session config skipped."
+    fi
+
+    # Install session type configuration (x11 default, wayland opt-in)
+    if [ -f /vice_payload/config/vice-os-session.conf ]; then
+        mkdir -p /etc/vice-os
+        cp /vice_payload/config/vice-os-session.conf /etc/vice-os/session.conf
+        chmod 644 /etc/vice-os/session.conf
+        log_info "Installed session configuration (/etc/vice-os/session.conf)."
+    fi
 
     # Install GUI Application Entries (Settings Menu)
     log_info "Installing XDG application entries..."

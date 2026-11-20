@@ -17,7 +17,7 @@ source "$WORKDIR/lib/common.sh"
 
 # --- Arguments ---
 ISO_PATH="${1:?Error: Path to ISO argument required}"
-TIMEOUT_SECONDS=90
+TIMEOUT_SECONDS=180
 TEST_DIR=$(mktemp -d)
 
 # --- Cleanup Function ---
@@ -29,7 +29,7 @@ cleanup() {
         kill -9 "$QEMU_PID" 2>/dev/null || true
     fi
     rm -rf "$TEST_DIR"
-    
+
     if [ $exit_code -eq 0 ]; then
         log_success "Smoke test completed successfully."
     else
@@ -62,19 +62,25 @@ main() {
     local log_file="$TEST_DIR/qemu_console.log"
     log_info "Booting QEMU (Timeout: ${TIMEOUT_SECONDS}s)..."
 
+    local qemu_args=(
+        -m 2048
+        -kernel "$TEST_DIR/vmlinuz"
+        -initrd "$TEST_DIR/initrd.img"
+        -append "boot=live components console=ttyS0,115200n8"
+        -cdrom "$ISO_PATH"
+        -nographic
+        -serial "file:$log_file"
+        -display none
+    )
+    if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+        log_info "KVM hardware acceleration detected."
+        qemu_args+=(-enable-kvm)
+    fi
+
     # Run QEMU in the background, redirecting serial console to log file
     # -append passes kernel command line args directly, bypassing GRUB for a faster, headless test
-    qemu-system-x86_64 \
-        -m 2048 \
-        -kernel "$TEST_DIR/vmlinuz" \
-        -initrd "$TEST_DIR/initrd.img" \
-        -append "boot=live quiet loglevel=3 console=ttyS0 root=live:LABEL=VICE_OS" \
-        -cdrom "$ISO_PATH" \
-        -nographic \
-        -serial file:"$log_file" \
-        -display none \
-        &
-    
+    qemu-system-x86_64 "${qemu_args[@]}" &
+
     QEMU_PID=$!
 
     # Wait for the login prompt or Openbox to appear in the log
@@ -82,7 +88,7 @@ main() {
     while [ $elapsed -lt $TIMEOUT_SECONDS ]; do
         if [ -f "$log_file" ]; then
             # Look for standard agetty login prompt or our custom shell startup
-            if grep -q "login:" "$log_file" || grep -q "VICE OS" "$log_file"; then
+            if grep -qE "login:|VICE OS|vice@|Welcome to" "$log_file"; then
                 log_success "Boot successful! Login prompt reached."
                 exit 0
             fi

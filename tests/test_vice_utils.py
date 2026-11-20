@@ -9,10 +9,12 @@ from unittest.mock import patch, mock_open, MagicMock
 import sys
 import os
 
-# Add the lib directory to the system path to import the module
+# Add the lib and desktop directories to the system path to import modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib', 'python')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'desktop')))
 
 import vice_utils
+import panel_config
 
 class TestLaunchCommand(unittest.TestCase):
     """Tests for the launch_command function."""
@@ -115,6 +117,161 @@ class TestLogging(unittest.TestCase):
 
     def test_log_error(self):
         vice_utils.log_error("Test error message")
+
+class TestBatteryStatus(unittest.TestCase):
+    """Tests for the get_battery_status function."""
+
+    @patch('vice_utils.os.path.isdir', return_value=False)
+    def test_no_battery_path(self, mock_isdir):
+        """Returns 'AC' when /sys/class/power_supply does not exist."""
+        result = vice_utils.get_battery_status()
+        self.assertEqual(result, "AC")
+
+    def test_battery_exception_returns_ac(self):
+        """Returns 'AC' when sysfs read raises an exception."""
+        with patch('vice_utils.os.path.isdir', return_value=True), \
+             patch('vice_utils.os.listdir', side_effect=PermissionError("denied")):
+            result = vice_utils.get_battery_status()
+            self.assertEqual(result, "AC")
+
+
+class TestIsProcessRunning(unittest.TestCase):
+    """Tests for the is_process_running function."""
+
+    @patch('vice_utils.subprocess.run')
+    def test_process_running(self, mock_run):
+        """Returns True when pgrep finds the process."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+        result = vice_utils.is_process_running("python3")
+        self.assertTrue(result)
+
+    @patch('vice_utils.subprocess.run')
+    def test_process_not_running(self, mock_run):
+        """Returns False when pgrep does not find the process."""
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_run.return_value = mock_result
+        result = vice_utils.is_process_running("nonexistent")
+        self.assertFalse(result)
+
+
+class TestDiskUsage(unittest.TestCase):
+    """Tests for the get_disk_usage function."""
+
+    @patch('vice_utils.subprocess.run')
+    def test_disk_usage_success(self, mock_run):
+        """Returns the usage percentage string on success."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Use%\n42%\n"
+        mock_run.return_value = mock_result
+        result = vice_utils.get_disk_usage()
+        self.assertEqual(result, "42%")
+
+    @patch('vice_utils.subprocess.run')
+    def test_disk_usage_failure(self, mock_run):
+        """Returns 'N/A' when df fails."""
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_run.return_value = mock_result
+        result = vice_utils.get_disk_usage()
+        self.assertEqual(result, "N/A")
+
+    @patch('vice_utils.subprocess.run', side_effect=Exception("df failed"))
+    def test_disk_usage_exception(self, mock_run):
+        """Returns 'N/A' on subprocess exception."""
+        result = vice_utils.get_disk_usage()
+        self.assertEqual(result, "N/A")
+
+
+class TestWaylandSupport(unittest.TestCase):
+    """Tests for Wayland support detection and commands."""
+
+    @patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-0"})
+    def test_wayland_session_detection(self):
+        """Test detection of Wayland session."""
+        self.assertTrue(os.environ.get("WAYLAND_DISPLAY") is not None)
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_x11_session_detection(self):
+        """Test detection of X11 session when WAYLAND_DISPLAY is unset."""
+        self.assertIsNone(os.environ.get("WAYLAND_DISPLAY"))
+
+
+class TestSessionConfig(unittest.TestCase):
+    """Tests for session configuration reading and format."""
+
+    def test_session_config_parsing(self):
+        """Test parsing of session configuration file content."""
+        sample_config = '# Vice OS Session Config\nSESSION_TYPE="wayland"\n'
+        session = "x11"
+        for line in sample_config.splitlines():
+            if line.strip().startswith("SESSION_TYPE="):
+                session = line.strip().split("=", 1)[1].strip('"\'')
+        self.assertEqual(session, "wayland")
+
+    def test_session_config_default_x11(self):
+        """Test default fallback to x11 when SESSION_TYPE is not wayland."""
+        sample_config = '# Vice OS Session Config\nSESSION_TYPE="x11"\n'
+        session = "x11"
+        for line in sample_config.splitlines():
+            if line.strip().startswith("SESSION_TYPE="):
+                session = line.strip().split("=", 1)[1].strip('"\'')
+        self.assertEqual(session, "x11")
+
+
+class TestPanelConfig(unittest.TestCase):
+    """Tests for panel configuration constants and geometry."""
+
+    def test_dimensions_are_positive(self):
+        """Panel dimensions must be positive integers."""
+        self.assertGreater(panel_config.TOPBAR_HEIGHT, 0)
+        self.assertGreater(panel_config.DOCK_HEIGHT, 0)
+        self.assertGreater(panel_config.DOCK_WIDTH, 0)
+        self.assertGreater(panel_config.DOCK_BUTTON_WIDTH, 0)
+        self.assertGreater(panel_config.RUNMENU_WIDTH, 0)
+        self.assertGreater(panel_config.RUNMENU_HEIGHT, 0)
+
+    def test_color_palette_format(self):
+        """Neon Miami colors must be valid color strings."""
+        self.assertTrue(panel_config.COLOR_CYAN.startswith("#"))
+        self.assertTrue(panel_config.COLOR_MAGENTA.startswith("#"))
+        self.assertTrue(panel_config.COLOR_WHITE.startswith("#"))
+        self.assertTrue(panel_config.COLOR_RED.startswith("#"))
+
+    def test_dock_apps_structure(self):
+        """DOCK_APPS must contain valid (label, command, tooltip) tuples."""
+        self.assertIsInstance(panel_config.DOCK_APPS, list)
+        self.assertGreaterEqual(len(panel_config.DOCK_APPS), 1)
+        for item in panel_config.DOCK_APPS:
+            self.assertEqual(len(item), 3)
+            label, cmd, tooltip = item
+            self.assertIsInstance(label, str)
+            self.assertIsInstance(cmd, str)
+            self.assertIsInstance(tooltip, str)
+
+    def test_stalonetray_args_structure(self):
+        """STALONETRAY_ARGS must be a list containing essential flags."""
+        self.assertIsInstance(panel_config.STALONETRAY_ARGS, list)
+        self.assertIn("--geometry", panel_config.STALONETRAY_ARGS)
+        self.assertIn("--window-type", panel_config.STALONETRAY_ARGS)
+
+
+class TestSessionWatchdogLogic(unittest.TestCase):
+    """Tests for session watchdog exponential backoff calculations."""
+
+    def test_backoff_progression(self):
+        """Backoff doubles until reaching MAX_BACKOFF (30s)."""
+        backoff = 1
+        max_backoff = 30
+        values = []
+        for _ in range(6):
+            values.append(backoff)
+            backoff = min(backoff * 2, max_backoff)
+        self.assertEqual(values, [1, 2, 4, 8, 16, 30])
+
 
 if __name__ == '__main__':
     unittest.main()

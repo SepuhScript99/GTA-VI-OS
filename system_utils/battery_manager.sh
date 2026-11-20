@@ -8,13 +8,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 POWER_SUPPLY_DIR="/sys/class/power_supply"
@@ -22,22 +17,11 @@ BATTERY_NAME="BAT0"
 UPOWER_CMD="upower"
 ACPI_CMD="acpi"
 
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Battery operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
-
 # --- Helper Functions ---
 
 check_battery_deps() {
     check_dependencies "cat" "grep" "awk"
-    
+
     # Optional dependencies for extended features
     if ! command -v "$UPOWER_CMD" > /dev/null 2>&1; then
         log_warn "upower not found. Extended battery info unavailable."
@@ -71,15 +55,15 @@ is_battery_present() {
     local battery_name="${1:-$BATTERY_NAME}"
     local battery_path
     battery_path=$(get_battery_path "$battery_name")
-    
+
     if [ ! -d "$battery_path" ]; then
         return 1
     fi
-    
+
     if [ ! -f "$battery_path/type" ] || [ "$(cat "$battery_path/type" 2>/dev/null)" != "Battery" ]; then
         return 1
     fi
-    
+
     return 0
 }
 
@@ -88,18 +72,18 @@ is_battery_present() {
 show_status() {
     local battery_name
     battery_name=$(find_battery_device 2>/dev/null || echo "$BATTERY_NAME")
-    
+
     if ! is_battery_present "$battery_name"; then
         log_error "No battery found. This system may not have a battery (desktop or VM)."
         return 1
     fi
-    
+
     local battery_path
     battery_path=$(get_battery_path "$battery_name")
-    
+
     log_info "Battery Status Report:"
     echo "==================================="
-    
+
     # Read basic info from sysfs
     local status capacity energy_full energy_full_design voltage_now current_now
     status=$(cat "$battery_path/status" 2>/dev/null || echo "Unknown")
@@ -108,43 +92,43 @@ show_status() {
     energy_full_design=$(cat "$battery_path/energy_full_design" 2>/dev/null || echo "0")
     voltage_now=$(cat "$battery_path/voltage_now" 2>/dev/null || echo "0")
     current_now=$(cat "$battery_path/current_now" 2>/dev/null || echo "0")
-    
+
     echo "Device:        $battery_name"
     echo "Status:        $status"
     echo "Capacity:      $capacity%"
-    
+
     # Calculate health percentage
     if [ "$energy_full" -gt 0 ] && [ "$energy_full_design" -gt 0 ]; then
         local health
         health=$((energy_full * 100 / energy_full_design))
         echo "Health:        $health% (Design: $((energy_full_design / 1000000)) Wh, Full: $((energy_full / 1000000)) Wh)"
     fi
-    
+
     # Voltage (convert from microvolts to volts)
     if [ "$voltage_now" -gt 0 ]; then
         local voltage
         voltage=$(echo "scale=2; $voltage_now / 1000000" | bc 2>/dev/null || echo "N/A")
         echo "Voltage:       ${voltage}V"
     fi
-    
+
     # Current (convert from microamps to amps)
     if [ "$current_now" -ne 0 ]; then
         local current
         current=$(echo "scale=2; $current_now / 1000000" | bc 2>/dev/null || echo "N/A")
         echo "Current:       ${current}A"
     fi
-    
+
     # Try upower for extended info
     if command -v "$UPOWER_CMD" > /dev/null 2>&1; then
         local upower_info
         upower_info=$("$UPOWER_CMD" -i "$("$UPOWER_CMD" -e | grep -i "BAT")" 2>/dev/null || true)
-        
+
         if [ -n "$upower_info" ]; then
             local vendor model serial
             vendor=$(echo "$upower_info" | grep "vendor:" | sed 's/.*: *//')
             model=$(echo "$upower_info" | grep "model:" | sed 's/.*: *//')
             serial=$(echo "$upower_info" | grep "serial:" | sed 's/.*: *//')
-            
+
             if [ -n "$vendor" ]; then
                 echo "Vendor:        $vendor"
             fi
@@ -154,14 +138,14 @@ show_status() {
             if [ -n "$serial" ]; then
                 echo "Serial:        $serial"
             fi
-            
+
             # Cycle count
             local cycles
             cycles=$(echo "$upower_info" | grep "cycle-count" | awk '{print $2}')
             if [ -n "$cycles" ] && [ "$cycles" != "0" ]; then
                 echo "Cycle Count:   $cycles"
             fi
-            
+
             # Time to empty/full
             if [ "$status" == "Discharging" ]; then
                 local time_empty
@@ -178,33 +162,33 @@ show_status() {
             fi
         fi
     fi
-    
+
     echo "==================================="
 }
 
 show_health() {
     local battery_name
     battery_name=$(find_battery_device 2>/dev/null || echo "$BATTERY_NAME")
-    
+
     if ! is_battery_present "$battery_name"; then
         log_error "No battery found."
         return 1
     fi
-    
+
     local battery_path
     battery_path=$(get_battery_path "$battery_name")
-    
+
     log_info "Battery Health Report:"
     echo "==================================="
-    
+
     local energy_full energy_full_design
     energy_full=$(cat "$battery_path/energy_full" 2>/dev/null || echo "0")
     energy_full_design=$(cat "$battery_path/energy_full_design" 2>/dev/null || echo "0")
-    
+
     if [ "$energy_full" -eq 0 ] || [ "$energy_full_design" -eq 0 ]; then
         log_warn "Health data not available from sysfs."
         log_info "Trying upower..."
-        
+
         if command -v "$UPOWER_CMD" > /dev/null 2>&1; then
             "$UPOWER_CMD" -i "$("$UPOWER_CMD" -e | grep -i "BAT")" 2>/dev/null | grep -E "energy-full|energy-full-design|capacity"
         else
@@ -214,11 +198,11 @@ show_health() {
     else
         local health
         health=$((energy_full * 100 / energy_full_design))
-        
+
         echo "Design Capacity: $((energy_full_design / 1000000)) Wh"
         echo "Full Capacity:   $((energy_full / 1000000)) Wh"
         echo "Health:          $health%"
-        
+
         if [ "$health" -ge 80 ]; then
             log_success "Battery health is GOOD (>=80%)."
         elif [ "$health" -ge 60 ]; then
@@ -227,37 +211,37 @@ show_health() {
             log_error "Battery health is POOR (<60%). Replacement recommended."
         fi
     fi
-    
+
     echo "==================================="
 }
 
 get_capacity() {
     local battery_name
     battery_name=$(find_battery_device 2>/dev/null || echo "$BATTERY_NAME")
-    
+
     if ! is_battery_present "$battery_name"; then
         echo "N/A"
         return 1
     fi
-    
+
     local battery_path
     battery_path=$(get_battery_path "$battery_name")
-    
+
     cat "$battery_path/capacity" 2>/dev/null || echo "N/A"
 }
 
 is_charging() {
     local battery_name
     battery_name=$(find_battery_device 2>/dev/null || echo "$BATTERY_NAME")
-    
+
     if ! is_battery_present "$battery_name"; then
         return 1
     fi
-    
+
     local battery_path status
     battery_path=$(get_battery_path "$battery_name")
     status=$(cat "$battery_path/status" 2>/dev/null || echo "Unknown")
-    
+
     if [ "$status" == "Charging" ] || [ "$status" == "Full" ]; then
         return 0
     else
@@ -272,14 +256,14 @@ is_on_ac() {
             return 0
         fi
     done
-    
+
     # Also check ADP* devices
     for adapter in "$POWER_SUPPLY_DIR"/ADP*/online; do
         if [ -f "$adapter" ] && [ "$(cat "$adapter" 2>/dev/null)" == "1" ]; then
             return 0
         fi
     done
-    
+
     return 1
 }
 
@@ -288,28 +272,28 @@ is_on_ac() {
 get_charge_thresholds() {
     local battery_name
     battery_name=$(find_battery_device 2>/dev/null || echo "$BATTERY_NAME")
-    
+
     if ! is_battery_present "$battery_name"; then
         log_error "No battery found."
         return 1
     fi
-    
+
     local battery_path
     battery_path=$(get_battery_path "$battery_name")
-    
+
     log_info "Charging Thresholds:"
     echo "==================================="
-    
+
     local start_threshold stop_threshold
     start_threshold=$(cat "$battery_path/charge_start_threshold" 2>/dev/null || echo "N/A")
     stop_threshold=$(cat "$battery_path/charge_stop_threshold" 2>/dev/null || echo "N/A")
-    
+
     if [ "$start_threshold" == "N/A" ] && [ "$stop_threshold" == "N/A" ]; then
         log_warn "Charging thresholds are not supported by this hardware."
         log_info "ThinkPad and some Dell laptops support this feature."
         return 1
     fi
-    
+
     echo "Start: $start_threshold%"
     echo "Stop:  $stop_threshold%"
     echo "==================================="
@@ -317,61 +301,61 @@ get_charge_thresholds() {
 
 set_charge_start_threshold() {
     local threshold="$1"
-    
+
     if ! [[ "$threshold" =~ ^[0-9]+$ ]] || [ "$threshold" -lt 0 ] || [ "$threshold" -gt 100 ]; then
         log_error "Threshold must be a number between 0 and 100."
         return 1
     fi
-    
+
     local battery_name
     battery_name=$(find_battery_device 2>/dev/null || echo "$BATTERY_NAME")
     local battery_path
     battery_path=$(get_battery_path "$battery_name")
-    
+
     local threshold_file="$battery_path/charge_start_threshold"
-    
+
     if [ ! -f "$threshold_file" ]; then
         log_error "Charge start threshold not supported by this hardware."
         return 1
     fi
-    
+
     log_info "Setting charge start threshold to: $threshold%"
-    
+
     if ! echo "$threshold" > "$threshold_file" 2>/dev/null; then
         log_error "Failed to set threshold. Permission denied?"
         return 1
     fi
-    
+
     log_success "Charge start threshold set to: $threshold%"
 }
 
 set_charge_stop_threshold() {
     local threshold="$1"
-    
+
     if ! [[ "$threshold" =~ ^[0-9]+$ ]] || [ "$threshold" -lt 0 ] || [ "$threshold" -gt 100 ]; then
         log_error "Threshold must be a number between 0 and 100."
         return 1
     fi
-    
+
     local battery_name
     battery_name=$(find_battery_device 2>/dev/null || echo "$BATTERY_NAME")
     local battery_path
     battery_path=$(get_battery_path "$battery_name")
-    
+
     local threshold_file="$battery_path/charge_stop_threshold"
-    
+
     if [ ! -f "$threshold_file" ]; then
         log_error "Charge stop threshold not supported by this hardware."
         return 1
     fi
-    
+
     log_info "Setting charge stop threshold to: $threshold%"
-    
+
     if ! echo "$threshold" > "$threshold_file" 2>/dev/null; then
         log_error "Failed to set threshold. Permission denied?"
         return 1
     fi
-    
+
     log_success "Charge stop threshold set to: $threshold%"
 }
 
@@ -379,15 +363,15 @@ set_charge_stop_threshold() {
 
 monitor_battery() {
     local interval="${1:-10}"
-    
+
     if ! [[ "$interval" =~ ^[0-9]+$ ]] || [ "$interval" -lt 1 ]; then
         log_error "Interval must be a positive number (seconds)."
         return 1
     fi
-    
+
     log_info "Monitoring battery (refresh every ${interval}s). Press Ctrl+C to stop."
     echo "==================================="
-    
+
     while true; do
         clear
         echo "GTA VI OS Battery Monitor - $(date)"
@@ -463,10 +447,10 @@ HELP
 
 main() {
     check_battery_deps
-    
+
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         status|info)
             show_status

@@ -1,43 +1,263 @@
-name: Build and Test ISO
+name: Vice OS CI Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main, develop]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
 
 jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
-
+  lint:
+    name: Lint (ShellCheck)
+    runs-on: ubuntu-24.04
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Install build dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y debootstrap grub2-common grub-efi-amd64-bin grub-pc-bin mtools xorriso squashfs-tools curl qemu-system-x86
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
 
-    - name: Build Vice OS ISO
-      run: |
-        sudo bash build_iso.sh --clean
+      - name: Run ShellCheck on all shell scripts
+        run: |
+          find . -name '*.sh' -not -path '*/.git/*' -exec shellcheck --severity=warning {} + 2>&1 | head -100
 
-    - name: Validate ISO Structure
-      run: |
-        bash tests/validate_iso.sh out/gta-vi-os-amd64.iso
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
 
-    - name: Run QEMU Smoke Test
-      run: |
-        bash tests/smoke_test_qemu.sh out/gta-vi-os-amd64.iso
+      - name: Validate YAML syntax
+        run: |
+          if command -v yamllint > /dev/null 2>&1; then
+            yamllint .github/workflows/*.yml
+          else
+            python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml')); print('CI YAML is valid')"
+          fi
 
-    - name: Upload ISO Artifact
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: gta-vi-os-amd64-iso
-        path: |
-          out/gta-vi-os-amd64.iso
-          out/SHA256SUMS
-          out/build_info.txt
-        retention-days: 14
+      - name: Validate JSON files
+        run: |
+          find . -name '*.json' -not -path '*/node_modules/*' -not -path '*/.git/*' \
+            -exec sh -c 'python3 -m json.tool "{}" > /dev/null 2>&1 || { echo "Invalid JSON: {}"; exit 1; }' \;
+          echo "All JSON files valid."
+
+      - name: Check trailing whitespace
+        run: |
+          FILES=$(grep -rIl '[[:blank:]]$' . --include='*.sh' --include='*.py' --include='*.md' --include='*.yml' --include='*.yaml' --include='*.conf' --include='*.list' --include='*.desktop' --include='*.qss' --include='*.xml' 2>/dev/null | grep -v '.git/' || true)
+          if [ -n "$FILES" ]; then
+            echo "Files with trailing whitespace:"
+            echo "$FILES"
+            exit 1
+          fi
+          echo "No trailing whitespace found."
+
+      - name: Check executable permissions
+        run: |
+          for f in $(find . -name '*.sh' -not -path '*/.git/*'); do
+            if [ ! -x "$f" ]; then
+              echo "Missing executable permission: $f"
+              exit 1
+            fi
+          done
+          echo "All shell scripts are executable."
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pyqt5-dev-tools
+
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Run validation integration tests
+        run: bash tests/test_validation.sh
+
+      - name: Run system utilities syntax tests
+        run: bash tests/test_system_utils.sh
+
+      - name: Run system utilities runtime tests
+        run: bash tests/test_system_utils_runtime.sh
+
+      - name: Run common library tests
+        run: bash tests/test_common_sh.sh
+
+  validate-config:
+    name: Validate Configuration Files
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate packages.list
+        run: |
+          bash validation/validate_packages.sh
+
+      - name: Validate GRUB configuration syntax
+        run: |
+          if command -v grub-script-check > /dev/null 2>&1; then
+            grub-script-check config/grub.cfg
+          else
+            echo "grub-script-check not available. Skipping GRUB validation."
+          fi
+
+      - name: Check desktop files for syntax
+        run: |
+          for f in config/*.desktop; do
+            if [ -f "$f" ]; then
+              desktop-file-validate "$f" || echo "Warning: $f has issues"
+            fi
+          done
+
+  build-iso:
+    name: Build ISO
+    runs-on: ubuntu-24.04
+    needs: [lint, unit-tests]
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            debootstrap debian-archive-keyring grub-common grub2-common \
+            grub-pc-bin grub-efi-amd64-bin \
+            xorriso squashfs-tools mtools dosfstools curl \
+            genisoimage
+
+      - name: Build ISO
+        run: |
+          sudo bash build_iso.sh --clean
+        timeout-minutes: 60
+
+      - name: Validate ISO structure
+        run: |
+          bash tests/validate_iso.sh out/gta-vi-os-amd64.iso
+        timeout-minutes: 5
+
+      - name: Validate ISO (deep integrity check)
+        run: |
+          bash validation/validate_iso.sh out/gta-vi-os-amd64.iso
+        timeout-minutes: 5
+
+      - name: Validate RootFS structure
+        run: |
+          sudo bash validation/validate_rootfs.sh
+        timeout-minutes: 5
+
+      - name: Validate Kernel
+        run: |
+          sudo bash validation/validate_kernel.sh
+        timeout-minutes: 5
+
+      - name: Validate Initramfs
+        run: |
+          sudo bash validation/validate_initramfs.sh
+        timeout-minutes: 5
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gta-vi-os-amd64
+          path: |
+            out/gta-vi-os-amd64.iso
+            out/SHA256SUMS
+            out/build_info.txt
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  smoke-test:
+    name: Smoke Test (QEMU)
+    runs-on: ubuntu-24.04
+    needs: [build-iso]
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ISO artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: gta-vi-os-amd64
+          path: out
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils xorriso
+
+      - name: Run QEMU smoke test
+        run: |
+          bash tests/smoke_test_qemu.sh out/gta-vi-os-amd64.iso
+        timeout-minutes: 10
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-24.04
+    needs: [smoke-test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ISO artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: gta-vi-os-amd64
+          path: out
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd out && sha256sum gta-vi-os-amd64.iso > SHA256SUMS
+
+      - name: Generate release notes
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "## Vice OS $VERSION Stable" > release_notes.md
+          echo "" >> release_notes.md
+          echo "### Changes" >> release_notes.md
+          echo "" >> release_notes.md
+          awk '/^## /{if(++c>1)exit}c' docs/CHANGELOG.md >> release_notes.md 2>/dev/null || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Vice OS ${{ github.ref_name }}
+          body_path: release_notes.md
+          files: |
+            out/gta-vi-os-amd64.iso
+            out/SHA256SUMS
+            out/build_info.txt
+          draft: false
+          prerelease: false

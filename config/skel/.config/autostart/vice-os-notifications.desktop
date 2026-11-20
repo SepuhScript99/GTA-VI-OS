@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Vice OS Notifications
+Comment=Start the Vice OS notification daemon
+Exec=python3 /opt/vice-os/vice_notification_daemon.py
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=1
+StartupNotify=false
+Icon=preferences-system-notifications
+Categories=Utility;

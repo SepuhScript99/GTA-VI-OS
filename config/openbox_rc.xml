@@ -121,7 +121,7 @@
     <keybind key="A-Escape">
       <action name="ShowMenu"><menu>client-menu</menu></action>
     </keybind>
-    
+
     <!-- Vice OS Custom Keybinds -->
     <keybind key="W-t">
       <action name="Execute"><command>xterm</command></action>
@@ -138,7 +138,7 @@
     <keybind key="W-d">
       <action name="ToggleShowDesktop"/>
     </keybind>
-    
+
     <!-- Window Snapping & Maximize -->
     <keybind key="W-Left">
       <action name="UnmaximizeFull"/>
@@ -158,7 +158,7 @@
     <keybind key="W-v">
       <action name="Maximize"><direction>vertical</direction></action>
     </keybind>
-    
+
     <!-- Desktop switching -->
     <keybind key="C-A-Left">
       <action name="DesktopLeft"/>
@@ -192,7 +192,7 @@
     <dragThreshold>8</dragThreshold>
     <doubleClickTime>400</doubleClickTime>
     <screenEdgeWarpTime>400</screenEdgeWarpTime>
-    
+
     <context name="Frame">
       <mousebind button="A-Left" action="Press">
         <action name="Focus"/>

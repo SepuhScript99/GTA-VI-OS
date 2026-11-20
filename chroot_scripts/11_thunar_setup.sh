@@ -27,7 +27,7 @@ main() {
     install_uca() {
         local target_dir="$1"
         local owner="$2"
-        
+
         mkdir -p "$target_dir"
         cp "$uca_src" "$target_dir/uca.xml"
         chown "$owner" "$target_dir/uca.xml"

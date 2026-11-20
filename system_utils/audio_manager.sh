@@ -8,35 +8,19 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 PACTL_CMD="pactl"
 DEFAULT_SINK="@DEFAULT_SINK@"
 DEFAULT_SOURCE="@DEFAULT_SOURCE@"
 
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Audio operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
-
 # --- Helper Functions ---
 
 check_audio_deps() {
     check_dependencies "pactl"
-    
+
     # Check if audio server is running
     if ! $PACTL_CMD info > /dev/null 2>&1; then
         log_error "Cannot connect to PulseAudio/PipeWire server."
@@ -50,53 +34,53 @@ check_audio_deps() {
 get_volume() {
     local volume_str
     volume_str=$($PACTL_CMD get-sink-volume "$DEFAULT_SINK" 2>/dev/null | grep -o '[0-9]*%' | head -n 1)
-    
+
     if [ -z "$volume_str" ]; then
         log_error "Could not retrieve volume. No default sink found."
         return 1
     fi
-    
+
     # Strip the '%' and return just the number
     echo "${volume_str%\%}"
 }
 
 set_volume() {
     local level="$1"
-    
+
     # Validate input is a number
     if ! [[ "$level" =~ ^[0-9]+$ ]]; then
         log_error "Volume must be a numeric value (0-150)."
         return 1
     fi
-    
+
     # Allow up to 150% for boosting quiet audio
     if [ "$level" -lt 0 ] || [ "$level" -gt 150 ]; then
         log_error "Volume must be between 0 and 150."
         return 1
     fi
-    
+
     log_info "Setting volume to ${level}%..."
-    
+
     if ! $PACTL_CMD set-sink-volume "$DEFAULT_SINK" "${level}%"; then
         log_error "Failed to set volume."
         return 1
     fi
-    
+
     log_success "Volume set to ${level}%."
 }
 
 change_volume() {
     local delta="$1"
-    
+
     # Validate input format (e.g., +5 or -5)
     if ! [[ "$delta" =~ ^[+-][0-9]+$ ]]; then
         log_error "Volume change must be in the format +N or -N (e.g., +5, -10)."
         return 1
     fi
-    
+
     local current new_level
     current=$(get_volume)
-    
+
     # Calculate new level, clamped between 0 and 150
     new_level=$((current + delta))
     if [ "$new_level" -lt 0 ]; then
@@ -104,7 +88,7 @@ change_volume() {
     elif [ "$new_level" -gt 150 ]; then
         new_level=150
     fi
-    
+
     set_volume "$new_level"
 }
 
@@ -112,15 +96,15 @@ change_volume() {
 
 toggle_mute() {
     log_info "Toggling mute..."
-    
+
     if ! $PACTL_CMD set-sink-mute "$DEFAULT_SINK" toggle; then
         log_error "Failed to toggle mute."
         return 1
     fi
-    
+
     local mute_status
     mute_status=$($PACTL_CMD get-sink-mute "$DEFAULT_SINK" 2>/dev/null | awk '{print $2}')
-    
+
     if [ "$mute_status" == "yes" ]; then
         log_success "Audio muted."
     else
@@ -156,37 +140,37 @@ list_sources() {
 
 set_default_sink() {
     local sink_id="$1"
-    
+
     log_info "Setting default sink to $sink_id..."
-    
+
     if ! $PACTL_CMD set-default-sink "$sink_id"; then
         log_error "Failed to set default sink. Invalid ID?"
         return 1
     fi
-    
+
     # Move existing streams to the new default sink
     $PACTL_CMD list short sink-inputs | awk '{print $1}' | while read -r input_id; do
         $PACTL_CMD move-sink-input "$input_id" "$sink_id" 2>/dev/null || true
     done
-    
+
     log_success "Default sink set to $sink_id."
 }
 
 set_default_source() {
     local source_id="$1"
-    
+
     log_info "Setting default source to $source_id..."
-    
+
     if ! $PACTL_CMD set-default-source "$source_id"; then
         log_error "Failed to set default source. Invalid ID?"
         return 1
     fi
-    
+
     # Move existing streams to the new default source
     $PACTL_CMD list short source-outputs | awk '{print $1}' | while read -r output_id; do
         $PACTL_CMD move-source-output "$output_id" "$source_id" 2>/dev/null || true
     done
-    
+
     log_success "Default source set to $source_id."
 }
 
@@ -194,7 +178,7 @@ set_default_source() {
 
 show_help() {
     cat <<HELP
-GTA VI OS (Vice OS) Audio Manager
+GTA VI OS (Vice OS) Audio Manager (Audio Control)
 
 Usage: $0 <command> [options]
 
@@ -230,11 +214,15 @@ HELP
 # --- Main ---
 
 main() {
-    check_audio_deps
-    
     local command="${1:-help}"
+    if [ "$command" = "help" ] || [ "$command" = "--help" ] || [ "$command" = "-h" ]; then
+        show_help
+        exit 0
+    fi
     shift || true
-    
+
+    check_audio_deps
+
     case "$command" in
         get-volume)
             get_volume

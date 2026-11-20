@@ -8,24 +8,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Disk operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
+install_cleanup
 
 # --- Helper Functions ---
 
@@ -35,12 +19,12 @@ check_disk_deps() {
 
 validate_block_device() {
     local device="$1"
-    
+
     if [ ! -b "$device" ]; then
         log_error "'$device' is not a valid block device."
         return 1
     fi
-    
+
     # Prevent formatting or mounting critical system partitions
     case "$device" in
         /dev/sda|/dev/nvme0n1|/dev/sda1|/dev/nvme0n1p1|/dev/nvme0n1p2)
@@ -62,12 +46,12 @@ list_disks() {
 
 list_partitions() {
     local disk="$1"
-    
+
     if [ ! -b "$disk" ]; then
         log_error "'$disk' is not a valid block device."
         return 1
     fi
-    
+
     log_info "Partitions on $disk:"
     echo "==================================="
     lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT "$disk"
@@ -79,53 +63,53 @@ list_partitions() {
 mount_device() {
     local device="$1"
     local mount_point="${2:-}"
-    
+
     validate_block_device "$device" || return 1
-    
+
     # Check if already mounted
     if mountpoint -q "$device" 2>/dev/null || findmnt -rn -S "$device" | grep -q "$device"; then
         log_warn "$device is already mounted."
         findmnt -rn -S "$device"
         return 0
     fi
-    
+
     if [ -z "$mount_point" ]; then
         # Auto-mount to /media/<basename>
         local basename
         basename=$(basename "$device")
         mount_point="/media/$basename"
     fi
-    
+
     log_info "Mounting $device to $mount_point..."
-    
+
     mkdir -p "$mount_point"
-    
+
     if ! mount "$device" "$mount_point"; then
         log_error "Failed to mount $device."
         log_info "Filesystem type might be unsupported or partition is corrupt."
         return 1
     fi
-    
+
     log_success "$device mounted successfully at $mount_point."
 }
 
 unmount_device() {
     local device="$1"
-    
+
     # Allow unmounting by mount point or device
     if [ ! -b "$device" ] && ! mountpoint -q "$device"; then
         log_error "'$device' is neither a block device nor a valid mount point."
         return 1
     fi
-    
+
     log_info "Unmounting $device..."
-    
+
     if ! umount "$device"; then
         log_error "Failed to unmount $device."
         log_info "Device might be busy. Use 'lsof +D <mountpoint>' to find processes."
         return 1
     fi
-    
+
     log_success "$device unmounted successfully."
 }
 
@@ -135,9 +119,9 @@ format_device() {
     local device="$1"
     local fs_type="${2:-ext4}"
     local force="${3:-no}"
-    
+
     validate_block_device "$device" || return 1
-    
+
     # Safety confirmation
     if [ "$force" != "yes" ] && [ "$force" != "--force" ]; then
         log_warn "WARNING: Formatting $device will destroy ALL data on it!"
@@ -147,15 +131,15 @@ format_device() {
             return 1
         fi
     fi
-    
+
     # Unmount if mounted
     if findmnt -rn -S "$device" | grep -q "$device"; then
         log_info "Unmounting $device before formatting..."
         umount "$device" || { log_error "Cannot unmount. Aborting format."; return 1; }
     fi
-    
+
     log_info "Formatting $device as $fs_type..."
-    
+
     case "$fs_type" in
         ext4|ext3|ext2)
             if ! mkfs."$fs_type" -F "$device"; then
@@ -195,7 +179,7 @@ format_device() {
             return 1
             ;;
     esac
-    
+
     log_success "$device formatted successfully as $fs_type."
 }
 
@@ -203,12 +187,12 @@ format_device() {
 
 disk_usage() {
     local path="${1:-/}"
-    
+
     if [ ! -e "$path" ]; then
         log_error "Path '$path' does not exist."
         return 1
     fi
-    
+
     log_info "Disk Usage for $path:"
     echo "==================================="
     df -h "$path"
@@ -226,24 +210,24 @@ show_uuids() {
 
 smart_status() {
     local device="$1"
-    
+
     validate_block_device "$device" || return 1
-    
+
     if ! command -v smartctl > /dev/null 2>&1; then
         log_error "smartctl not found. Install 'smartmontools'."
         return 1
     fi
-    
+
     log_info "SMART Health Status for $device:"
     echo "==================================="
-    
+
     # Check if SMART is available
     if ! smartctl -i "$device" 2>/dev/null | grep -q "SMART support is: Available"; then
         log_warn "SMART support is not available for $device."
         log_info "This might be a USB drive, SD card, or virtual disk."
         return 1
     fi
-    
+
     smartctl -H "$device"
     echo "==================================="
 }
@@ -256,6 +240,7 @@ GTA VI OS (Vice OS) Disk Manager
 
 Usage: $0 <command> [options]
 
+Partition & Storage Management:
 Listing:
   list                        List all block devices
   partitions <disk>           List partitions on a specific disk
@@ -290,11 +275,15 @@ HELP
 # --- Main ---
 
 main() {
-    check_disk_deps
-    
     local command="${1:-help}"
+    if [ "$command" = "help" ] || [ "$command" = "--help" ] || [ "$command" = "-h" ]; then
+        show_help
+        exit 0
+    fi
     shift || true
-    
+
+    check_disk_deps
+
     case "$command" in
         list|disks)
             list_disks

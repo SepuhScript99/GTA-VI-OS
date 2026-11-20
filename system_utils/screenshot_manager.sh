@@ -8,30 +8,14 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 SCREENSHOT_DIR="${HOME}/Pictures/Screenshots"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 FILENAME="screenshot_${TIMESTAMP}.png"
 FULL_PATH="${SCREENSHOT_DIR}/${FILENAME}"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Screenshot operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
 
 # --- Helper Functions ---
 
@@ -59,12 +43,12 @@ capture_full() {
     local delay="${1:-0}"
     local backend
     backend=$(detect_backend)
-    
+
     ensure_screenshot_dir
-    
+
     log_info "Taking full screenshot in $delay seconds..."
     sleep "$delay"
-    
+
     case "$backend" in
         "gnome-screenshot")
             gnome-screenshot -f "$FULL_PATH" > /dev/null 2>&1
@@ -80,7 +64,7 @@ capture_full() {
             return 1
             ;;
     esac
-    
+
     if [ -f "$FULL_PATH" ]; then
         log_success "Screenshot saved to: $FULL_PATH"
     else
@@ -93,12 +77,12 @@ capture_window() {
     local delay="${1:-0}"
     local backend
     backend=$(detect_backend)
-    
+
     ensure_screenshot_dir
-    
+
     log_info "Capturing active window in $delay seconds..."
     sleep "$delay"
-    
+
     case "$backend" in
         "gnome-screenshot")
             gnome-screenshot -w -f "$FULL_PATH" > /dev/null 2>&1
@@ -117,7 +101,7 @@ capture_window() {
             return 1
             ;;
     esac
-    
+
     if [ -f "$FULL_PATH" ]; then
         log_success "Screenshot saved to: $FULL_PATH"
     else
@@ -129,11 +113,11 @@ capture_window() {
 capture_region() {
     local backend
     backend=$(detect_backend)
-    
+
     ensure_screenshot_dir
-    
+
     log_info "Select a region to capture..."
-    
+
     case "$backend" in
         "gnome-screenshot")
             gnome-screenshot -a -f "$FULL_PATH" > /dev/null 2>&1
@@ -149,7 +133,7 @@ capture_region() {
             return 1
             ;;
     esac
-    
+
     if [ -f "$FULL_PATH" ]; then
         log_success "Screenshot saved to: $FULL_PATH"
     else
@@ -189,7 +173,7 @@ HELP
 main() {
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         full|screen)
             local delay="${1:-0}"

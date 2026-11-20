@@ -27,9 +27,24 @@ xserver-xorg-video-vboxvideo
 openbox
 picom
 nitrogen
+thunar
+stalonetray
 x11-xserver-utils
 xbacklight
 dbus-x11
+
+# --- Wayland Session Support (optional, opt-in via session config) ---
+# labwc: stacking Wayland compositor (Openbox-style, wlroots-based)
+# xwayland: X11 application compatibility under Wayland
+# qtwayland5: native Qt5 Wayland platform plugin (enables PyQt shell)
+# swaybg: Wayland wallpaper utility (replaces feh/nitrogen in Wayland mode)
+# swaylock, swayidle: Screen lock and idle management for Wayland
+labwc
+xwayland
+qtwayland5
+swaybg
+swaylock
+swayidle
 
 # --- Authentication & Security ---
 policykit-1-gnome
@@ -40,7 +55,6 @@ fonts-noto-core
 fonts-liberation
 
 # --- Audio ---
-pulseaudio
 pulseaudio-utils
 pipewire
 pipewire-audio

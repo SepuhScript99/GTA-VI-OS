@@ -9,7 +9,7 @@ import sys
 import os
 import subprocess
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QLineEdit, 
+    QApplication, QWidget, QLabel, QLineEdit, QComboBox,
     QVBoxLayout
 )
 from PyQt5.QtCore import Qt, QPropertyAnimation, QRect, QTimer, QProcess
@@ -31,24 +31,24 @@ class AnimatedLogin(QWidget):
     def initUI(self):
         self.setWindowTitle('Login - Vice OS')
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        
+
         # Dynamically set geometry to primary screen safely
         screen = QApplication.primaryScreen()
         if not screen:
             log_error("No screen found. Cannot display login screen.")
             sys.exit(1)
-            
+
         geo = screen.geometry()
         self.setGeometry(geo)
-        
+
         self.setStyleSheet("background-color: #050505;")
-        
+
         layout = QVBoxLayout()
         label = QLabel("VICE OS")
         label.setFont(QFont("Arial", 64, QFont.Bold))
         label.setStyleSheet("color: #00FFFF;")
         label.setAlignment(Qt.AlignCenter)
-        
+
         self.user_input = QLineEdit(self)
         self.user_input.setPlaceholderText("Username")
         self.user_input.setText("vice") # Default to vice for live iso
@@ -57,8 +57,6 @@ class AnimatedLogin(QWidget):
             "border: 2px solid #00FFFF; border-radius: 10px; padding: 10px;"
         )
         self.user_input.setFixedSize(300, 40)
-        self.user_input.returnPressed.connect(self.pwd.setFocus)
-
         self.pwd = QLineEdit(self)
         self.pwd.setPlaceholderText("Password")
         self.pwd.setEchoMode(QLineEdit.Password)
@@ -68,12 +66,30 @@ class AnimatedLogin(QWidget):
         )
         self.pwd.setFixedSize(300, 40)
         self.pwd.returnPressed.connect(self.check_pass)
+        self.user_input.returnPressed.connect(self.pwd.setFocus)
+
+        # Session selection dropdown (X11 / Wayland)
+        self.session_combo = QComboBox(self)
+        self.session_combo.addItem("X11 (Openbox)", "x11")
+        self.session_combo.addItem("Wayland (Labwc)", "wayland")
+        self.session_combo.setStyleSheet(
+            "QComboBox { background-color: #120024; color: #00FFFF; border: 2px solid #00FFFF; "
+            "border-radius: 8px; padding: 6px 12px; font-weight: bold; } "
+            "QComboBox::drop-down { border: none; } "
+            "QComboBox QAbstractItemView { background-color: #120024; color: #FFFFFF; "
+            "selection-background-color: #FF00FF; selection-color: #FFFFFF; }"
+        )
+        self.session_combo.setFixedSize(300, 36)
+
+        # Load default session preference from system configuration
+        self.load_default_session()
 
         layout.addWidget(label)
         layout.addWidget(self.user_input, alignment=Qt.AlignCenter)
         layout.addWidget(self.pwd, alignment=Qt.AlignCenter)
+        layout.addWidget(self.session_combo, alignment=Qt.AlignCenter)
         self.setLayout(layout)
-        
+
         # Dynamic Animation based on screen size
         self.anim = QPropertyAnimation(label, b"geometry")
         self.anim.setDuration(1000)
@@ -81,10 +97,27 @@ class AnimatedLogin(QWidget):
         self.anim.setEndValue(QRect(0, geo.height() // 4, geo.width(), 100))
         self.anim.start()
 
+    def load_default_session(self):
+        """Loads default session preference from system/user config."""
+        for conf_path in ["/etc/vice-os/session.conf", os.path.expanduser("~/.config/vice-os/session.conf")]:
+            if os.path.isfile(conf_path):
+                try:
+                    with open(conf_path, "r") as f:
+                        for line in f:
+                            if line.strip().startswith("SESSION_TYPE="):
+                                session_type = line.strip().split("=", 1)[1].strip('"\'')
+                                if session_type == "wayland":
+                                    self.session_combo.setCurrentIndex(1)
+                                else:
+                                    self.session_combo.setCurrentIndex(0)
+                                break
+                except Exception:
+                    pass
+
     def check_pass(self):
         username = self.user_input.text().strip()
         password = self.pwd.text()
-        
+
         if not username or not password:
             self.shake_error()
             if not username:
@@ -100,13 +133,13 @@ class AnimatedLogin(QWidget):
         # Use QProcess to prevent UI freeze during PAM authentication
         self.auth_process = QProcess(self)
         self.auth_process.setProcessChannelMode(QProcess.ForwardedChannels)
-        
+
         # Handle the result asynchronously
         self.auth_process.finished.connect(self.handle_auth_result)
-        
+
         # Start 'su' to verify the password
         self.auth_process.start('su', [username, '-c', 'true'])
-        
+
         # Wait for the process to start writing to stdin safely
         if not self.auth_process.waitForStarted(3000):
             self.shake_error("Failed to start authentication process.")
@@ -114,10 +147,10 @@ class AnimatedLogin(QWidget):
 
         # Write the password to stdin and close it
         bytes_written = self.auth_process.write(f"{password}\n".encode())
-        
+
         # Clear the password from memory immediately after writing
         self.pwd.clear()
-        
+
         if bytes_written == -1:
             log_error("Failed to write password to auth process stdin.")
             self.shake_error("Authentication pipe error.")
@@ -126,7 +159,7 @@ class AnimatedLogin(QWidget):
         # Wait for bytes to be written to ensure 'su' receives the password
         self.auth_process.waitForBytesWritten(1000)
         self.auth_process.closeWriteChannel()
-        
+
         # Set a timeout to prevent infinite hangs
         QTimer.singleShot(5000, self.handle_auth_timeout)
 
@@ -137,7 +170,7 @@ class AnimatedLogin(QWidget):
 
     def handle_auth_result(self):
         exit_code = self.auth_process.exitCode()
-        
+
         if exit_code == 0:
             self.hide()
             self.start_session(self.user_input.text().strip())
@@ -164,29 +197,43 @@ class AnimatedLogin(QWidget):
         self.pwd.setPlaceholderText("Password")
 
     def start_session(self, username: str):
-        """Starts the DBus/X session and monitors it for exit."""
+        """Starts the configured session (X11 or Wayland) and monitors it for exit."""
         try:
             uid = os.getuid()
             runtime_dir = f"/run/user/{uid}"
-            
+
             # Since we bypass pam_systemd via 'su', we must create the runtime dir manually
             os.makedirs(runtime_dir, exist_ok=True)
             os.chmod(runtime_dir, 0o700)
-            
+
             # Set necessary environment variables for the session
             os.environ["USER"] = username
             os.environ["LOGNAME"] = username
             os.environ["HOME"] = f"/home/{username}"
             os.environ["XDG_RUNTIME_DIR"] = runtime_dir
             os.environ["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={runtime_dir}/bus"
-            
-            # Start the window manager via dbus_session.sh to ensure audio/dbus work
+
+            # Determine selected session type
+            selected_session = self.session_combo.currentData() or "x11"
+
+            # Persist user choice to user configuration
+            user_config_dir = f"/home/{username}/.config/vice-os"
+            os.makedirs(user_config_dir, exist_ok=True)
+            try:
+                with open(f"{user_config_dir}/session.conf", "w") as f:
+                    f.write(f'# Vice OS User Session Preference\nSESSION_TYPE="{selected_session}"\n')
+            except Exception:
+                pass
+
+            session_script = "/opt/vice-os/wayland_session.sh" if selected_session == "wayland" else "/opt/vice-os/dbus_session.sh"
+
+            # Start the session process to ensure audio/dbus work
             self.session_process = QProcess(self)
             self.session_process.setProcessChannelMode(QProcess.ForwardedChannels)
             self.session_process.finished.connect(QApplication.quit)
-            
-            self.session_process.start("/opt/vice-os/dbus_session.sh")
-            
+
+            self.session_process.start(session_script)
+
         except Exception as e:
             log_error(f"Failed to start session: {e}")
             # Fallback to xterm so the user isn't stranded on a black screen

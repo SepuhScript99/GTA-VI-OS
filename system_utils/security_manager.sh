@@ -8,29 +8,13 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 UFW_CMD="ufw"
 F2B_CMD="fail2ban-client"
 SSHD_CONFIG="/etc/ssh/sshd_config"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Security operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
 
 # --- Helper Functions ---
 
@@ -62,12 +46,12 @@ fw_disable() {
 fw_allow_port() {
     local port="$1"
     local protocol="${2:-tcp}"
-    
+
     if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
         log_error "Invalid port number: $port"
         return 1
     fi
-    
+
     case "$protocol" in
         tcp|udp|both)
             ;;
@@ -76,7 +60,7 @@ fw_allow_port() {
             return 1
             ;;
     esac
-    
+
     log_info "Allowing port $port/$protocol..."
     if [ "$protocol" == "both" ]; then
         $UFW_CMD allow "$port"
@@ -89,12 +73,12 @@ fw_allow_port() {
 fw_deny_port() {
     local port="$1"
     local protocol="${2:-tcp}"
-    
+
     if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
         log_error "Invalid port number: $port"
         return 1
     fi
-    
+
     log_info "Denying port $port/$protocol..."
     $UFW_CMD deny "$port/$protocol"
     log_success "Rule added."
@@ -107,7 +91,7 @@ f2b_status() {
         log_error "Fail2ban is not installed."
         return 1
     fi
-    
+
     log_info "Fail2ban Status:"
     echo "==================================="
     $F2B_CMD status
@@ -133,12 +117,12 @@ f2b_banned() {
         log_error "Fail2ban is not installed."
         return 1
     fi
-    
+
     log_info "Banned IPs (SSH):"
     echo "==================================="
     local banned_ips
     banned_ips=$($F2B_CMD status sshd 2>/dev/null | grep "Banned IP list" | cut -d: -f2 | sed 's/^[ \t]*//')
-    
+
     if [ -z "$banned_ips" ] || [ "$banned_ips" == "None" ]; then
         log_info "No banned IPs found."
     else
@@ -149,12 +133,12 @@ f2b_banned() {
 
 f2b_unban() {
     local ip="$1"
-    
+
     if ! [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         log_error "Invalid IP address format."
         return 1
     fi
-    
+
     log_info "Unbanning IP: $ip"
     $F2B_CMD unban "$ip" 2>/dev/null || $F2B_CMD set sshd unbanip "$ip" 2>/dev/null
     log_success "IP $ip unbanned."
@@ -165,14 +149,14 @@ f2b_unban() {
 audit_ssh() {
     log_info "SSH Configuration Audit:"
     echo "==================================="
-    
+
     if [ ! -f "$SSHD_CONFIG" ]; then
         log_warn "SSH config file not found at $SSHD_CONFIG"
         return 1
     fi
-    
+
     local root_login pwd_auth port
-    
+
     # Check Root Login
     root_login=$(grep -i "^PermitRootLogin" "$SSHD_CONFIG" | awk '{print $2}')
     if [ "$root_login" == "no" ] || [ "$root_login" == "prohibit-password" ]; then
@@ -180,7 +164,7 @@ audit_ssh() {
     else
         echo "Root Login:       [WARNING] (Root login is permitted)"
     fi
-    
+
     # Check Password Authentication
     pwd_auth=$(grep -i "^PasswordAuthentication" "$SSHD_CONFIG" | awk '{print $2}')
     if [ "$pwd_auth" == "no" ]; then
@@ -188,14 +172,14 @@ audit_ssh() {
     else
         echo "Password Auth:    [WARNING] (Enabled - Vulnerable to brute force)"
     fi
-    
+
     # Check Port
     port=$(grep -i "^Port" "$SSHD_CONFIG" | awk '{print $2}')
     if [ -z "$port" ]; then
         port="22 (default)"
     fi
     echo "SSH Port:         $port"
-    
+
     echo "==================================="
 }
 
@@ -203,10 +187,10 @@ audit_ssh() {
 
 failed_logins() {
     local count="${1:-10}"
-    
+
     log_info "Last $count failed login attempts:"
     echo "==================================="
-    
+
     # Try journalctl first (modern systemd)
     if journalctl _COMM=sshd -u ssh -g "Failed password" --no-pager -n "$count" 2>/dev/null | grep -q "Failed"; then
         journalctl _COMM=sshd -u ssh -g "Failed password" --no-pager -n "$count" | awk '{print $1, $2, $3, $9, $11}'
@@ -218,19 +202,19 @@ failed_logins() {
             log_warn "No failed login logs found."
         fi
     fi
-    
+
     echo "==================================="
 }
 
 successful_logins() {
     local count="${1:-10}"
-    
+
     log_info "Last $count successful logins:"
     echo "==================================="
-    
+
     # Use 'last' command which reads /var/log/wtmp
     last -n "$count" -a | head -n "$count"
-    
+
     echo "==================================="
 }
 
@@ -276,11 +260,15 @@ HELP
 # --- Main ---
 
 main() {
-    check_security_deps
-    
     local command="${1:-help}"
+    if [ "$command" = "help" ] || [ "$command" = "--help" ] || [ "$command" = "-h" ]; then
+        show_help
+        exit 0
+    fi
     shift || true
-    
+
+    check_security_deps
+
     case "$command" in
         fw-status|ufw-status)
             fw_status
@@ -291,19 +279,19 @@ main() {
         fw-disable|ufw-disable)
             fw_disable
             ;;
-        fw-allow|allow)
+        fw-allow|allow|allow-port)
             local port="${1:-}"
             if [ -z "$port" ]; then
-                log_error "Port number required."
+                log_error "Port required."
                 exit 1
             fi
             local protocol="${2:-tcp}"
             fw_allow_port "$port" "$protocol"
             ;;
-        fw-deny|deny)
+        fw-deny|deny|deny-port)
             local port="${1:-}"
             if [ -z "$port" ]; then
-                log_error "Port number required."
+                log_error "Port required."
                 exit 1
             fi
             local protocol="${2:-tcp}"

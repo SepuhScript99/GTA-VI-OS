@@ -13,26 +13,29 @@ if [ ! -f /vice_payload/lib/common.sh ]; then
 fi
 source /vice_payload/lib/common.sh
 
-log_info "Installing XDG Autostart entries..."
+main() {
+    log_info "Installing XDG Autostart entries..."
 
-# Ensure the system-wide autostart directory exists
-mkdir -p /etc/xdg/autostart
+    mkdir -p /etc/xdg/autostart
 
-# Copy the .desktop files from the payload to the system autostart directory
-local autostart_files=(
-    "vice-os-compositor.desktop"
-    "vice-os-wallpaper.desktop"
-    "vice-os-shell.desktop"
-)
+    local autostart_files=(
+        "vice-os-compositor.desktop"
+        "vice-os-wallpaper.desktop"
+        "vice-os-shell.desktop"
+        "vice-os-welcome.desktop"
+    )
 
-for file in "${autostart_files[@]}"; do
-    if [ -f "/vice_payload/config/$file" ]; then
-        cp "/vice_payload/config/$file" "/etc/xdg/autostart/"
-        chmod 644 "/etc/xdg/autostart/$file"
-        log_info "Installed: $file"
-    else
-        log_warn "Autostart file missing in payload: $file"
-    fi
-done
+    for file in "${autostart_files[@]}"; do
+        if [ -f "/vice_payload/config/$file" ]; then
+            cp "/vice_payload/config/$file" "/etc/xdg/autostart/"
+            chmod 644 "/etc/xdg/autostart/$file"
+            log_info "Installed: $file"
+        else
+            log_warn "Autostart file missing in payload: $file"
+        fi
+    done
 
-log_success "Desktop autostart configuration completed."
+    log_success "Desktop autostart configuration completed."
+}
+
+main "$@"

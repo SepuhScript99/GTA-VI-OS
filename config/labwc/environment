@@ -1,0 +1,35 @@
+# GTA VI OS (Vice OS) Labwc Environment
+# This file is sourced by labwc before executing the autostart script.
+# It exports variables to the Wayland session environment.
+
+# --- XDG Base Directory Specification ---
+export XDG_CURRENT_DESKTOP="labwc"
+export XDG_SESSION_DESKTOP="labwc"
+export XDG_SESSION_TYPE="wayland"
+export DESKTOP_SESSION="labwc"
+
+# Ensure local data directory is in the search path for user-installed apps
+export XDG_DATA_DIRS="/usr/local/share:/usr/share:${HOME}/.local/share"
+
+# --- Qt Environment (Wayland native) ---
+# Enable native Wayland platform for Qt5 applications (vice_shell, etc.)
+export QT_QPA_PLATFORM="wayland;xcb"
+# Ensure Qt apps scale correctly on high-resolution displays
+export QT_AUTO_SCREEN_SCALE_FACTOR=1
+# Use the qt5ct tool to manage Qt themes (if installed)
+export QT_QPA_PLATFORMTHEME="qt5ct"
+
+# --- Mozilla (Firefox) Environment ---
+# Enable native Wayland for Firefox in Wayland sessions
+export MOZ_ENABLE_WAYLAND=1
+
+# --- Wayland Display ---
+# Set fallback for X11 apps that need the X display (via XWayland)
+export DISPLAY="${DISPLAY:-:0}"
+
+# --- Default Applications ---
+export TERMINAL="xterm"
+export EDITOR="geany"
+export VISUAL="geany"
+export PAGER="less"
+export BROWSER="firefox"

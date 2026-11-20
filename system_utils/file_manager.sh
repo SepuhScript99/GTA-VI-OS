@@ -7,24 +7,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "File operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
+install_cleanup
 
 # --- Helper Functions ---
 
@@ -44,9 +28,9 @@ validate_path() {
 
 dir_size() {
     local path="$1"
-    
+
     validate_path "$path" || return 1
-    
+
     log_info "Calculating size of: $path"
     echo "==================================="
     du -sh "$path" 2>/dev/null
@@ -56,35 +40,35 @@ dir_size() {
 largest_files() {
     local path="$1"
     local count="${2:-10}"
-    
+
     validate_path "$path" || return 1
-    
+
     log_info "Top $count largest files in $path:"
     echo "==================================="
-    
+
     # Use find to get files, du to get sizes, sort descending, head top N
     find "$path" -type f -exec du -h {} + 2>/dev/null | sort -rh | head -n "$count"
-    
+
     echo "==================================="
 }
 
 empty_dirs() {
     local path="$1"
-    
+
     validate_path "$path" || return 1
-    
+
     log_info "Empty directories in $path:"
     echo "==================================="
-    
+
     local empty
     empty=$(find "$path" -type d -empty 2>/dev/null)
-    
+
     if [ -z "$empty" ]; then
         log_info "No empty directories found."
     else
         echo "$empty"
     fi
-    
+
     echo "==================================="
 }
 
@@ -93,9 +77,9 @@ empty_dirs() {
 clean_empty_dirs() {
     local path="$1"
     local dry_run="${2:-no}"
-    
+
     validate_path "$path" || return 1
-    
+
     if [ "$dry_run" == "yes" ] || [ "$dry_run" == "--dry-run" ]; then
         log_info "[Dry Run] Empty directories that would be removed:"
         find "$path" -type d -empty 2>/dev/null
@@ -110,20 +94,20 @@ clean_empty_dirs() {
 
 secure_delete() {
     local target="$1"
-    
+
     validate_path "$target" || return 1
-    
+
     check_dependencies "shred"
-    
+
     if [ -d "$target" ]; then
         log_error "Target is a directory. secure-delete only works on files."
         log_info "To delete a directory securely, use 'find <dir> -type f -exec shred -u {} +'"
         return 1
     fi
-    
+
     log_info "Securely deleting file: $target"
     log_info "Overwriting 3 times with random data, then zeroing..."
-    
+
     # -u: truncate and remove file after shredding
     # -z: add a final overwrite with zeros to hide shredding
     # -n: number of passes (default is 3, but explicit is better)
@@ -131,7 +115,7 @@ secure_delete() {
         log_error "Failed to securely delete $target."
         return 1
     fi
-    
+
     log_success "File securely deleted."
 }
 
@@ -140,21 +124,21 @@ secure_delete() {
 create_archive() {
     local source="$1"
     local archive_name="${2:-$(basename "$source").tar.gz}"
-    
+
     validate_path "$source" || return 1
-    
+
     local parent_dir
     parent_dir=$(dirname "$source")
     local base_name
     base_name=$(basename "$source")
-    
+
     log_info "Creating archive: $archive_name from $source"
-    
+
     if ! tar -czf "$archive_name" -C "$parent_dir" "$base_name"; then
         log_error "Failed to create archive."
         return 1
     fi
-    
+
     log_success "Archive created: $archive_name"
     ls -lh "$archive_name"
 }
@@ -162,15 +146,15 @@ create_archive() {
 extract_archive() {
     local archive="$1"
     local dest_dir="${2:-.}"
-    
+
     validate_path "$archive" || return 1
-    
+
     if [ ! -d "$dest_dir" ]; then
         mkdir -p "$dest_dir"
     fi
-    
+
     log_info "Extracting $archive to $dest_dir..."
-    
+
     case "$archive" in
         *.tar.gz|*.tgz)
             tar -xzf "$archive" -C "$dest_dir"
@@ -194,12 +178,12 @@ extract_archive() {
             return 1
             ;;
     esac
-    
+
     if [ $? -ne 0 ]; then
         log_error "Failed to extract archive."
         return 1
     fi
-    
+
     log_success "Archive extracted successfully."
 }
 
@@ -211,6 +195,7 @@ GTA VI OS (Vice OS) File Manager
 
 Usage: $0 <command> [options]
 
+File Operations:
 Analysis:
   size <path>                  Show total size of a file or directory
   largest <path> [count]       Show top N largest files (default: 10)
@@ -242,12 +227,25 @@ HELP
 # --- Main ---
 
 main() {
-    check_file_deps
-    
     local command="${1:-help}"
+    if [ "$command" = "help" ] || [ "$command" = "--help" ] || [ "$command" = "-h" ]; then
+        show_help
+        exit 0
+    fi
     shift || true
-    
+
+    check_file_deps
+
     case "$command" in
+        copy|cp)
+            local src="${1:-}"
+            local dst="${2:-}"
+            if [ -z "$src" ] || [ -z "$dst" ]; then
+                log_error "Path required."
+                exit 1
+            fi
+            cp -r "$src" "$dst"
+            ;;
         size|du)
             local path="${1:-}"
             if [ -z "$path" ]; then

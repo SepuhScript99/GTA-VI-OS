@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  GTA VI OS (Vice OS) Labwc Wayland Compositor Configuration
+  Mirrors the Openbox rc.xml keybindings and behavior for Wayland sessions.
+  Labwc is a stacking compositor (like Openbox) built on wlroots.
+
+  References:
+    - https://github.com/labwc/labwc (config format)
+    - config/openbox_rc.xml (X11 counterpart)
+-->
+<labwc_config>
+
+  <!-- ==================================================================== -->
+  <!-- Theme                                                                 -->
+  <!-- ==================================================================== -->
+  <theme>
+    <name>Clearlooks</name>
+    <cornerRadius>8</cornerRadius>
+    <keepBorder>yes</keepBorder>
+    <titleLayout>NLIMC</titleLayout>
+    <font place="ActiveWindow">
+      <name>sans</name>
+      <size>10</size>
+      <weight>bold</weight>
+      <slant>normal</slant>
+    </font>
+    <font place="InactiveWindow">
+      <name>sans</name>
+      <size>10</size>
+      <weight>normal</weight>
+      <slant>normal</slant>
+    </font>
+  </theme>
+
+  <!-- ==================================================================== -->
+  <!-- Desktops (virtual workspaces)                                         -->
+  <!-- ==================================================================== -->
+  <desktops>
+    <number>2</number>
+    <names>
+      <name>Main</name>
+      <name>Work</name>
+    </names>
+    <popupTime>0</popupTime>
+  </desktops>
+
+  <!-- ==================================================================== -->
+  <!-- Margins — reserve space for the custom TopBar (30px) and Dock (70px)  -->
+  <!-- ==================================================================== -->
+  <margins>
+    <top>30</top>
+    <bottom>70</bottom>
+    <left>0</left>
+    <right>0</right>
+  </margins>
+
+  <!-- ==================================================================== -->
+  <!-- Focus behaviour                                                       -->
+  <!-- ==================================================================== -->
+  <focus>
+    <followMouse>no</followMouse>
+    <raiseOnFocus>yes</raiseOnFocus>
+  </focus>
+
+  <!-- ==================================================================== -->
+  <!-- Window placement                                                      -->
+  <!-- ==================================================================== -->
+  <placement>
+    <policy>center</policy>
+  </placement>
+
+  <!-- ==================================================================== -->
+  <!-- Keyboard bindings                                                     -->
+  <!-- ==================================================================== -->
+  <keyboard>
+    <!-- Load labwc built-in defaults (Alt-Tab, etc.) -->
+    <default/>
+
+    <!-- Vice OS Custom Application Keybinds -->
+    <keybind key="W-t">
+      <action name="Execute" command="xterm" />
+    </keybind>
+    <keybind key="W-e">
+      <action name="Execute" command="thunar" />
+    </keybind>
+    <keybind key="W-f">
+      <action name="Execute" command="firefox" />
+    </keybind>
+    <keybind key="W-space">
+      <action name="Execute" command="python3 /opt/vice-os/vice_shell.py --menu" />
+    </keybind>
+
+    <!-- Window management -->
+    <keybind key="A-F4">
+      <action name="Close" />
+    </keybind>
+    <keybind key="W-Up">
+      <action name="ToggleMaximize" />
+    </keybind>
+    <keybind key="W-Down">
+      <action name="ToggleMaximize" />
+    </keybind>
+    <keybind key="W-Left">
+      <action name="MoveToEdge" direction="left" />
+    </keybind>
+    <keybind key="W-Right">
+      <action name="MoveToEdge" direction="right" />
+    </keybind>
+
+    <!-- Desktop switching -->
+    <keybind key="C-A-Left">
+      <action name="GoToDesktop" to="left" wrap="yes" />
+    </keybind>
+    <keybind key="C-A-Right">
+      <action name="GoToDesktop" to="right" wrap="yes" />
+    </keybind>
+
+    <!-- Session control -->
+    <keybind key="C-A-Delete">
+      <action name="Exit" />
+    </keybind>
+    <keybind key="W-l">
+      <action name="Execute" command="swaylock -f -c 1a1b26" />
+    </keybind>
+    <keybind key="C-A-l">
+      <action name="Execute" command="swaylock -f -c 1a1b26" />
+    </keybind>
+    <keybind key="W-d">
+      <action name="ToggleShowDesktop" />
+    </keybind>
+
+    <!-- Media Keys -->
+    <keybind key="XF86AudioRaiseVolume">
+      <action name="Execute" command="pactl set-sink-volume @DEFAULT_SINK@ +5%" />
+    </keybind>
+    <keybind key="XF86AudioLowerVolume">
+      <action name="Execute" command="pactl set-sink-volume @DEFAULT_SINK@ -5%" />
+    </keybind>
+    <keybind key="XF86AudioMute">
+      <action name="Execute" command="pactl set-sink-mute @DEFAULT_SINK@ toggle" />
+    </keybind>
+    <keybind key="XF86MonBrightnessUp">
+      <action name="Execute" command="brightnessctl set +10%" />
+    </keybind>
+    <keybind key="XF86MonBrightnessDown">
+      <action name="Execute" command="brightnessctl set 10%-" />
+    </keybind>
+    <keybind key="Print">
+      <action name="Execute" command="gnome-screenshot -i" />
+    </keybind>
+  </keyboard>
+
+  <!-- ==================================================================== -->
+  <!-- Mouse bindings                                                       -->
+  <!-- ==================================================================== -->
+  <mouse>
+    <!-- Load labwc built-in defaults (window move/resize, etc.) -->
+    <default/>
+  </mouse>
+
+  <!-- ==================================================================== -->
+  <!-- Libinput device configuration (touchpad)                              -->
+  <!-- Mirrors X11/xorg.conf.d/10-input.conf                                 -->
+  <!-- ==================================================================== -->
+  <libinput>
+    <device>
+      <tap>yes</tap>
+      <naturalScroll>yes</naturalScroll>
+      <clickMethod>clickfinger</clickMethod>
+    </device>
+  </libinput>
+
+</labwc_config>

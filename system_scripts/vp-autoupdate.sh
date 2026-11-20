@@ -8,13 +8,8 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 LOCKFILE="/var/lock/vp-autoupdate.lock"
 
@@ -44,9 +39,24 @@ check_network() {
 }
 
 # --- Main ---
+show_help() {
+    cat <<HELP
+GTA VI OS Automatic Update Utility
+
+Usage: $0
+Options:
+  help, --help, -h   Show this help message
+HELP
+}
+
 main() {
+    if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+        show_help
+        exit 0
+    fi
+
     check_root
-    
+
     # Prevent concurrent execution
     exec 9>"$LOCKFILE"
     if ! flock -n 9; then
@@ -55,13 +65,15 @@ main() {
     fi
 
     log_info "=== Starting Vice OS automatic update ==="
-    
+
     check_network
 
-    # Options to handle locks natively and retry
+    # Options to handle locks, timeouts, and retries
     local APT_OPTS=(
         "-o" "Acquire::Retries=3"
-        "-o" "Dpkg::Lock::Timeout=60"
+        "-o" "Acquire::http::Timeout=30"
+        "-o" "Acquire::https::Timeout=30"
+        "-o" "Dpkg::Lock::Timeout=120"
     )
 
     log_info "Updating package lists..."

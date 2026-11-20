@@ -8,29 +8,13 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
+install_cleanup
 
 # --- Configuration ---
 NMCLI_CMD="nmcli"
 PING_CMD="ping"
 IP_CMD="ip"
-
-# --- Cleanup Function ---
-cleanup() {
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        log_error "Network operation failed with exit code $exit_code."
-    fi
-    exit $exit_code
-}
-
-trap cleanup EXIT SIGINT SIGTERM
 
 # --- Helper Functions ---
 
@@ -51,21 +35,21 @@ get_connected_interface() {
 show_status() {
     log_info "Network Status"
     echo "==================================="
-    
+
     local active_iface
     active_iface=$(get_connected_interface)
-    
+
     if [ -z "$active_iface" ]; then
         echo "Status:       Disconnected"
         echo "==================================="
         return 0
     fi
-    
+
     local ip_addr gateway dns
     ip_addr=$($IP_CMD addr show "$active_iface" | grep "inet " | awk '{print $2}' | cut -d/ -f1)
     gateway=$($IP_CMD route | grep default | awk '{print $3}' | head -n 1)
     dns=$(grep "nameserver" /etc/resolv.conf | awk '{print $2}' | head -n 1)
-    
+
     echo "Interface:    $active_iface"
     echo "IP Address:   ${ip_addr:-N/A}"
     echo "Gateway:      ${gateway:-N/A}"
@@ -75,16 +59,16 @@ show_status() {
 
 show_ip() {
     local iface="${1:-}"
-    
+
     if [ -z "$iface" ]; then
         iface=$(get_connected_interface)
     fi
-    
+
     if [ -z "$iface" ]; then
         log_error "No connected interface found."
         return 1
     fi
-    
+
     $IP_CMD addr show "$iface" | grep "inet " | awk '{print $2}' | cut -d/ -f1
 }
 
@@ -100,17 +84,17 @@ show_interfaces() {
 scan_wifi() {
     local iface
     iface=$(get_wifi_interface)
-    
+
     if [ -z "$iface" ]; then
         log_error "No Wi-Fi interface found."
         log_info "This system may not have a Wi-Fi adapter."
         return 1
     fi
-    
+
     log_info "Scanning for Wi-Fi networks..."
     $NMCLI_CMD device wifi rescan ifname "$iface" 2>/dev/null || true
     sleep 2
-    
+
     log_info "Available Wi-Fi Networks:"
     echo "==================================="
     $NMCLI_CMD -f SSID,SIGNAL,SECURITY,FREQ device wifi list ifname "$iface"
@@ -120,17 +104,17 @@ scan_wifi() {
 connect_wifi() {
     local ssid="$1"
     local password="${2:-}"
-    
+
     local iface
     iface=$(get_wifi_interface)
-    
+
     if [ -z "$iface" ]; then
         log_error "No Wi-Fi interface found."
         return 1
     fi
-    
+
     log_info "Connecting to Wi-Fi network: $ssid"
-    
+
     if [ -n "$password" ]; then
         if ! $NMCLI_CMD device wifi connect "$ssid" password "$password" ifname "$iface"; then
             log_error "Failed to connect to '$ssid'. Check SSID and password."
@@ -143,19 +127,19 @@ connect_wifi() {
             return 1
         fi
     fi
-    
+
     log_success "Connected to Wi-Fi network: $ssid"
 }
 
 disconnect_wifi() {
     local iface
     iface=$(get_wifi_interface)
-    
+
     if [ -z "$iface" ]; then
         log_error "No Wi-Fi interface found."
         return 1
     fi
-    
+
     log_info "Disconnecting from Wi-Fi..."
     $NMCLI_CMD device disconnect "$iface" && log_success "Wi-Fi disconnected." || log_error "Failed to disconnect."
 }
@@ -163,20 +147,20 @@ disconnect_wifi() {
 show_saved_networks() {
     log_info "Saved Wi-Fi Networks:"
     echo "==================================="
-    $NMCLI_CMD -f NAME,UUID,TYPE connection show | grep "wifi" 
+    $NMCLI_CMD -f NAME,UUID,TYPE connection show | grep "wifi"
     echo "==================================="
 }
 
 forget_network() {
     local network_name="$1"
-    
+
     log_info "Forgetting network: $network_name"
-    
+
     if ! $NMCLI_CMD connection delete "$network_name"; then
         log_error "Failed to forget network '$network_name'."
         return 1
     fi
-    
+
     log_success "Network '$network_name' forgotten."
 }
 
@@ -191,27 +175,27 @@ list_connections() {
 
 activate_connection() {
     local conn_name="$1"
-    
+
     log_info "Activating connection: $conn_name"
-    
+
     if ! $NMCLI_CMD connection up "$conn_name"; then
         log_error "Failed to activate connection '$conn_name'."
         return 1
     fi
-    
+
     log_success "Connection '$conn_name' activated."
 }
 
 deactivate_connection() {
     local conn_name="$1"
-    
+
     log_info "Deactivating connection: $conn_name"
-    
+
     if ! $NMCLI_CMD connection down "$conn_name"; then
         log_error "Failed to deactivate connection '$conn_name'."
         return 1
     fi
-    
+
     log_success "Connection '$conn_name' deactivated."
 }
 
@@ -220,27 +204,27 @@ deactivate_connection() {
 ping_test() {
     local host="${1:-deb.debian.org}"
     local count="${2:-4}"
-    
+
     log_info "Pinging $host ($count packets)..."
-    
+
     if ! $PING_CMD -c "$count" -W 5 "$host"; then
         log_error "Ping to $host failed."
         return 1
     fi
-    
+
     log_success "Ping to $host successful."
 }
 
 dns_lookup() {
     local domain="${1:-deb.debian.org}"
-    
+
     log_info "Performing DNS lookup for: $domain"
-    
+
     if ! getent hosts "$domain" > /dev/null 2>&1; then
         log_error "DNS lookup failed for $domain."
         return 1
     fi
-    
+
     local ip
     ip=$(getent hosts "$domain" | awk '{print $1}')
     log_success "DNS lookup successful: $domain -> $ip"
@@ -248,23 +232,23 @@ dns_lookup() {
 
 trace_route() {
     local host="${1:-deb.debian.org}"
-    
+
     check_dependencies "traceroute"
-    
+
     log_info "Tracing route to $host..."
     traceroute -m 15 -w 2 "$host" || log_warn "Traceroute completed with possible timeouts."
 }
 
 internet_check() {
     log_info "Checking internet connectivity..."
-    
+
     # Check DNS resolution
     if ! getent hosts deb.debian.org > /dev/null 2>&1; then
         log_error "DNS resolution failed. Cannot resolve deb.debian.org."
         log_info "Check your DNS settings in /etc/resolv.conf"
         return 1
     fi
-    
+
     # Check HTTP connectivity
     if ! curl -s -f -o /dev/null --max-time 5 http://deb.debian.org/debian/Release; then
         log_error "HTTP connectivity check failed."
@@ -272,7 +256,7 @@ internet_check() {
         log_info "Check firewall rules or network routing."
         return 1
     fi
-    
+
     log_success "Internet connectivity verified."
 }
 
@@ -283,14 +267,14 @@ create_hotspot() {
     local password="${2:-}"
     local iface
     iface=$(get_wifi_interface)
-    
+
     if [ -z "$iface" ]; then
         log_error "No Wi-Fi interface found."
         return 1
     fi
-    
+
     log_info "Creating Wi-Fi hotspot: $ssid"
-    
+
     if [ -n "$password" ]; then
         if [ ${#password} -lt 8 ]; then
             log_error "Hotspot password must be at least 8 characters."
@@ -300,15 +284,15 @@ create_hotspot() {
     else
         $NMCLI_CMD device wifi hotspot ifname "$iface" ssid "$ssid"
     fi
-    
+
     if [ $? -ne 0 ]; then
         log_error "Failed to create hotspot."
         return 1
     fi
-    
+
     local hotspot_ip
     hotspot_ip=$($IP_CMD addr show "$iface" | grep "inet " | awk '{print $2}' | cut -d/ -f1)
-    
+
     log_success "Hotspot created: $ssid"
     log_info "Hotspot IP: $hotspot_ip"
     log_info "Connect other devices to: $ssid"
@@ -364,10 +348,10 @@ HELP
 
 main() {
     check_network_deps
-    
+
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         status)
             show_status

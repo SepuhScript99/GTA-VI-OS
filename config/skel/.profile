@@ -23,11 +23,34 @@ fi
 
 export PATH
 
-# Vice OS Auto-Login & X Session Initialization
-# If on tty1 and no display server is running, start the custom PyQt5 login screen.
-# We use 'exec' to replace the shell process with xinit.
-# If xinit fails to start, the 'exec' command fails, and the script continues,
-# leaving the user at a shell prompt on tty1 for troubleshooting.
-if [[ -z $DISPLAY ]] && [[ $(tty) = /dev/tty1 ]]; then
-    exec xinit /opt/vice-os/login.py -- :0 vt1
+# Vice OS Auto-Login & Session Initialization
+# If on tty1 and no display server is running, launch the configured session.
+# The session type is determined by /etc/vice-os/session.conf (or a user
+# override at ~/.config/vice-os/session.conf).
+#
+#   SESSION=x11     → X11 with Openbox + picom + login.py greeter (default)
+#   SESSION=wayland → Wayland with labwc compositor (native Wayland shell)
+#
+# We use 'exec' to replace the shell process with the session launcher.
+# If the session launcher fails, the user is left at a shell prompt on tty1.
+if [[ -z ${DISPLAY:-} ]] && [[ -z ${WAYLAND_DISPLAY:-} ]] && [[ $(tty) = /dev/tty1 ]]; then
+    SESSION_TYPE="x11"
+    SESSION_FILE="$HOME/.config/vice-os/session.conf"
+    if [ ! -f "$SESSION_FILE" ]; then
+        SESSION_FILE="/etc/vice-os/session.conf"
+    fi
+    if [ -f "$SESSION_FILE" ]; then
+        # shellcheck disable=SC1090
+        source "$SESSION_FILE"
+    fi
+    SESSION_TYPE="${SESSION_TYPE:-${SESSION:-x11}}"
+
+    case "$SESSION_TYPE" in
+        wayland)
+            exec /opt/vice-os/wayland_session.sh
+            ;;
+        x11|*)
+            exec xinit /opt/vice-os/login.py -- :0 vt1
+            ;;
+    esac
 fi

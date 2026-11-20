@@ -7,26 +7,25 @@ set -Eeuo pipefail
 # ============================================================================
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# --- Source Shared Library ---
-if [ ! -f "$WORKDIR/lib/common.sh" ]; then
-    echo "Error: lib/common.sh not found. Cannot continue." >&2
-    exit 1
-fi
 source "$WORKDIR/lib/common.sh"
 
 LOCKFILE="/var/lock/vice-reset-network.lock"
+LOCKED=0
 
 # --- Cleanup Function ---
 cleanup() {
     local exit_code=$?
-    if [ -f "$LOCKFILE" ]; then
-        rm -f "$LOCKFILE"
+    if [ "${LOCKED:-0}" -eq 1 ]; then
+        flock -u 9 2>/dev/null || true
+        exec 9>&- 2>/dev/null || true
+        rm -f "$LOCKFILE" 2>/dev/null || true
     fi
-    if [ $exit_code -eq 0 ]; then
-        log_success "Network reset complete."
-    else
-        log_error "Network reset failed with exit code $exit_code."
+    if [ "${LOCKED:-0}" -eq 1 ]; then
+        if [ $exit_code -eq 0 ]; then
+            log_success "Network reset completed successfully."
+        else
+            log_error "Network reset failed with exit code $exit_code."
+        fi
     fi
     exit $exit_code
 }
@@ -35,22 +34,38 @@ trap cleanup EXIT SIGINT SIGTERM
 
 # --- Main ---
 main() {
+    # Handle flags
+    if [[ "${1:-}" == "--version" ]]; then
+        echo "Vice OS Network Reset Tool v1.1"
+        exit 0
+    fi
+    if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
+        echo "Vice OS Network Reset Tool"
+        echo ""
+        echo "Resets network interfaces, resolv.conf, and NetworkManager configurations."
+        echo "Usage: sudo $0"
+        exit 0
+    fi
+
     check_root
     check_dependencies "systemctl" "ip"
-    
+
+    mkdir -p /var/lock 2>/dev/null || true
     # Prevent concurrent execution
     exec 9>"$LOCKFILE"
     if ! flock -n 9; then
-        log_warn "Another network reset process is already running. Exiting."
-        exit 0
+        log_error "Another network reset process is already running. Exiting."
+        exit 1
     fi
+    LOCKED=1
 
     log_info "=== Starting Network Reset ==="
 
     local backup_dir="/root/vice-os-network-backup-$(date +%Y%m%d%H%M%S)"
     log_info "Backing up existing network configs to $backup_dir..."
     mkdir -p "$backup_dir"
-    
+    chmod 700 "$backup_dir"
+
     [ -f /etc/network/interfaces ] && cp /etc/network/interfaces "$backup_dir/" || true
     [ -L /etc/resolv.conf ] && cp -L /etc/resolv.conf "$backup_dir/resolv.conf.symlink" || true
     [ -f /etc/resolv.conf ] && cp /etc/resolv.conf "$backup_dir/" || true
@@ -58,13 +73,11 @@ main() {
 
     log_info "Stopping NetworkManager..."
     systemctl stop NetworkManager 2>/dev/null || true
-    
+
     # Only disable systemd-resolved if it actually exists and is active
     if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
         log_info "Disabling systemd-resolved to prevent DNS conflicts..."
         systemctl disable --now systemd-resolved 2>/dev/null || true
-        # Restart dbus to clear any stale resolved connections
-        systemctl restart dbus 2>/dev/null || true
     else
         log_info "systemd-resolved is not active. Skipping disable step."
     fi
@@ -72,12 +85,14 @@ main() {
     log_info "Flushing network interfaces..."
     ip link set lo down 2>/dev/null || true
     ip link set lo up 2>/dev/null || true
-    
+
     # Find all physical interfaces and flush them
-    for iface in $(ls /sys/class/net | grep -v "^lo$"); do
-        ip addr flush dev "$iface" 2>/dev/null || true
-        ip link set "$iface" down 2>/dev/null || true
-    done
+    if [ -d /sys/class/net ]; then
+        for iface in $(ls /sys/class/net 2>/dev/null | grep -v "^lo$" || true); do
+            ip addr flush dev "$iface" 2>/dev/null || true
+            ip link set "$iface" down 2>/dev/null || true
+        done
+    fi
 
     log_info "Resetting /etc/network/interfaces to defaults..."
     cat <<INTF > /etc/network/interfaces
@@ -103,15 +118,19 @@ RESOLV
     chmod 644 /etc/resolv.conf
 
     log_info "Clearing NetworkManager connection profiles..."
-    # NetworkManager is stopped, so it's safe to delete the files directly
     rm -rf /etc/NetworkManager/system-connections/*
 
     log_info "Restarting NetworkManager..."
+    systemctl unmask NetworkManager 2>/dev/null || true
     systemctl enable NetworkManager 2>/dev/null || true
-    systemctl start NetworkManager
+    systemctl restart NetworkManager 2>/dev/null || systemctl start NetworkManager 2>/dev/null || true
 
-    log_success "Network reset complete. NetworkManager will attempt to auto-configure interfaces."
-    log_warn "If using Wi-Fi, you may need to use 'nmtui' or the network applet to reconnect."
+    if systemctl is-active --quiet NetworkManager 2>/dev/null; then
+        log_success "Network reset complete. NetworkManager is active and auto-configuring interfaces."
+    else
+        log_warn "Network reset applied, but NetworkManager service is not active. Check 'journalctl -u NetworkManager'."
+    fi
+    log_info "If using Wi-Fi, you may need to use 'nmtui' or the desktop network applet to reconnect."
 }
 
 main "$@"

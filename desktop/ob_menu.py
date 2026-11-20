@@ -62,7 +62,7 @@ def parse_desktop_file(filepath: str) -> dict:
         # Pipe menus must not pollute stdout with errors
         print(f"Error parsing {filepath}: {e}", file=sys.stderr)
         return None
-    
+
     if "name" in app_info and "exec" in app_info:
         app_info.setdefault("categories", [])
         app_info.setdefault("terminal", "false")
@@ -79,7 +79,7 @@ def get_categorized_apps() -> dict:
             app_info = parse_desktop_file(filepath)
             if not app_info:
                 continue
-            
+
             if app_info["name"] in seen_apps:
                 continue
             seen_apps.add(app_info["name"])
@@ -91,7 +91,7 @@ def get_categorized_apps() -> dict:
                     apps_by_category[display_cat].append(app_info)
                     assigned = True
                     break
-            
+
             # If no specific category matched, put in Utilities
             if not assigned:
                 apps_by_category["Utilities"].append(app_info)
@@ -105,9 +105,9 @@ def get_categorized_apps() -> dict:
 def generate_xml() -> str:
     """Generates the Openbox pipe menu XML."""
     categorized_apps = get_categorized_apps()
-    
+
     xml_lines = ['<openbox_pipe_menu>']
-    
+
     # Top level essentials
     xml_lines.append('  <item label="Terminal">')
     xml_lines.append('    <action name="Execute"><command>xterm</command></action>')
@@ -123,18 +123,18 @@ def generate_xml() -> str:
     for category, apps in categorized_apps.items():
         if not apps:
             continue
-        
+
         xml_lines.append(f'  <menu id="apps-{category.lower()}" label="{category}">')
         for app in apps:
             safe_name = escape(app["name"])
             safe_exec = escape(app["exec"])
-            
+
             # If the app requires a terminal, wrap the command in xterm -e
             if app["terminal"] == "true":
                 final_cmd = f"xterm -e {safe_exec}"
             else:
                 final_cmd = safe_exec
-                
+
             xml_lines.append(f'    <item label="{safe_name}">')
             xml_lines.append(f'      <action name="Execute"><command>{final_cmd}</command></action>')
             xml_lines.append(f'    </item>')
@@ -150,7 +150,7 @@ def generate_xml() -> str:
     xml_lines.append('  <item label="Exit Openbox">')
     xml_lines.append('    <action name="Exit" />')
     xml_lines.append('  </item>')
-    
+
     xml_lines.append('</openbox_pipe_menu>')
     return '\n'.join(xml_lines)
 
