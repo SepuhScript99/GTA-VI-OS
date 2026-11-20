@@ -40,6 +40,17 @@ main() {
         exit 1
     fi
 
+    # Stage unicode font on the ISO filesystem so both BIOS and UEFI can load gfxterm cleanly
+    local efi_fonts=""
+    if [ -f /usr/share/grub/unicode.pf2 ]; then
+        mkdir -p "$IMAGEDIR/boot/grub/fonts"
+        cp /usr/share/grub/unicode.pf2 "$IMAGEDIR/boot/grub/fonts/unicode.pf2"
+        efi_fonts="unicode"
+        log_info "Staged GRUB unicode font to $IMAGEDIR/boot/grub/fonts/unicode.pf2"
+    else
+        log_warn "/usr/share/grub/unicode.pf2 not found; GRUB will fall back to console mode."
+    fi
+
     log_info "Target architecture: ${ARCH}"
 
     # Determine EFI parameters based on architecture
@@ -70,7 +81,7 @@ main() {
     log_info "Generating EFI boot image (${efi_format})..."
     if ! grub-mkstandalone --format="${efi_format}" \
         --output="$SCRATCHDIR/${efi_binary}" \
-        --locales="" --fonts="" \
+        --locales="" --fonts="$efi_fonts" \
         "boot/grub/grub.cfg=$grub_cfg"; then
         log_error "Failed to generate EFI GRUB standalone image (${efi_format})."
         exit 1

@@ -128,6 +128,15 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin vice --noclear %I $TERM
 GETTY
 
+    log_info "Configuring live-config to prevent tty1/xinit override..."
+    mkdir -p /etc/live/config.conf.d
+    cat <<'LIVECONF' > /etc/live/config.conf.d/vice-os.conf
+# Prevent live-config from overriding Vice OS user/sudo/xinit startup
+LIVE_CONFIG_NOX11AUTOLOGIN="true"
+LIVE_CONFIG_NOCOMPONENTS="xinit,user-setup,sudo"
+LIVECONF
+    chmod 644 /etc/live/config.conf.d/vice-os.conf
+
     log_success "User and desktop setup completed."
 }
 

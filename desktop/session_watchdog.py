@@ -94,6 +94,9 @@ def main():
 
     log_info("Watchdog: session watchdog started.")
 
+    # Allow window manager autostart to launch vice_shell.py before first poll
+    time.sleep(POLL_INTERVAL)
+
     while consecutive_restarts < MAX_RESTARTS:
         if not _is_shell_running():
             if first_run:

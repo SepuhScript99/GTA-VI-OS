@@ -10,9 +10,9 @@ import os
 import subprocess
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QLineEdit, QComboBox,
-    QVBoxLayout
+    QVBoxLayout, QGraphicsOpacityEffect
 )
-from PyQt5.QtCore import Qt, QPropertyAnimation, QRect, QTimer, QProcess
+from PyQt5.QtCore import Qt, QPropertyAnimation, QTimer, QProcess
 from PyQt5.QtGui import QFont
 
 # Add the project lib directory to the system path to import shared modules
@@ -30,7 +30,7 @@ class AnimatedLogin(QWidget):
 
     def initUI(self):
         self.setWindowTitle('Login - Vice OS')
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.FramelessWindowHint)
 
         # Dynamically set geometry to primary screen safely
         screen = QApplication.primaryScreen()
@@ -44,10 +44,13 @@ class AnimatedLogin(QWidget):
         self.setStyleSheet("background-color: #050505;")
 
         layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignCenter)
+
         label = QLabel("VICE OS")
-        label.setFont(QFont("Arial", 64, QFont.Bold))
-        label.setStyleSheet("color: #00FFFF;")
+        label.setFont(QFont("Arial", 56, QFont.Bold))
+        label.setStyleSheet("color: #00FFFF; background: transparent;")
         label.setAlignment(Qt.AlignCenter)
+        label.setFixedHeight(90)
 
         self.user_input = QLineEdit(self)
         self.user_input.setPlaceholderText("Username")
@@ -84,18 +87,42 @@ class AnimatedLogin(QWidget):
         # Load default session preference from system configuration
         self.load_default_session()
 
+        hint_label = QLabel("Live Session Default: vice / vice")
+        hint_label.setFont(QFont("Arial", 10))
+        hint_label.setStyleSheet("color: #66CCCC; background: transparent;")
+        hint_label.setAlignment(Qt.AlignCenter)
+
+        layout.addStretch(2)
         layout.addWidget(label)
+        layout.addSpacing(24)
         layout.addWidget(self.user_input, alignment=Qt.AlignCenter)
+        layout.addSpacing(12)
         layout.addWidget(self.pwd, alignment=Qt.AlignCenter)
+        layout.addSpacing(12)
         layout.addWidget(self.session_combo, alignment=Qt.AlignCenter)
+        layout.addSpacing(14)
+        layout.addWidget(hint_label, alignment=Qt.AlignCenter)
+        layout.addStretch(3)
         self.setLayout(layout)
 
-        # Dynamic Animation based on screen size
-        self.anim = QPropertyAnimation(label, b"geometry")
-        self.anim.setDuration(1000)
-        self.anim.setStartValue(QRect(0, -100, geo.width(), 100))
-        self.anim.setEndValue(QRect(0, geo.height() // 4, geo.width(), 100))
+        # Fade-in title animation (avoids geometry conflicts with QVBoxLayout)
+        self._title_opacity = QGraphicsOpacityEffect(label)
+        label.setGraphicsEffect(self._title_opacity)
+        self.anim = QPropertyAnimation(self._title_opacity, b"opacity")
+        self.anim.setDuration(900)
+        self.anim.setStartValue(0.0)
+        self.anim.setEndValue(1.0)
         self.anim.start()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(150, self._focus_password_field)
+        QTimer.singleShot(500, self._focus_password_field)
+
+    def _focus_password_field(self):
+        self.raise_()
+        self.activateWindow()
+        self.pwd.setFocus(Qt.ActiveWindowFocusReason)
 
     def load_default_session(self):
         """Loads default session preference from system/user config."""
@@ -243,5 +270,8 @@ class AnimatedLogin(QWidget):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     ex = AnimatedLogin()
-    ex.show()
+    ex.showFullScreen()
+    ex.raise_()
+    ex.activateWindow()
+    ex.pwd.setFocus()
     sys.exit(app.exec_())

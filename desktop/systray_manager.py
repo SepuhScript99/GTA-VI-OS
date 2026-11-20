@@ -186,7 +186,8 @@ def start_systray():
     """
     Main entry point called by vice_shell.py.
 
-    Starts the X11 system tray container, network applet, and audio applet.
+    Starts the X11 system tray container and network applet (audio mixer is
+    launched on-demand rather than opening a window automatically on login).
     Safe to call multiple times — each daemon is guarded against duplicate launch.
     """
     log_info("Systray: initializing system tray...")
@@ -195,7 +196,6 @@ def start_systray():
     time.sleep(_AUTOSTART_DELAY)
 
     start_nm_applet()
-    start_pavucontrol()
 
     log_info("Systray: initialization complete.")
     return True
@@ -208,6 +208,3 @@ def is_systray_available() -> bool:
 
 if __name__ == "__main__":
     start_systray()
-
-
-

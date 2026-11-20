@@ -80,10 +80,15 @@ main() {
     # Enable native Wayland for Firefox
     export MOZ_ENABLE_WAYLAND=1
 
-    # 6. Start Pipewire if not running
-    if ! pgrep -u "$(id -u)" -x pipewire > /dev/null 2>&1; then
-        if command -v pipewire > /dev/null 2>&1; then
-            log_info "Starting Pipewire..."
+    # 6. Start PipeWire/PulseAudio only if not already managed by systemd or running
+    if [ ! -S "$XDG_RUNTIME_DIR/pulse/native" ] && \
+       ! pgrep -u "$(id -u)" -x pipewire > /dev/null 2>&1 && \
+       ! pgrep -u "$(id -u)" -x pipewire-pulse > /dev/null 2>&1; then
+        if command -v systemctl > /dev/null 2>&1 && systemctl --user status > /dev/null 2>&1; then
+            log_info "Starting PipeWire via systemd user session..."
+            systemctl --user start pipewire pipewire-pulse wireplumber 2>/dev/null || true
+        elif command -v pipewire > /dev/null 2>&1; then
+            log_info "Starting PipeWire..."
             /usr/bin/pipewire &
             /usr/bin/pipewire-pulse &
             if command -v wireplumber > /dev/null 2>&1; then

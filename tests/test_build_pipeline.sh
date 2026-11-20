@@ -165,7 +165,7 @@ test_bootloader_reproducibility() {
 test_squashfs_opts() {
     log_info "--- Test: SquashFS reproducibility options ---"
     if grep -q "mkfs-time" "$WORKDIR/build/create_squashfs.sh" && \
-       grep -q "all-root" "$WORKDIR/build/create_squashfs.sh" && \
+       ! grep -q -- '"-all-root"' "$WORKDIR/build/create_squashfs.sh" && \
        grep -q "vice_payload" "$WORKDIR/build/create_squashfs.sh"; then
         record_result "create_squashfs.sh enforces deterministic timestamps and excludes vice_payload" PASS
     else

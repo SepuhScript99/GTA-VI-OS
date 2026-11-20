@@ -39,7 +39,8 @@ main() {
 
     # Reproducibility and exclude options
     # mksquashfs 4.6+ respects SOURCE_DATE_EPOCH natively and rejects -mkfs-time alongside it
-    local common_opts=("-all-root")
+    # Preserve Linux user/group ownership (e.g. /home/vice -> vice:vice, /etc/shadow -> root:shadow)
+    local common_opts=()
     if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
         local epoch
         epoch=$(date +%s)
