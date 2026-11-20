@@ -62,10 +62,10 @@ main() {
     # 4. Inspect ISO structure using xorriso
     log_info "Inspecting ISO structure..."
     local xorriso_report
-    xorriso_report=$(xorriso -indev "$ISO_PATH" -report_system_area plain -- 2>&1)
+    xorriso_report=$(xorriso -indev "$ISO_PATH" -report_el_torito plain -report_system_area plain 2>&1)
 
     # Check for El Torito BIOS boot image
-    if echo "$xorriso_report" | grep -q "El Torito boot catalog"; then
+    if echo "$xorriso_report" | grep -qiE "El Torito (boot catalog|cat path|boot img)"; then
         log_success "BIOS (El Torito) boot catalog found."
     else
         log_error "BIOS (El Torito) boot catalog MISSING."
@@ -81,7 +81,7 @@ main() {
     fi
 
     # Check for Hybrid MBR
-    if echo "$xorriso_report" | grep -q "System area summary: MBR"; then
+    if echo "$xorriso_report" | grep -qi "System area summary:.*MBR"; then
         log_success "Hybrid MBR found (USB bootable)."
     else
         log_warn "Hybrid MBR not found. ISO might not boot from USB in legacy mode."
@@ -92,7 +92,7 @@ main() {
     local critical_files=("/vmlinuz" "/initrd.img" "/VICE_OS" "/live/filesystem.squashfs" "/boot/grub/grub.cfg")
 
     for file in "${critical_files[@]}"; do
-        if xorriso -indev "$ISO_PATH" -find "$file" -maxdepth 0 2>/dev/null | grep -q "$file"; then
+        if xorriso -indev "$ISO_PATH" -lsl "$file" 2>/dev/null | grep -q "$(basename "$file")"; then
             log_success "Found: $file"
         else
             log_error "Missing critical file in ISO: $file"
@@ -103,7 +103,7 @@ main() {
     # 6. Validate SquashFS filesystem integrity
     log_info "Validating SquashFS filesystem integrity..."
     local squashfs_size_bytes
-    squashfs_size_bytes=$(xorriso -indev "$ISO_PATH" -find /live/filesystem.squashfs -ls 2>/dev/null | awk '/filesystem.squashfs/{print $5}')
+    squashfs_size_bytes=$(xorriso -indev "$ISO_PATH" -lsl /live/filesystem.squashfs 2>/dev/null | awk '/filesystem\.squashfs/{print $5; exit}')
     if [ -z "$squashfs_size_bytes" ] || [ "$squashfs_size_bytes" -le 1000000 ]; then
         log_error "SquashFS is too small or missing (${squashfs_size_bytes:-0} bytes)."
         exit 1
@@ -113,9 +113,9 @@ main() {
     # 7. Validate kernel and initramfs sizes
     log_info "Validating kernel and initramfs sizes..."
     local kernel_size_bytes
-    kernel_size_bytes=$(xorriso -indev "$ISO_PATH" -find /vmlinuz -ls 2>/dev/null | awk '/vmlinuz/{print $5}')
+    kernel_size_bytes=$(xorriso -indev "$ISO_PATH" -lsl /vmlinuz 2>/dev/null | awk '/vmlinuz/{print $5; exit}')
     local initrd_size_bytes
-    initrd_size_bytes=$(xorriso -indev "$ISO_PATH" -find /initrd.img -ls 2>/dev/null | awk '/initrd.img/{print $5}')
+    initrd_size_bytes=$(xorriso -indev "$ISO_PATH" -lsl /initrd.img 2>/dev/null | awk '/initrd\.img/{print $5; exit}')
 
     if [ -z "$kernel_size_bytes" ] || [ "$kernel_size_bytes" -lt 5000000 ]; then
         log_error "Kernel image is too small or missing (${kernel_size_bytes:-0} bytes)."
@@ -132,9 +132,9 @@ main() {
     # 8. Check for single kernel version (no stale kernels)
     log_info "Checking for stale kernel files..."
     local vmlinuz_count
-    vmlinuz_count=$(xorriso -indev "$ISO_PATH" -find /vmlinuz* -ls 2>/dev/null | grep -c "vmlinuz" || true)
+    vmlinuz_count=$(xorriso -indev "$ISO_PATH" -ls / 2>/dev/null | grep -c "vmlinuz" || true)
     local initrd_count
-    initrd_count=$(xorriso -indev "$ISO_PATH" -find /initrd* -ls 2>/dev/null | grep -c "initrd" || true)
+    initrd_count=$(xorriso -indev "$ISO_PATH" -ls / 2>/dev/null | grep -c "initrd" || true)
     if [ "$vmlinuz_count" -gt 1 ]; then
         log_warn "Multiple vmlinuz images found ($vmlinuz_count). Only the latest is used."
     fi

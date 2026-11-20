@@ -38,8 +38,13 @@ main() {
     rm -f "$SQUASHFS_TARGET"
 
     # Reproducibility and exclude options
-    local epoch="${SOURCE_DATE_EPOCH:-$(date +%s)}"
-    local common_opts=("-all-root" "-mkfs-time" "$epoch")
+    # mksquashfs 4.6+ respects SOURCE_DATE_EPOCH natively and rejects -mkfs-time alongside it
+    local common_opts=("-all-root")
+    if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
+        local epoch
+        epoch=$(date +%s)
+        common_opts+=("-mkfs-time" "$epoch")
+    fi
 
     # Exclude temporary payload and caches if present; retain /boot by default for offline installer support
     local exclude_args=("-e" "vice_payload")
