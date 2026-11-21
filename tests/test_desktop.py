@@ -255,18 +255,32 @@ class TestWindowManagementConfig(unittest.TestCase):
 
         margins = root.find("ob:margins", ns)
         self.assertIsNotNone(margins)
-        self.assertEqual(int(margins.find("ob:top", ns).text), panel_config.TOPBAR_HEIGHT)
+        self.assertEqual(int(margins.find("ob:top", ns).text), 0)
         self.assertEqual(int(margins.find("ob:bottom", ns).text), panel_config.DOCK_HEIGHT)
 
         themerc = os.path.join(REPO_ROOT, "config", "themes", "Vice-Dark", "openbox-3", "themerc")
         self.assertTrue(os.path.isfile(themerc), f"Missing custom Openbox theme: {themerc}")
 
+        keyboard_el = root.find("ob:keyboard", ns)
+        self.assertIsNotNone(keyboard_el)
+        a_f1_cmds = [
+            cmd.text.strip()
+            for kb in keyboard_el.findall("ob:keybind", ns)
+            if kb.attrib.get("key") == "A-F1"
+            for cmd in kb.findall(".//ob:command", ns)
+            if cmd.text
+        ]
+        self.assertTrue(any("--toggle-menu" in c for c in a_f1_cmds), "Openbox missing A-F1 --toggle-menu binding")
+
     def test_vice_shell_has_taskbar_widget(self):
         shell_path = os.path.join(DESKTOP_DIR, "vice_shell.py")
         with open(shell_path, "r", encoding="utf-8") as fp:
             code = fp.read()
-        self.assertIn("TaskbarWidget", code)
-        self.assertIn("wmctrl", code)
+        for token in (
+            "TaskbarWidget", "StartMenuPopup", "paintEvent",
+            "setThemeName", "vice-debian-gta6.png", "wmctrl",
+        ):
+            self.assertIn(token, code)
 
     def _assert_launcher_discovery(self, vice_launcher_mod):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -320,8 +334,14 @@ class TestWindowManagementConfig(unittest.TestCase):
         pkg_path = os.path.join(REPO_ROOT, "config", "packages.list")
         with open(pkg_path, "r", encoding="utf-8") as fp:
             pkgs = {line.strip() for line in fp if line.strip() and not line.strip().startswith("#")}
-        for required in ["wmctrl", "xdotool", "xfce4-terminal", "papirus-icon-theme", "arc-theme", "xfconf", "tumbler", "gvfs"]:
+        for required in [
+            "pcmanfm", "xcape", "dbus-user-session", "wmctrl", "xdotool",
+            "xfce4-terminal", "papirus-icon-theme", "arc-theme", "xfconf",
+            "tumbler", "gvfs",
+        ]:
             self.assertIn(required, pkgs, f"Missing standard desktop package: {required}")
+        self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, "config", "qt5ct", "qt5ct.conf")))
+        self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, "config", "skel", "Desktop", "firefox.desktop")))
 
 
 if __name__ == "__main__":

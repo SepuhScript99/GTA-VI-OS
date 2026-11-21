@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Media Player
+Comment=Play video and music files
+Exec=celluloid
+Icon=multimedia-video-player
+Terminal=false
+Categories=AudioVideo;Player;

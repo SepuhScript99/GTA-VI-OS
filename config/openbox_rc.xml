@@ -40,10 +40,10 @@
     </font>
   </theme>
 
-  <!-- Reserve space for the custom TopBar and Dock -->
+  <!-- Reserve space for the bottom Cinnamon-style Taskbar -->
   <margins>
-    <top>38</top>
-    <bottom>64</bottom>
+    <top>0</top>
+    <bottom>44</bottom>
     <left>0</left>
     <right>0</right>
   </margins>
@@ -60,7 +60,7 @@
   <!-- Define the right-click desktop menu -->
   <menu id="root-menu" label="Vice OS">
     <item label="Applications Launcher">
-      <action name="Execute"><command>python3 /opt/vice-os/vice_launcher.py</command></action>
+      <action name="Execute"><command>python3 /opt/vice-os/vice_shell.py --toggle-menu</command></action>
     </item>
     <item label="Terminal">
       <action name="Execute"><command>sh -c 'command -v xfce4-terminal &gt;/dev/null &amp;&amp; exec xfce4-terminal || exec xterm'</command></action>
@@ -132,8 +132,11 @@
     </keybind>
 
     <!-- Vice OS Custom Keybinds -->
+    <keybind key="A-F1">
+      <action name="Execute"><command>python3 /opt/vice-os/vice_shell.py --toggle-menu</command></action>
+    </keybind>
     <keybind key="W-a">
-      <action name="Execute"><command>python3 /opt/vice-os/vice_launcher.py</command></action>
+      <action name="Execute"><command>python3 /opt/vice-os/vice_shell.py --toggle-menu</command></action>
     </keybind>
     <keybind key="W-t">
       <action name="Execute"><command>sh -c 'command -v xfce4-terminal &gt;/dev/null &amp;&amp; exec xfce4-terminal || exec xterm'</command></action>

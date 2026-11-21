@@ -1,5 +1,5 @@
-# GTA VI OS (Vice OS) Openbox-3 Theme — Vice-Dark
-# Sleek obsidian slate window frames with cyan active highlights and rose close hover.
+# GTA VI OS (Vice OS) Openbox-3 Theme — Vice-Dark (Leonida Sunset)
+# Deep midnight-violet frames with sunset-pink highlights and palm-teal accents.
 
 # --- Window Geometry & Typography ---
 border.width: 1
@@ -12,124 +12,124 @@ window.handle.width: 4
 window.label.text.justify: left
 
 # --- Active Window ---
-window.active.border.color: #00c8e8
-window.active.client.color: #0f121d
+window.active.border.color: #ff4da6
+window.active.client.color: #120e1e
 window.active.title.bg: flat solid
-window.active.title.bg.color: #121624
-window.active.title.separator.color: #00e5ff
+window.active.title.bg.color: #1a142d
+window.active.title.separator.color: #ff4da6
 
 window.active.label.bg: parentrelative
-window.active.label.text.color: #e8eef8
+window.active.label.text.color: #f4f1fa
 
 window.active.handle.bg: flat solid
-window.active.handle.bg.color: #121624
+window.active.handle.bg.color: #1a142d
 window.active.grip.bg: flat solid
-window.active.grip.bg.color: #00c8e8
+window.active.grip.bg.color: #ff4da6
 
 # Active Buttons
 window.active.button.unpressed.bg: parentrelative
-window.active.button.unpressed.image.color: #9aa5c2
+window.active.button.unpressed.image.color: #b7aed1
 
 window.active.button.hover.bg: flat solid
-window.active.button.hover.bg.color: #1d263d
-window.active.button.hover.image.color: #00e5ff
+window.active.button.hover.bg.color: #291f45
+window.active.button.hover.image.color: #ff8a5b
 window.active.button.close.hover.bg: flat solid
-window.active.button.close.hover.bg.color: #2b1526
+window.active.button.close.hover.bg.color: #3d162c
 window.active.button.close.hover.image.color: #ff3b6b
 
 window.active.button.pressed.bg: flat solid
-window.active.button.pressed.bg.color: #27324f
-window.active.button.pressed.image.color: #ff2e97
-window.active.button.close.pressed.image.color: #ff2e97
+window.active.button.pressed.bg.color: #352757
+window.active.button.pressed.image.color: #ff4da6
+window.active.button.close.pressed.image.color: #ff4da6
 
 window.active.button.toggled.unpressed.bg: parentrelative
-window.active.button.toggled.unpressed.image.color: #00e5ff
+window.active.button.toggled.unpressed.image.color: #ff4da6
 window.active.button.toggled.hover.bg: flat solid
-window.active.button.toggled.hover.bg.color: #1d263d
-window.active.button.toggled.hover.image.color: #00e5ff
+window.active.button.toggled.hover.bg.color: #291f45
+window.active.button.toggled.hover.image.color: #ff8a5b
 window.active.button.toggled.pressed.bg: flat solid
-window.active.button.toggled.pressed.bg.color: #27324f
-window.active.button.toggled.pressed.image.color: #ff2e97
+window.active.button.toggled.pressed.bg.color: #352757
+window.active.button.toggled.pressed.image.color: #ff4da6
 
 window.active.button.disabled.bg: parentrelative
-window.active.button.disabled.image.color: #3b445e
+window.active.button.disabled.image.color: #463a66
 
 # --- Inactive Window ---
-window.inactive.border.color: #23293d
-window.inactive.client.color: #0f121d
+window.inactive.border.color: #2d2246
+window.inactive.client.color: #120e1e
 window.inactive.title.bg: flat solid
-window.inactive.title.bg.color: #0c0f19
-window.inactive.title.separator.color: #1d2336
+window.inactive.title.bg.color: #130f21
+window.inactive.title.separator.color: #261d3d
 
 window.inactive.label.bg: parentrelative
-window.inactive.label.text.color: #7a849e
+window.inactive.label.text.color: #8c82a8
 
 window.inactive.handle.bg: flat solid
-window.inactive.handle.bg.color: #0c0f19
+window.inactive.handle.bg.color: #130f21
 window.inactive.grip.bg: flat solid
-window.inactive.grip.bg.color: #23293d
+window.inactive.grip.bg.color: #2d2246
 
 # Inactive Buttons
 window.inactive.button.unpressed.bg: parentrelative
-window.inactive.button.unpressed.image.color: #5c6680
+window.inactive.button.unpressed.image.color: #6b6187
 
 window.inactive.button.hover.bg: flat solid
-window.inactive.button.hover.bg.color: #181e30
-window.inactive.button.hover.image.color: #00e5ff
+window.inactive.button.hover.bg.color: #221a38
+window.inactive.button.hover.image.color: #ff8a5b
 window.inactive.button.close.hover.bg: flat solid
-window.inactive.button.close.hover.bg.color: #261422
+window.inactive.button.close.hover.bg.color: #361426
 window.inactive.button.close.hover.image.color: #ff3b6b
 
 window.inactive.button.pressed.bg: flat solid
-window.inactive.button.pressed.bg.color: #1d263d
-window.inactive.button.pressed.image.color: #ff2e97
+window.inactive.button.pressed.bg.color: #2d2246
+window.inactive.button.pressed.image.color: #ff4da6
 
 window.inactive.button.toggled.unpressed.bg: parentrelative
-window.inactive.button.toggled.unpressed.image.color: #5c6680
+window.inactive.button.toggled.unpressed.image.color: #6b6187
 window.inactive.button.toggled.hover.bg: flat solid
-window.inactive.button.toggled.hover.bg.color: #181e30
-window.inactive.button.toggled.hover.image.color: #00e5ff
+window.inactive.button.toggled.hover.bg.color: #221a38
+window.inactive.button.toggled.hover.image.color: #ff8a5b
 window.inactive.button.toggled.pressed.bg: flat solid
-window.inactive.button.toggled.pressed.bg.color: #1d263d
-window.inactive.button.toggled.pressed.image.color: #ff2e97
+window.inactive.button.toggled.pressed.bg.color: #2d2246
+window.inactive.button.toggled.pressed.image.color: #ff4da6
 
 window.inactive.button.disabled.bg: parentrelative
-window.inactive.button.disabled.image.color: #2d344a
+window.inactive.button.disabled.image.color: #382c54
 
 # --- Menus ---
 menu.border.width: 1
-menu.border.color: #262e45
+menu.border.color: #382b57
 menu.overlap.x: -2
 menu.overlap.y: 0
 
 menu.title.bg: flat solid
-menu.title.bg.color: #0c0f19
-menu.title.text.color: #00e5ff
+menu.title.bg.color: #130f21
+menu.title.text.color: #ff4da6
 menu.title.text.justify: center
 
 menu.items.bg: flat solid
-menu.items.bg.color: #111522
-menu.items.text.color: #e8eef8
-menu.items.disabled.text.color: #56607a
+menu.items.bg.color: #171226
+menu.items.text.color: #f4f1fa
+menu.items.disabled.text.color: #6b6187
 
 menu.items.active.bg: flat solid
-menu.items.active.bg.color: #1d2840
-menu.items.active.text.color: #00e5ff
-menu.items.active.disabled.text.color: #56607a
+menu.items.active.bg.color: #362247
+menu.items.active.text.color: #ff8a5b
+menu.items.active.disabled.text.color: #6b6187
 
-menu.separator.color: #262e45
+menu.separator.color: #2e234a
 menu.separator.width: 1
 menu.separator.padding.width: 6
 menu.separator.padding.height: 4
 
 # --- On-Screen Display (Alt+Tab / Workspace Switch) ---
 osd.border.width: 1
-osd.border.color: #00e5ff
+osd.border.color: #ff4da6
 osd.bg: flat solid
-osd.bg.color: #111522
+osd.bg.color: #171226
 osd.label.bg: parentrelative
-osd.label.text.color: #e8eef8
+osd.label.text.color: #f4f1fa
 osd.hilight.bg: flat solid
-osd.hilight.bg.color: #00e5ff
+osd.hilight.bg.color: #ff4da6
 osd.unhilight.bg: flat solid
-osd.unhilight.bg.color: #1c2235
+osd.unhilight.bg.color: #241c3d

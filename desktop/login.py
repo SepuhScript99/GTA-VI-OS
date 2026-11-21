@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QGraphicsOpacityEffect
 )
 from PyQt5.QtCore import Qt, QPropertyAnimation, QTimer, QProcess
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QPixmap
 
 # Add the project lib directory to the system path to import shared modules
 sys.path.insert(0, '/opt/vice-os/lib')
@@ -41,31 +41,43 @@ class AnimatedLogin(QWidget):
         geo = screen.geometry()
         self.setGeometry(geo)
 
-        self.setStyleSheet("background-color: #050505;")
+        self.setStyleSheet("background-color: #120e1e;")
 
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignCenter)
 
+        logo_label = QLabel()
+        logo_label.setAlignment(Qt.AlignCenter)
+        logo_label.setStyleSheet("background: transparent;")
+        logo_loaded = False
+        for logo_path in ("/usr/share/pixmaps/vice-debian-gta6.png", "/usr/share/pixmaps/vice-app.png"):
+            if os.path.isfile(logo_path):
+                pix = QPixmap(logo_path)
+                if not pix.isNull():
+                    logo_label.setPixmap(pix.scaled(112, 112, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                    logo_loaded = True
+                    break
+
         label = QLabel("VICE OS")
-        label.setFont(QFont("Arial", 56, QFont.Bold))
-        label.setStyleSheet("color: #00FFFF; background: transparent;")
+        label.setFont(QFont("Noto Sans", 52, QFont.Bold))
+        label.setStyleSheet("color: #ff4da6; background: transparent;")
         label.setAlignment(Qt.AlignCenter)
-        label.setFixedHeight(90)
+        label.setFixedHeight(80)
 
         self.user_input = QLineEdit(self)
         self.user_input.setPlaceholderText("Username")
         self.user_input.setText("vice") # Default to vice for live iso
         self.user_input.setStyleSheet(
-            "background-color: #120024; color: #FFFFFF; "
-            "border: 2px solid #00FFFF; border-radius: 10px; padding: 10px;"
+            "background-color: #1b152e; color: #f4f1fa; "
+            "border: 2px solid #ff8a5b; border-radius: 10px; padding: 10px;"
         )
         self.user_input.setFixedSize(300, 40)
         self.pwd = QLineEdit(self)
         self.pwd.setPlaceholderText("Password")
         self.pwd.setEchoMode(QLineEdit.Password)
         self.pwd.setStyleSheet(
-            "background-color: #120024; color: #FFFFFF; "
-            "border: 2px solid #FF00FF; border-radius: 10px; padding: 10px;"
+            "background-color: #1b152e; color: #f4f1fa; "
+            "border: 2px solid #ff4da6; border-radius: 10px; padding: 10px;"
         )
         self.pwd.setFixedSize(300, 40)
         self.pwd.returnPressed.connect(self.check_pass)
@@ -76,11 +88,11 @@ class AnimatedLogin(QWidget):
         self.session_combo.addItem("X11 (Openbox)", "x11")
         self.session_combo.addItem("Wayland (Labwc)", "wayland")
         self.session_combo.setStyleSheet(
-            "QComboBox { background-color: #120024; color: #00FFFF; border: 2px solid #00FFFF; "
+            "QComboBox { background-color: #1b152e; color: #f4f1fa; border: 2px solid #9d4edd; "
             "border-radius: 8px; padding: 6px 12px; font-weight: bold; } "
             "QComboBox::drop-down { border: none; } "
-            "QComboBox QAbstractItemView { background-color: #120024; color: #FFFFFF; "
-            "selection-background-color: #FF00FF; selection-color: #FFFFFF; }"
+            "QComboBox QAbstractItemView { background-color: #181229; color: #f4f1fa; "
+            "selection-background-color: #ff4da6; selection-color: #ffffff; }"
         )
         self.session_combo.setFixedSize(300, 36)
 
@@ -88,13 +100,16 @@ class AnimatedLogin(QWidget):
         self.load_default_session()
 
         hint_label = QLabel("Live Session Default: vice / vice")
-        hint_label.setFont(QFont("Arial", 10))
-        hint_label.setStyleSheet("color: #66CCCC; background: transparent;")
+        hint_label.setFont(QFont("Noto Sans", 10))
+        hint_label.setStyleSheet("color: #b7aed1; background: transparent;")
         hint_label.setAlignment(Qt.AlignCenter)
 
         layout.addStretch(2)
+        if logo_loaded:
+            layout.addWidget(logo_label)
+            layout.addSpacing(10)
         layout.addWidget(label)
-        layout.addSpacing(24)
+        layout.addSpacing(20)
         layout.addWidget(self.user_input, alignment=Qt.AlignCenter)
         layout.addSpacing(12)
         layout.addWidget(self.pwd, alignment=Qt.AlignCenter)
@@ -209,8 +224,8 @@ class AnimatedLogin(QWidget):
         self.user_input.setEnabled(True)
         self.pwd.setEnabled(True)
         self.pwd.setStyleSheet(
-            "background-color: #240012; color: #FFFFFF; "
-            "border: 2px solid #FF0000; border-radius: 10px; padding: 10px;"
+            "background-color: #2b1222; color: #f4f1fa; "
+            "border: 2px solid #ff3b6b; border-radius: 10px; padding: 10px;"
         )
         self.pwd.setPlaceholderText(message)
         self.pwd.setFocus()
@@ -218,8 +233,8 @@ class AnimatedLogin(QWidget):
 
     def reset_pwd_style(self):
         self.pwd.setStyleSheet(
-            "background-color: #120024; color: #FFFFFF; "
-            "border: 2px solid #FF00FF; border-radius: 10px; padding: 10px;"
+            "background-color: #1b152e; color: #f4f1fa; "
+            "border: 2px solid #ff4da6; border-radius: 10px; padding: 10px;"
         )
         self.pwd.setPlaceholderText("Password")
 
@@ -238,7 +253,11 @@ class AnimatedLogin(QWidget):
             os.environ["LOGNAME"] = username
             os.environ["HOME"] = f"/home/{username}"
             os.environ["XDG_RUNTIME_DIR"] = runtime_dir
-            os.environ["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={runtime_dir}/bus"
+            bus_sock = f"{runtime_dir}/bus"
+            if os.path.exists(bus_sock):
+                os.environ["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={bus_sock}"
+            else:
+                os.environ.pop("DBUS_SESSION_BUS_ADDRESS", None)
 
             # Determine selected session type
             selected_session = self.session_combo.currentData() or "x11"

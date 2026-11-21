@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 GTA VI OS (Vice OS) Desktop Shell
-Provides a dynamic TopBar with an Apps launcher button, live X11 Taskbar
-window switcher, system metrics, quick utilities, power menu, floating Dock,
-and Application Search Run Menu.
+Provides the Mint Cinnamon-style unified bottom taskbar, instant Windows-key
+(Super_L / Alt+F1) Start Menu popup with GTA VI x Debian branding, live X11
+Taskbar window switcher, pinned quick-launch icons, system metrics, and Run Menu.
 """
 
 import sys
@@ -26,10 +26,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton,
     QHBoxLayout, QVBoxLayout, QLineEdit, QShortcut,
-    QMenu, QSizePolicy
+    QMenu, QSizePolicy, QListWidget, QListWidgetItem,
+    QStyleOption, QStyle
 )
-from PyQt5.QtCore import Qt, QTimer, QSize
-from PyQt5.QtGui import QFont, QKeySequence, QIcon
+from PyQt5.QtCore import Qt, QTimer, QSize, QEvent, QProcess
+from PyQt5.QtGui import QFont, QKeySequence, QIcon, QPainter
 
 from python.vice_utils import launch_command, get_cpu_usage, get_ram_usage, log_info, log_error
 
@@ -39,40 +40,75 @@ _TRAY_MODULE = None
 _POWER_MODULE = None
 _WALL_MODULE = None
 _PANEL_CONF = None
+_LAUNCHER_MODULE = None
 
 _SKIP_TASKBAR_TITLES = {
-    "vicetopbar", "vicedock", "run command", "stalonetray",
-    "nm-applet", "vice panel", "desktop",
+    "vicetopbar", "vicedock", "vicetaskbar", "vicestartmenu",
+    "run command", "stalonetray", "nm-applet", "vice panel",
+    "desktop", "desktop — pcmanfm",
 }
 
 _COMMAND_FALLBACKS = {
     "xfce4-terminal": ["xfce4-terminal", "xterm"],
     "mousepad": ["mousepad", "geany", "python3 /opt/vice-os/vice_text_editor.py"],
-    "firefox": ["firefox", "firefox-esr"],
+    "firefox-esr": ["firefox-esr", "firefox"],
+    "firefox": ["firefox-esr", "firefox"],
     "xfce4-taskmanager": ["xfce4-taskmanager", "python3 /opt/vice-os/vice_task_manager.py"],
     "arandr": ["arandr", "python3 /opt/vice-os/vice_display_manager.py"],
     "lxappearance": ["lxappearance", "python3 /opt/vice-os/vice_theme_manager.py"],
 }
 
-_DOCK_ICONS = {
-    "Apps": ("view-app-grid", "start-here", "applications-other"),
-    "Terminal": ("utilities-terminal", "terminal"),
-    "Browser": ("firefox-esr", "firefox", "web-browser", "internet-web-browser"),
-    "Files": ("system-file-manager", "folder"),
-    "Editor": ("accessories-text-editor", "mousepad", "geany"),
-    "Calc": ("accessories-calculator", "galculator"),
-    "Settings": ("preferences-system", "settings"),
-}
+
+def _configure_icon_theme():
+    """Ensure PyQt5 resolves Freedesktop Papirus-Dark / Adwaita icons even without KDE."""
+    search_paths = [
+        "/usr/share/icons",
+        "/usr/local/share/icons",
+        os.path.expanduser("~/.local/share/icons"),
+    ]
+    QIcon.setThemeSearchPaths(search_paths)
+    for theme in ("Papirus-Dark", "Papirus", "Adwaita", "Tango", "hicolor"):
+        if os.path.isdir(os.path.join("/usr/share/icons", theme)):
+            QIcon.setThemeName(theme)
+            return theme
+    return ""
 
 
 def _theme_icon(*names) -> QIcon:
-    """Return the first valid Freedesktop theme QIcon from *names*."""
+    """Return the first valid Freedesktop theme or file QIcon from *names*."""
     for name in names:
-        if name:
-            icon = QIcon.fromTheme(name)
+        if not name:
+            continue
+        if os.path.isfile(name):
+            icon = QIcon(name)
             if not icon.isNull():
                 return icon
+        icon = QIcon.fromTheme(name)
+        if not icon.isNull():
+            return icon
     return QIcon()
+
+
+def _logo_icon() -> QIcon:
+    """Return the custom GTA VI x Debian Swirl logo icon."""
+    return _theme_icon(
+        "/usr/share/pixmaps/vice-debian-gta6.png",
+        "/usr/share/pixmaps/vice-app.png",
+        "start-here",
+        "view-app-grid",
+    )
+
+
+def _runtime_dir() -> str:
+    return os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/vice-{os.getuid()}"
+
+
+def _toggle_trigger_path() -> str:
+    return os.path.join(_runtime_dir(), "vice_start_menu.toggle")
+
+
+def _lock_path() -> str:
+    return os.path.join(_runtime_dir(), "vice_shell.lock")
 
 
 def _resolve_command(cmd: str) -> str:
@@ -100,16 +136,36 @@ def _launch_candidates(candidates: list) -> bool:
     return False
 
 
+def _is_shell_alive() -> bool:
+    """Return True if a live vice_shell.py process holds vice_shell.lock."""
+    lock_file = _lock_path()
+    if not os.path.isfile(lock_file):
+        return False
+    try:
+        with open(lock_file, "r") as f:
+            pid_str = f.read().strip()
+        if not pid_str.isdigit():
+            return False
+        os.kill(int(pid_str), 0)
+        return True
+    except Exception:
+        return False
+
+
 def _acquire_shell_lock():
-    """Ensure only one instance of the desktop shell (TopBar + Dock) runs per user."""
+    """Ensure only one instance of the desktop shell runs per user."""
     if fcntl is None:
         return None
-    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/vice-{os.getuid()}"
+    rdir = _runtime_dir()
     try:
-        os.makedirs(runtime_dir, exist_ok=True)
-        lock_file = os.path.join(runtime_dir, "vice_shell.lock")
-        f = open(lock_file, "w")
+        os.makedirs(rdir, exist_ok=True)
+        lock_file = _lock_path()
+        f = open(lock_file, "a+")
         fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        f.seek(0)
+        f.truncate()
+        f.write(str(os.getpid()))
+        f.flush()
         return f
     except (IOError, OSError):
         log_info("vice_shell: another instance is already running. Exiting.")
@@ -121,8 +177,8 @@ def _pc():
     if _PANEL_CONF is not None:
         return _PANEL_CONF
     class _Fallback:
-        TOPBAR_HEIGHT = 38
-        DOCK_HEIGHT = 64
+        TOPBAR_HEIGHT = 44
+        DOCK_HEIGHT = 44
         DOCK_WIDTH = 620
         RUNMENU_WIDTH = 480
         RUNMENU_HEIGHT = 56
@@ -130,18 +186,12 @@ def _pc():
         RUNMENU_Y_FRACTION = 3
         TOPBAR_UPDATE_INTERVAL = 2000
         DOCK_Y_OFFSET = 0
-        DOCK_APPS = [
-            ("Apps", "python3 /opt/vice-os/vice_launcher.py", "Open Application Menu"),
-            ("Terminal", "xfce4-terminal", "Open Terminal"),
-            ("Browser", "firefox", "Launch Web Browser"),
-            ("Files", "thunar", "Open File Manager"),
-            ("Editor", "mousepad", "Open Text Editor"),
-        ]
+        DOCK_APPS = []
     return _Fallback
 
 
 def _load_helper_modules():
-    global _TRAY_MODULE, _POWER_MODULE, _WALL_MODULE, _PANEL_CONF
+    global _TRAY_MODULE, _POWER_MODULE, _WALL_MODULE, _PANEL_CONF, _LAUNCHER_MODULE
     try:
         import systray_manager as _tm
         _TRAY_MODULE = _tm
@@ -162,6 +212,11 @@ def _load_helper_modules():
         _PANEL_CONF = _pc_mod
     except (ImportError, Exception):
         _PANEL_CONF = None
+    try:
+        import vice_launcher as _vl_mod
+        _LAUNCHER_MODULE = _vl_mod
+    except (ImportError, Exception):
+        _LAUNCHER_MODULE = None
 
 
 def global_exception_handler(exc_type, exc_value, exc_tb):
@@ -175,11 +230,22 @@ def global_exception_handler(exc_type, exc_value, exc_tb):
     launch_command("python3 /opt/vice-os/vice_shell.py &")
 
 
+class _StyledWidget(QWidget):
+    """QWidget subclass that properly paints QSS background and borders."""
+
+    def paintEvent(self, event):
+        opt = QStyleOption()
+        opt.initFrom(self)
+        p = QPainter(self)
+        self.style().drawPrimitive(QStyle.PE_Widget, opt, p, self)
+
+
 class TaskbarWidget(QWidget):
     """Live X11 taskbar showing open & minimized client windows via wmctrl/xdotool."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(6, 2, 6, 2)
         self._layout.setSpacing(6)
@@ -213,7 +279,8 @@ class TaskbarWidget(QWidget):
             if desk == "-1":
                 continue
             clean_title = title.strip()
-            if not clean_title or clean_title.lower() in _SKIP_TASKBAR_TITLES:
+            low = clean_title.lower()
+            if not clean_title or low in _SKIP_TASKBAR_TITLES or low.startswith("pcmanfm"):
                 continue
             try:
                 windows.append((int(wid_hex, 16), clean_title))
@@ -253,7 +320,7 @@ class TaskbarWidget(QWidget):
                 btn.setObjectName("TaskButton")
                 btn.setCheckable(True)
                 btn.setFocusPolicy(Qt.NoFocus)
-                btn.setFixedHeight(28)
+                btn.setFixedHeight(32)
                 btn.clicked.connect(lambda _checked=False, w=wid: self._toggle_window(w))
                 btn.setContextMenuPolicy(Qt.CustomContextMenu)
                 btn.customContextMenuRequested.connect(
@@ -309,7 +376,283 @@ class TaskbarWidget(QWidget):
         menu.exec_(btn.mapToGlobal(pos))
 
 
-class RunMenu(QWidget):
+class StartMenuPopup(_StyledWidget):
+    """Mint Cinnamon-style instant Start Menu anchored bottom-left above the taskbar."""
+
+    _MENU_CATEGORIES = [
+        ("All Applications", ("view-app-grid", "start-here", "applications-other")),
+        ("Accessories", ("applications-accessories", "accessories-text-editor")),
+        ("Graphics", ("applications-graphics", "image-x-generic")),
+        ("Internet", ("applications-internet", "internet-web-browser")),
+        ("Office", ("applications-office", "x-office-document")),
+        ("Sound & Video", ("applications-multimedia", "multimedia-video-player")),
+        ("Development", ("applications-development", "applications-engineering")),
+        ("Administration", ("applications-system", "system-run")),
+        ("Preferences", ("preferences-desktop", "preferences-system")),
+        ("Places", ("folder-home", "user-home")),
+    ]
+
+    _CAT_REMAP = {
+        "Utilities": "Accessories",
+        "Internet": "Internet",
+        "Office": "Office",
+        "Development": "Development",
+        "System": "Administration",
+        "Settings": "Preferences",
+        "Multimedia": "Sound & Video",
+    }
+
+    _PLACES = [
+        ("Home", os.path.expanduser("~"), "user-home"),
+        ("Desktop", os.path.expanduser("~/Desktop"), "user-desktop"),
+        ("Documents", os.path.expanduser("~/Documents"), "folder-documents"),
+        ("Downloads", os.path.expanduser("~/Downloads"), "folder-downloads"),
+        ("Pictures", os.path.expanduser("~/Pictures"), "folder-pictures"),
+        ("Music", os.path.expanduser("~/Music"), "folder-music"),
+        ("Videos", os.path.expanduser("~/Videos"), "folder-videos"),
+        ("File System", "/", "drive-harddisk"),
+        ("Trash", "trash:///", "user-trash"),
+    ]
+
+    def __init__(self, logout_cb, power_cb):
+        super().__init__()
+        self._logout_cb = logout_cb
+        self._power_cb = power_cb
+        self._menu_open = False
+        self.last_deactivated_at = 0.0
+        self._apps = []
+        self._init_ui()
+
+    def _init_ui(self):
+        self.setWindowTitle("ViceStartMenu")
+        self.setObjectName("StartMenuPopup")
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # 1. Left Favorites & Power Rail (Cinnamon-style)
+        rail = _StyledWidget(self)
+        rail.setObjectName("StartRail")
+        rail.setFixedWidth(56)
+        rail_layout = QVBoxLayout(rail)
+        rail_layout.setContentsMargins(8, 12, 8, 12)
+        rail_layout.setSpacing(8)
+
+        pinned_rail = [
+            ("Firefox", ["firefox-esr", "firefox"], ("firefox-esr", "firefox", "web-browser")),
+            ("Software Center", ["python3 /opt/vice-os/vice_software_center.py", "synaptic"],
+             ("system-software-install", "synaptic")),
+            ("Settings Center", ["python3 /opt/vice-os/vice_settings.py"], ("preferences-system", "settings")),
+            ("Terminal", ["xfce4-terminal", "xterm"], ("utilities-terminal", "terminal")),
+            ("Files", ["thunar", "pcmanfm"], ("system-file-manager", "folder")),
+        ]
+        for tip, cmds, icons in pinned_rail:
+            btn = self._make_rail_button(tip, icons)
+            btn.clicked.connect(lambda _=False, c=cmds: self._run_and_hide(c))
+            rail_layout.addWidget(btn)
+
+        rail_layout.addStretch(1)
+
+        lock_btn = self._make_rail_button("Session & Lock", ("system-lock-screen", "changes-prevent"))
+        lock_btn.clicked.connect(
+            lambda: self._run_and_hide(["python3 /opt/vice-os/vice_session_manager.py"])
+        )
+        rail_layout.addWidget(lock_btn)
+
+        logout_btn = self._make_rail_button("Log Out", ("system-log-out", "application-exit"))
+        logout_btn.clicked.connect(self._do_logout)
+        rail_layout.addWidget(logout_btn)
+
+        self._power_rail_btn = self._make_rail_button("Power Options", ("system-shutdown", "system-log-out"))
+        self._power_rail_btn.clicked.connect(self._show_power_menu)
+        rail_layout.addWidget(self._power_rail_btn)
+
+        root.addWidget(rail)
+
+        # 2. Right Search + Two-Column Categories & Apps
+        main_area = QWidget(self)
+        main_area.setAttribute(Qt.WA_TranslucentBackground, True)
+        main_layout = QVBoxLayout(main_area)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(10)
+
+        # Header + Search row
+        header_row = QHBoxLayout()
+        logo_lbl = QLabel(main_area)
+        logo_icon = _logo_icon()
+        if not logo_icon.isNull():
+            logo_lbl.setPixmap(logo_icon.pixmap(26, 26))
+        header_row.addWidget(logo_lbl)
+
+        brand = QLabel("VICE OS · Leonida", main_area)
+        brand.setFont(QFont("Noto Sans", 11, QFont.Bold))
+        brand.setStyleSheet("color: #ff8a5b;")
+        header_row.addWidget(brand)
+        header_row.addStretch(1)
+        main_layout.addLayout(header_row)
+
+        self._search = QLineEdit(main_area)
+        self._search.setPlaceholderText("Type to search apps or settings...")
+        self._search.textChanged.connect(self._populate_items)
+        self._search.returnPressed.connect(self._launch_selected_or_first)
+        main_layout.addWidget(self._search)
+
+        QShortcut(QKeySequence("Escape"), self).activated.connect(self.hide)
+
+        # Categories (left) + Apps/Places (right)
+        cols_layout = QHBoxLayout()
+        cols_layout.setSpacing(10)
+
+        self._cat_list = QListWidget(main_area)
+        self._cat_list.setObjectName("StartCatList")
+        self._cat_list.setFixedWidth(182)
+        self._cat_list.setIconSize(QSize(18, 18))
+        for cat_name, cat_icons in self._MENU_CATEGORIES:
+            item = QListWidgetItem(_theme_icon(*cat_icons), cat_name)
+            self._cat_list.addItem(item)
+        self._cat_list.setCurrentRow(0)
+        self._cat_list.currentRowChanged.connect(self._populate_items)
+        cols_layout.addWidget(self._cat_list)
+
+        self._app_list = QListWidget(main_area)
+        self._app_list.setObjectName("StartAppList")
+        self._app_list.setIconSize(QSize(24, 24))
+        self._app_list.itemActivated.connect(self._launch_item)
+        self._app_list.itemClicked.connect(self._launch_item)
+        cols_layout.addWidget(self._app_list, 1)
+
+        main_layout.addLayout(cols_layout, 1)
+        root.addWidget(main_area, 1)
+
+    def _make_rail_button(self, tooltip: str, icons: tuple) -> QPushButton:
+        btn = QPushButton(self)
+        btn.setObjectName("RailButton")
+        btn.setFocusPolicy(Qt.NoFocus)
+        btn.setFixedSize(38, 38)
+        btn.setToolTip(tooltip)
+        icon = _theme_icon(*icons)
+        if not icon.isNull():
+            btn.setIcon(icon)
+            btn.setIconSize(QSize(22, 22))
+        else:
+            btn.setText(tooltip[:2])
+        return btn
+
+    def _map_app_category(self, app_entry: dict) -> str:
+        raw_cat = app_entry.get("category", "Utilities")
+        name_low = app_entry.get("label", "").lower()
+        if any(k in name_low for k in ("ristretto", "image viewer", "screenshot")):
+            return "Graphics"
+        return self._CAT_REMAP.get(raw_cat, "Accessories")
+
+    def reload_apps(self):
+        if _LAUNCHER_MODULE is not None and hasattr(_LAUNCHER_MODULE, "discover_apps"):
+            try:
+                self._apps = _LAUNCHER_MODULE.discover_apps()
+            except Exception as e:
+                log_error(f"StartMenu: discover_apps failed: {e}")
+                self._apps = []
+        self._populate_items()
+
+    def _populate_items(self):
+        self._app_list.clear()
+        current_item = self._cat_list.currentItem()
+        selected_cat = current_item.text() if current_item else "All Applications"
+        query = self._search.text().strip().lower()
+
+        if selected_cat == "Places" and not query:
+            for label, target, icon_name in self._PLACES:
+                item = QListWidgetItem(_theme_icon(icon_name, "folder"), label)
+                item.setData(Qt.UserRole, {"args": ["thunar", target], "label": label})
+                item.setToolTip(target)
+                self._app_list.addItem(item)
+            return
+
+        for app in self._apps:
+            mapped_cat = self._map_app_category(app)
+            if not query and selected_cat not in ("All Applications", mapped_cat):
+                continue
+            haystack = f"{app.get('label', '')} {app.get('name', '')} {app.get('comment', '')}".lower()
+            if query and query not in haystack:
+                continue
+            icon = _theme_icon(app.get("icon", ""), "application-x-executable", "applications-other")
+            item = QListWidgetItem(icon, app.get("label", ""))
+            item.setData(Qt.UserRole, app)
+            item.setToolTip(app.get("comment") or app.get("label", ""))
+            self._app_list.addItem(item)
+
+        if self._app_list.count() > 0:
+            self._app_list.setCurrentRow(0)
+
+    def _launch_selected_or_first(self):
+        item = self._app_list.currentItem() or (self._app_list.item(0) if self._app_list.count() else None)
+        if item:
+            self._launch_item(item)
+
+    def _launch_item(self, item: QListWidgetItem):
+        data = item.data(Qt.UserRole) or {}
+        args = data.get("args", [])
+        if not args:
+            return
+        self.hide()
+        QProcess.startDetached(args[0], args[1:], os.path.expanduser("~"))
+
+    def _run_and_hide(self, candidates: list):
+        self.hide()
+        _launch_candidates(candidates)
+
+    def _do_logout(self):
+        self.hide()
+        self._logout_cb()
+
+    def _show_power_menu(self):
+        menu = QMenu(self)
+        menu.addAction("Suspend", lambda: self._run_power("suspend"))
+        menu.addAction("Restart", lambda: self._run_power("reboot"))
+        menu.addAction("Power Off", lambda: self._run_power("poweroff"))
+        self._menu_open = True
+        try:
+            pos = self._power_rail_btn.mapToGlobal(self._power_rail_btn.rect().topRight())
+            menu.exec_(pos)
+        finally:
+            self._menu_open = False
+
+    def _run_power(self, action: str):
+        self.hide()
+        self._power_cb(action)
+
+    def open_at_bottom_left(self):
+        screen = QApplication.primaryScreen()
+        if not screen:
+            return
+        geo = screen.geometry()
+        pc = _pc()
+        w = min(680, geo.width() - 24)
+        h = min(510, geo.height() - pc.DOCK_HEIGHT - 24)
+        self.setGeometry(geo.x() + 10, geo.y() + geo.height() - pc.DOCK_HEIGHT - h - 8, w, h)
+        if not self._apps:
+            self.reload_apps()
+        self._search.clear()
+        self._cat_list.setCurrentRow(0)
+        self._populate_items()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        QTimer.singleShot(40, self._search.setFocus)
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.ActivationChange and not self.isActiveWindow():
+            if not self._menu_open and self.isVisible():
+                self.last_deactivated_at = time.monotonic()
+                self.hide()
+        super().changeEvent(event)
+
+
+class RunMenu(_StyledWidget):
     """Quick search/run menu triggered by W-space."""
     def __init__(self):
         super().__init__()
@@ -319,6 +662,7 @@ class RunMenu(QWidget):
     def initUI(self):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setWindowTitle("Run Command")
         self.setObjectName("RunMenu")
 
@@ -385,123 +729,78 @@ class RunMenu(QWidget):
             self.close()
 
 
-class Dock(QWidget):
-    """Floating application dock centered at the bottom of the screen."""
-    def __init__(self):
-        super().__init__()
-        self._buttons = []
-        self.initUI()
+class BottomTaskbar(_StyledWidget):
+    """Unified Mint Cinnamon-style bottom panel: Start button, pinned icons, live taskbar, tray & clock."""
 
-    def initUI(self):
-        self.setWindowTitle("ViceDock")
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        if hasattr(Qt, "WA_X11NetWmWindowTypeDock") and not os.environ.get("WAYLAND_DISPLAY"):
-            self.setAttribute(Qt.WA_X11NetWmWindowTypeDock, True)
-        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setObjectName("Dock")
-
-        screen = QApplication.primaryScreen()
-        if not screen:
-            log_error("No screen found. Cannot display Dock.")
-            sys.exit(1)
-
-        pc = _pc()
-        layout = QHBoxLayout()
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setSpacing(8)
-
-        for app in pc.DOCK_APPS:
-            name, cmd = app[0], app[1]
-            tip = app[2] if len(app) > 2 else name
-            resolved = _resolve_command(cmd)
-            parts = shlex.split(resolved)
-            if not parts or not shutil.which(parts[0]):
-                continue
-            if parts[0] == "python3" and len(parts) > 1 and not os.path.exists(parts[1]):
-                continue
-
-            btn = QPushButton(name, self)
-            btn.setObjectName("DockButton")
-            btn.setFocusPolicy(Qt.NoFocus)
-            btn.setToolTip(tip)
-            icon = _theme_icon(*_DOCK_ICONS.get(name, ("application-x-executable",)))
-            if not icon.isNull():
-                btn.setIcon(icon)
-                btn.setIconSize(QSize(20, 20))
-            btn.clicked.connect(lambda _state=False, c=resolved: launch_command(c))
-            layout.addWidget(btn)
-            self._buttons.append(btn)
-
-        self.setLayout(layout)
-        self._reposition()
-        screen.geometryChanged.connect(self._reposition)
-
-    def _reposition(self, _geometry=None):
-        screen = QApplication.primaryScreen()
-        if not screen:
-            return
-        geo = screen.geometry()
-        pc = _pc()
-        btn_count = max(len(self._buttons), len(pc.DOCK_APPS))
-        dock_width = min(max(pc.DOCK_WIDTH, btn_count * 94 + 28), geo.width() - 24)
-        dock_height = pc.DOCK_HEIGHT
-        y_offset = getattr(pc, "DOCK_Y_OFFSET", 0)
-        x = geo.x() + (geo.width() - dock_width) // 2
-        y = geo.y() + geo.height() - dock_height - y_offset
-        self.setGeometry(x, y, dock_width, dock_height)
-
-
-class TopBar(QWidget):
-    """Top desktop bar with Apps launcher, live Taskbar, metrics, quick controls, clock, and Power menu."""
     def __init__(self):
         super().__init__()
         self._disk_label = None
         self._battery_btn = None
+        self._start_menu = StartMenuPopup(self.logout, self._run_power_action)
         self.initUI()
 
     def initUI(self):
-        self.setWindowTitle("ViceTopBar")
+        self.setWindowTitle("ViceTaskbar")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         if hasattr(Qt, "WA_X11NetWmWindowTypeDock") and not os.environ.get("WAYLAND_DISPLAY"):
             self.setAttribute(Qt.WA_X11NetWmWindowTypeDock, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setObjectName("TopBar")
+        self.setObjectName("BottomTaskbar")
 
         screen = QApplication.primaryScreen()
         if not screen:
-            log_error("No screen found. Cannot display TopBar.")
+            log_error("No screen found. Cannot display BottomTaskbar.")
             sys.exit(1)
 
         self._reposition()
         screen.geometryChanged.connect(self._reposition)
 
         layout = QHBoxLayout()
-        layout.setContentsMargins(10, 3, 10, 3)
+        layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(6)
 
-        # Left: Applications Launcher button
-        self.apps_btn = QPushButton("Apps", self)
-        self.apps_btn.setObjectName("AppsButton")
+        # 1. GTA VI x Debian Start Button (bottom-left)
+        self.apps_btn = QPushButton("Menu", self)
+        self.apps_btn.setObjectName("StartButton")
         self.apps_btn.setFocusPolicy(Qt.NoFocus)
-        self.apps_btn.setToolTip("Open Applications Menu (Super+A)")
-        apps_icon = _theme_icon("view-app-grid", "start-here", "applications-other")
-        if not apps_icon.isNull():
-            self.apps_btn.setIcon(apps_icon)
-            self.apps_btn.setIconSize(QSize(16, 16))
-        self.apps_btn.clicked.connect(
-            lambda: launch_command("python3 /opt/vice-os/vice_launcher.py")
-        )
+        self.apps_btn.setFixedHeight(34)
+        self.apps_btn.setToolTip("Vice OS Start Menu (Windows Key)")
+        logo_icon = _logo_icon()
+        if not logo_icon.isNull():
+            self.apps_btn.setIcon(logo_icon)
+            self.apps_btn.setIconSize(QSize(24, 24))
+        self.apps_btn.clicked.connect(self.toggle_start_menu)
         layout.addWidget(self.apps_btn)
 
-        # Center: Live Taskbar window list
+        # 2. Pinned Quick-Launch Icons (Mint-style next to Start button)
+        pinned_items = [
+            ("Files", ["thunar", "pcmanfm"], ("system-file-manager", "folder")),
+            ("Firefox", ["firefox-esr", "firefox"], ("firefox-esr", "firefox", "web-browser")),
+            ("Terminal", ["xfce4-terminal", "xterm"], ("utilities-terminal", "terminal")),
+            ("Text Editor", ["mousepad", "geany"], ("accessories-text-editor", "text-editor")),
+        ]
+        for tip, cmds, icon_names in pinned_items:
+            pbtn = QPushButton(self)
+            pbtn.setObjectName("PinButton")
+            pbtn.setFocusPolicy(Qt.NoFocus)
+            pbtn.setFixedSize(34, 34)
+            pbtn.setToolTip(tip)
+            picon = _theme_icon(*icon_names)
+            if not picon.isNull():
+                pbtn.setIcon(picon)
+                pbtn.setIconSize(QSize(22, 22))
+            else:
+                pbtn.setText(tip[:2])
+            pbtn.clicked.connect(lambda _=False, c=cmds: _launch_candidates(c))
+            layout.addWidget(pbtn)
+
+        # 3. Center: Live Taskbar window list
         self.taskbar = TaskbarWidget(self)
         layout.addWidget(self.taskbar, 1)
 
-        # Right: System Telemetry (clickable -> Task Manager)
+        # 4. Right Utility Tray: Metrics, Net, Audio, Battery, Clock, Show Desktop
         self.sysinfo = QPushButton("CPU: 0% · RAM: 0MB", self)
         self.sysinfo.setObjectName("SysInfo")
         self.sysinfo.setFocusPolicy(Qt.NoFocus)
@@ -511,35 +810,38 @@ class TopBar(QWidget):
         )
         layout.addWidget(self.sysinfo)
 
-        # Quick Audio Control
-        self.audio_btn = QPushButton("Audio", self)
-        self.audio_btn.setObjectName("QuickUtilButton")
-        self.audio_btn.setFocusPolicy(Qt.NoFocus)
-        self.audio_btn.setToolTip("Volume & Audio Devices")
-        audio_icon = _theme_icon("audio-volume-high", "multimedia-volume-control")
-        if not audio_icon.isNull():
-            self.audio_btn.setIcon(audio_icon)
-            self.audio_btn.setIconSize(QSize(15, 15))
-        self.audio_btn.clicked.connect(
-            lambda: _launch_candidates(["pavucontrol", "python3 /opt/vice-os/vice_audio_manager.py"])
-        )
-        layout.addWidget(self.audio_btn)
-
-        # Quick Network Control
-        self.net_btn = QPushButton("Net", self)
+        self.net_btn = QPushButton(self)
         self.net_btn.setObjectName("QuickUtilButton")
         self.net_btn.setFocusPolicy(Qt.NoFocus)
+        self.net_btn.setFixedHeight(32)
         self.net_btn.setToolTip("Network Connections")
         net_icon = _theme_icon("network-wired", "network-wireless")
         if not net_icon.isNull():
             self.net_btn.setIcon(net_icon)
-            self.net_btn.setIconSize(QSize(15, 15))
+            self.net_btn.setIconSize(QSize(18, 18))
+        else:
+            self.net_btn.setText("Net")
         self.net_btn.clicked.connect(
             lambda: _launch_candidates(["nm-connection-editor", "python3 /opt/vice-os/vice_network_monitor.py"])
         )
         layout.addWidget(self.net_btn)
 
-        # Optional battery pill when present
+        self.audio_btn = QPushButton(self)
+        self.audio_btn.setObjectName("QuickUtilButton")
+        self.audio_btn.setFocusPolicy(Qt.NoFocus)
+        self.audio_btn.setFixedHeight(32)
+        self.audio_btn.setToolTip("Volume & Audio Devices")
+        audio_icon = _theme_icon("audio-volume-high", "multimedia-volume-control")
+        if not audio_icon.isNull():
+            self.audio_btn.setIcon(audio_icon)
+            self.audio_btn.setIconSize(QSize(18, 18))
+        else:
+            self.audio_btn.setText("Vol")
+        self.audio_btn.clicked.connect(
+            lambda: _launch_candidates(["pavucontrol", "python3 /opt/vice-os/vice_audio_manager.py"])
+        )
+        layout.addWidget(self.audio_btn)
+
         if _POWER_MODULE is not None:
             try:
                 bat_text = _POWER_MODULE._read_battery_status()
@@ -555,7 +857,6 @@ class TopBar(QWidget):
             except Exception as e:
                 log_error(f"Failed to read battery status: {e}")
 
-        # Clock button -> Calendar
         self.clock = QPushButton("00:00", self)
         self.clock.setObjectName("Clock")
         self.clock.setFocusPolicy(Qt.NoFocus)
@@ -565,47 +866,52 @@ class TopBar(QWidget):
         )
         layout.addWidget(self.clock)
 
-        # Power / Session dropdown menu (replaces bare top-left shutdown buttons)
-        self.power_btn = QPushButton("Power ▾", self)
-        self.power_btn.setObjectName("PowerButton")
-        self.power_btn.setFocusPolicy(Qt.NoFocus)
-        self.power_btn.setToolTip("System Settings & Power Menu")
-        power_icon = _theme_icon("system-shutdown", "system-log-out")
-        if not power_icon.isNull():
-            self.power_btn.setIcon(power_icon)
-            self.power_btn.setIconSize(QSize(15, 15))
-        self.power_btn.clicked.connect(self._show_power_menu)
-        layout.addWidget(self.power_btn)
+        self.show_desk_btn = QPushButton(self)
+        self.show_desk_btn.setObjectName("ShowDesktopButton")
+        self.show_desk_btn.setFocusPolicy(Qt.NoFocus)
+        self.show_desk_btn.setFixedSize(16, 32)
+        self.show_desk_btn.setToolTip("Show Desktop (Super+D)")
+        self.show_desk_btn.clicked.connect(self._toggle_show_desktop)
+        layout.addWidget(self.show_desk_btn)
 
         self.setLayout(layout)
 
+        # Periodic telemetry updates
         timer = QTimer(self)
         timer.timeout.connect(self.update_info)
         timer.start(_pc().TOPBAR_UPDATE_INTERVAL)
         self.update_info()
 
-    def _show_power_menu(self):
-        menu = QMenu(self)
-        menu.addAction(
-            "Settings Center",
-            lambda: launch_command("python3 /opt/vice-os/vice_settings.py"),
-        )
-        menu.addAction(
-            "Display Settings",
-            lambda: _launch_candidates(["arandr", "python3 /opt/vice-os/vice_display_manager.py"]),
-        )
-        menu.addAction(
-            "Appearance & Themes",
-            lambda: _launch_candidates(["lxappearance", "python3 /opt/vice-os/vice_theme_manager.py"]),
-        )
-        menu.addSeparator()
-        menu.addAction("Log Out", self.logout)
-        menu.addAction("Suspend", lambda: self._run_power_action("suspend"))
-        menu.addAction("Restart", lambda: self._run_power_action("reboot"))
-        menu.addAction("Power Off", lambda: self._run_power_action("poweroff"))
+        # Fast IPC polling for Super/Windows key (--toggle-menu)
+        self._ipc_timer = QTimer(self)
+        self._ipc_timer.setInterval(100)
+        self._ipc_timer.timeout.connect(self._check_toggle_trigger)
+        self._ipc_timer.start()
 
-        pos = self.power_btn.mapToGlobal(self.power_btn.rect().bottomLeft())
-        menu.exec_(pos)
+        # Pre-load app index shortly after startup for instant Start Menu opening
+        QTimer.singleShot(800, self._start_menu.reload_apps)
+
+    def _check_toggle_trigger(self):
+        trig = _toggle_trigger_path()
+        if os.path.exists(trig):
+            try:
+                os.remove(trig)
+            except OSError:
+                pass
+            self.toggle_start_menu()
+
+    def toggle_start_menu(self):
+        if self._start_menu.isVisible():
+            self._start_menu.hide()
+            return
+        if time.monotonic() - self._start_menu.last_deactivated_at < 0.25:
+            return
+        self._start_menu.open_at_bottom_left()
+
+    def _toggle_show_desktop(self):
+        if shutil.which("xdotool"):
+            subprocess.Popen(["xdotool", "key", "super+d"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def _run_power_action(self, action: str):
         if _POWER_MODULE is not None:
@@ -626,10 +932,12 @@ class TopBar(QWidget):
             return
         geo = screen.geometry()
         pc = _pc()
-        self.setGeometry(geo.x(), geo.y(), geo.width(), pc.TOPBAR_HEIGHT)
+        h = getattr(pc, "DOCK_HEIGHT", 44)
+        self.setGeometry(geo.x(), geo.y() + geo.height() - h, geo.width(), h)
 
     def update_info(self):
-        self.clock.setText(time.strftime("%a %b %d  %H:%M"))
+        self.clock.setText(time.strftime("%H:%M\n%a %d/%m"))
+        self.clock.setToolTip(time.strftime("%A, %d %B %Y — Click for Calendar"))
         try:
             cpu_text = get_cpu_usage()
             ram_text = get_ram_usage()
@@ -680,6 +988,9 @@ class TopBar(QWidget):
             launch_command("openbox --exit")
 
 
+TopBar = BottomTaskbar
+
+
 def load_stylesheet(app: QApplication):
     if os.path.exists(STYLE_FILE):
         try:
@@ -697,7 +1008,6 @@ def init_wallpaper():
         except Exception as e:
             log_error(f"Wallpaper initialization failed: {e}")
 
-    # Wayland sessions use swaybg (started by labwc autostart or wallpaper_manager)
     if os.environ.get("WAYLAND_DISPLAY"):
         return
 
@@ -713,15 +1023,28 @@ def init_wallpaper():
 
 
 if __name__ == '__main__':
-    sys.excepthook = global_exception_handler
-
-    _load_helper_modules()
-
     parser = argparse.ArgumentParser(description="Vice OS Desktop Shell")
     parser.add_argument('--menu', action='store_true', help="Open the run menu")
+    parser.add_argument('--toggle-menu', action='store_true', help="Toggle the Start Menu popup")
     args = parser.parse_args()
 
+    # Fast pure-Python toggle path for Windows-key / Alt+F1 (<20ms)
+    if args.toggle_menu:
+        if _is_shell_alive():
+            rdir = _runtime_dir()
+            os.makedirs(rdir, exist_ok=True)
+            with open(_toggle_trigger_path(), "w") as f:
+                f.write("toggle\n")
+            sys.exit(0)
+        launcher_py = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vice_launcher.py")
+        subprocess.Popen([sys.executable, launcher_py], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        sys.exit(0)
+
+    sys.excepthook = global_exception_handler
+    _load_helper_modules()
+
     app = QApplication(sys.argv)
+    _configure_icon_theme()
     load_stylesheet(app)
 
     if args.menu:
@@ -735,10 +1058,8 @@ if __name__ == '__main__':
         if shell_lock_fd is False:
             sys.exit(0)
         init_wallpaper()
-        dock = Dock()
-        bar = TopBar()
-        dock.show()
-        bar.show()
+        taskbar = BottomTaskbar()
+        taskbar.show()
         app.setQuitOnLastWindowClosed(False)
 
         if _TRAY_MODULE is not None:

@@ -27,32 +27,32 @@ WINDOW_WIDTH = 880
 WINDOW_HEIGHT = 580
 
 STYLE = """
-QWidget { background-color: #0f121d; color: #e8eef8; font-family: 'Noto Sans', 'DejaVu Sans', sans-serif; }
+QWidget { background-color: #120e1e; color: #f4f1fa; font-family: 'Noto Sans', 'DejaVu Sans', sans-serif; }
 QLineEdit {
-    background: #161b2a; color: #e8eef8; border: 1px solid #2b3552;
+    background: #1b152e; color: #f4f1fa; border: 1px solid #382b57;
     border-radius: 10px; padding: 10px 14px; font-size: 14px;
 }
-QLineEdit:focus { border-color: #00e5ff; background: #1a2135; }
+QLineEdit:focus { border-color: #ff4da6; background: #231b3b; }
 QScrollArea { border: none; background: transparent; }
 QScrollBar:vertical { background: transparent; width: 8px; }
-QScrollBar::handle:vertical { background: #2e3957; border-radius: 4px; min-height: 30px; }
-QScrollBar::handle:vertical:hover { background: #00e5ff; }
+QScrollBar::handle:vertical { background: #3a2c59; border-radius: 4px; min-height: 30px; }
+QScrollBar::handle:vertical:hover { background: #ff4da6; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QPushButton#CategoryTab {
-    background: #161b2a; color: #b7c3da; border: 1px solid #252e47;
+    background: #1b152e; color: #cfc6e6; border: 1px solid #30244a;
     border-radius: 8px; padding: 4px 12px; font-size: 12px; font-weight: bold;
     min-width: 0px;
 }
-QPushButton#CategoryTab:hover { background: #1e273d; color: #ffffff; border-color: #00e5ff; }
-QPushButton#CategoryTab:checked { background: #1b324a; color: #00e5ff; border-color: #00e5ff; }
+QPushButton#CategoryTab:hover { background: #271e40; color: #ffffff; border-color: #ff8a5b; }
+QPushButton#CategoryTab:checked { background: #362247; color: #ff8a5b; border-color: #ff4da6; }
 QPushButton#AppCard {
-    background: #151a2b; color: #e8eef8; border: 1px solid #252e47;
+    background: #19132b; color: #f4f1fa; border: 1px solid #30244a;
     border-radius: 10px; padding: 10px 8px; font-size: 12px; text-align: center;
 }
 QPushButton#AppCard:hover {
-    background: #1d2942; color: #00e5ff; border-color: #00e5ff;
+    background: #2c1e45; color: #ff8a5b; border-color: #ff4da6;
 }
-QLabel { color: #e8eef8; background: transparent; }
+QLabel { color: #f4f1fa; background: transparent; }
 """
 
 CATEGORIES = {
@@ -413,11 +413,11 @@ class AppLauncher(QWidget):
         header = QHBoxLayout()
         title = QLabel("Applications")
         title.setFont(QFont("Noto Sans", 18, QFont.Bold))
-        title.setStyleSheet("color: #00e5ff;")
+        title.setStyleSheet("color: #ff8a5b;")
         header.addWidget(title)
         header.addStretch(1)
         hint = QLabel("Right-click card to pin/unpin Favorites · Esc to close")
-        hint.setStyleSheet("color: #7c87a3; font-size: 11px;")
+        hint.setStyleSheet("color: #b7aed1; font-size: 11px;")
         header.addWidget(hint)
         root.addLayout(header)
 
@@ -516,8 +516,22 @@ class AppLauncher(QWidget):
         self._populate()
 
 
+def _configure_icon_theme():
+    """Ensure PyQt5 resolves Papirus-Dark / Adwaita icons properly."""
+    QIcon.setThemeSearchPaths([
+        "/usr/share/icons",
+        "/usr/local/share/icons",
+        os.path.expanduser("~/.local/share/icons"),
+    ])
+    for theme in ("Papirus-Dark", "Papirus", "Adwaita", "Tango", "hicolor"):
+        if os.path.isdir(os.path.join("/usr/share/icons", theme)):
+            QIcon.setThemeName(theme)
+            break
+
+
 def main():
     app = QApplication(sys.argv)
+    _configure_icon_theme()
     win = AppLauncher()
     win.show()
     sys.exit(app.exec_())

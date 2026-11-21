@@ -102,6 +102,31 @@ main() {
         log_info "Installed default xfce4-terminal configuration."
     fi
 
+    # Install Qt5 (qt5ct) icon/font configuration (enables Papirus-Dark icons in Qt5 apps)
+    if [ -f /vice_payload/config/qt5ct/qt5ct.conf ]; then
+        mkdir -p /etc/skel/.config/qt5ct /home/vice/.config/qt5ct
+        cp /vice_payload/config/qt5ct/qt5ct.conf /etc/skel/.config/qt5ct/qt5ct.conf
+        cp /vice_payload/config/qt5ct/qt5ct.conf /home/vice/.config/qt5ct/qt5ct.conf
+        chmod 644 /etc/skel/.config/qt5ct/qt5ct.conf /home/vice/.config/qt5ct/qt5ct.conf
+        log_info "Installed qt5ct Papirus-Dark configuration."
+    fi
+
+    # Install LibFM & PCManFM desktop icon manager configurations
+    if [ -f /vice_payload/config/libfm/libfm.conf ]; then
+        mkdir -p /etc/skel/.config/libfm /home/vice/.config/libfm
+        cp /vice_payload/config/libfm/libfm.conf /etc/skel/.config/libfm/libfm.conf
+        cp /vice_payload/config/libfm/libfm.conf /home/vice/.config/libfm/libfm.conf
+        chmod 644 /etc/skel/.config/libfm/libfm.conf /home/vice/.config/libfm/libfm.conf
+    fi
+    if [ -f /vice_payload/config/pcmanfm/vice/desktop-items-0.conf ]; then
+        mkdir -p /etc/skel/.config/pcmanfm/vice /home/vice/.config/pcmanfm/vice
+        cp /vice_payload/config/pcmanfm/vice/desktop-items-0.conf /etc/skel/.config/pcmanfm/vice/desktop-items-0.conf
+        cp /vice_payload/config/pcmanfm/vice/desktop-items-0.conf /home/vice/.config/pcmanfm/vice/desktop-items-0.conf
+        chmod 644 /etc/skel/.config/pcmanfm/vice/desktop-items-0.conf /home/vice/.config/pcmanfm/vice/desktop-items-0.conf
+        log_info "Installed pcmanfm desktop icons configuration."
+    fi
+    chown -R vice:vice /home/vice/.config
+
     # Pre-create standard XDG user directories
     for d in Desktop Documents Downloads Music Pictures Videos; do
         mkdir -p "/etc/skel/$d" "/home/vice/$d"

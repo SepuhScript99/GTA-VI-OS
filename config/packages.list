@@ -46,6 +46,9 @@ papirus-icon-theme
 adwaita-icon-theme
 arandr
 lxappearance
+pcmanfm
+xcape
+dbus-user-session
 
 # --- Wayland Session Support (optional, opt-in via session config) ---
 # labwc: stacking Wayland compositor (Openbox-style, wlroots-based)

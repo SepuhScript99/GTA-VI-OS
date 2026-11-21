@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Vice OS Settings
+Comment=Configure system and appearance
+Exec=python3 /opt/vice-os/vice_settings.py
+Icon=preferences-system
+Terminal=false
+Categories=Settings;System;

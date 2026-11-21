@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Computer
+Comment=Browse drives and filesystem
+Exec=thunar computer:///
+Icon=computer
+Terminal=false
+Categories=System;FileManager;

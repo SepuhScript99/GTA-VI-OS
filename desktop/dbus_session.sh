@@ -29,10 +29,24 @@ main() {
         chmod 700 "$XDG_RUNTIME_DIR"
     fi
 
-    # 3. Start the user DBus session if not already running
+    # 3. Start the user DBus session if missing or pointing to a stale/non-existent socket
+    if [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+        case "$DBUS_SESSION_BUS_ADDRESS" in
+            unix:path=*)
+                dbus_sock="${DBUS_SESSION_BUS_ADDRESS#unix:path=}"
+                dbus_sock="${dbus_sock%%,*}"
+                if [ ! -S "$dbus_sock" ]; then
+                    log_warn "Stale DBUS_SESSION_BUS_ADDRESS ($dbus_sock missing); starting fresh session bus..."
+                    unset DBUS_SESSION_BUS_ADDRESS
+                fi
+                ;;
+        esac
+    fi
     if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
-        log_info "Starting DBus session bus..."
-        if command -v dbus-launch > /dev/null 2>&1; then
+        if [ -S "$XDG_RUNTIME_DIR/bus" ]; then
+            export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+        elif command -v dbus-launch > /dev/null 2>&1; then
+            log_info "Starting DBus session bus..."
             eval "$(dbus-launch --sh-syntax)"
             export DBUS_SESSION_BUS_ADDRESS
             export DBUS_SESSION_BUS_PID

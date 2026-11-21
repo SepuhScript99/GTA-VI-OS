@@ -7,6 +7,12 @@ if ! pgrep -u "$(id -u)" -x picom >/dev/null 2>&1; then
     /usr/bin/picom -b --config /etc/xdg/compton.conf &
 fi
 /usr/bin/feh --bg-fill /usr/share/backgrounds/vice_neon.jpg &
+if command -v pcmanfm >/dev/null 2>&1 && ! pgrep -u "$(id -u)" -x pcmanfm >/dev/null 2>&1; then
+    /usr/bin/pcmanfm --desktop --profile vice >/dev/null 2>&1 &
+fi
+if command -v xcape >/dev/null 2>&1 && ! pgrep -u "$(id -u)" -x xcape >/dev/null 2>&1; then
+    /usr/bin/xcape -e 'Super_L=Alt_L|F1' >/dev/null 2>&1 &
+fi
 if ! pgrep -u "$(id -u)" -f "vice_shell.py" >/dev/null 2>&1; then
     /usr/bin/python3 /opt/vice-os/vice_shell.py &
 fi

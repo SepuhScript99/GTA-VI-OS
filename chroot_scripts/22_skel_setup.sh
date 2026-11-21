@@ -46,6 +46,7 @@ main() {
         if [ -f "$dest_dir/.config/labwc/autostart" ]; then
             chmod 755 "$dest_dir/.config/labwc/autostart"
         fi
+        chmod 755 "$dest_dir"/Desktop/*.desktop 2>/dev/null || true
     }
 
     # Ensure /etc/skel exists

@@ -12,14 +12,14 @@ geometry from this module rather than hardcoding values.
 # Panel Dimensions (pixels)
 # ──────────────────────────────────────────────
 
-TOPBAR_HEIGHT = 38
-"""Height of the TopBar in pixels."""
+TOPBAR_HEIGHT = 44
+"""Height of the TopBar in pixels (unified bottom taskbar height)."""
 
-DOCK_HEIGHT = 64
-"""Height of the Dock in pixels."""
+DOCK_HEIGHT = 44
+"""Height of the unified bottom taskbar in pixels."""
 
 DOCK_WIDTH = 620
-"""Minimum width of the Dock in pixels."""
+"""Minimum width of the floating Dock / Start panel in pixels."""
 
 DOCK_BUTTON_WIDTH = 82
 """Width of each dock application button in pixels."""
@@ -74,38 +74,38 @@ Each entry is checked against $PATH at runtime; missing binaries are skipped.
 """
 
 # ──────────────────────────────────────────────
-# Neon Miami Color Palette
+# GTA VI Leonida / Vice City Color Palette
 # ──────────────────────────────────────────────
 
-COLOR_BG_DARK = "#0a0a0a"
-"""Default widget background."""
+COLOR_BG_DARK = "#120e1e"
+"""Default widget background (deep twilight violet)."""
 
-COLOR_BG_PANEL = "rgba(5, 5, 5, 200)"
+COLOR_BG_PANEL = "rgba(18, 14, 30, 236)"
 """Semi-transparent panel background."""
 
-COLOR_BG_INPUT = "#120024"
+COLOR_BG_INPUT = "#1a142d"
 """Input field background."""
 
-COLOR_BG_INPUT_FOCUS = "#1a002e"
+COLOR_BG_INPUT_FOCUS = "#241c3d"
 """Input field background when focused."""
 
-COLOR_CYAN = "#00FFFF"
-"""Primary accent — cyan."""
+COLOR_CYAN = "#00e5c3"
+"""Palm teal accent."""
 
-COLOR_MAGENTA = "#FF00FF"
-"""Secondary accent — magenta."""
+COLOR_MAGENTA = "#ff4da6"
+"""Vice City hot sunset pink accent."""
 
-COLOR_WHITE = "#FFFFFF"
+COLOR_WHITE = "#f4f1fa"
 """Text color."""
 
-COLOR_RED = "#FF0000"
+COLOR_RED = "#ff3b6b"
 """Error / danger."""
 
-COLOR_BORDER = "#FF00FF"
-"""Default border — magenta."""
+COLOR_BORDER = "#ff4da6"
+"""Default border — sunset pink."""
 
-COLOR_BORDER_FOCUS = "#00FFFF"
-"""Focused border — cyan."""
+COLOR_BORDER_FOCUS = "#ff8a5b"
+"""Focused border — sunset coral."""
 
 # ──────────────────────────────────────────────
 # Stalonetray Configuration
