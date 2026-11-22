@@ -3,18 +3,31 @@
 # Executed by openbox-session upon login.
 
 # 1. Start Core UI Components explicitly to ensure proper ordering
-if ! pgrep -u "$(id -u)" -x picom >/dev/null 2>&1; then
-    /usr/bin/picom -b --config /etc/xdg/compton.conf &
+if command -v picom >/dev/null 2>&1 && ! pgrep -u "$(id -u)" -x picom >/dev/null 2>&1; then
+    PICOM_CONF="/etc/xdg/compton.conf"
+    if [ -f /etc/xdg/picom.conf ]; then
+        PICOM_CONF="/etc/xdg/picom.conf"
+    fi
+    if grep -qiE "llvmpipe|softpipe|No 3D acceleration" /var/log/Xorg.0.log "$HOME/.local/share/xorg/Xorg.0.log" 2>/dev/null || \
+       (command -v glxinfo >/dev/null 2>&1 && glxinfo -B 2>/dev/null | grep -qiE "llvmpipe|softpipe|swrast"); then
+        /usr/bin/picom -b --backend xrender --no-fading-openclose --config "$PICOM_CONF" >/dev/null 2>&1 &
+    else
+        /usr/bin/picom -b --config "$PICOM_CONF" >/dev/null 2>&1 &
+    fi
 fi
-/usr/bin/feh --bg-fill /usr/share/backgrounds/vice_neon.jpg &
+
+/usr/bin/feh --bg-fill /usr/share/backgrounds/vice_neon.jpg >/dev/null 2>&1 &
+
 if command -v pcmanfm >/dev/null 2>&1 && ! pgrep -u "$(id -u)" -x pcmanfm >/dev/null 2>&1; then
     /usr/bin/pcmanfm --desktop --profile vice >/dev/null 2>&1 &
 fi
+
 if command -v xcape >/dev/null 2>&1 && ! pgrep -u "$(id -u)" -x xcape >/dev/null 2>&1; then
     /usr/bin/xcape -e 'Super_L=Alt_L|F1' >/dev/null 2>&1 &
 fi
+
 if ! pgrep -u "$(id -u)" -f "vice_shell.py" >/dev/null 2>&1; then
-    /usr/bin/python3 /opt/vice-os/vice_shell.py &
+    /usr/bin/python3 /opt/vice-os/vice_shell.py >/dev/null 2>&1 &
 fi
 
 # 2. Export DBus environment if not already set (fallback for manual starts)
@@ -22,16 +35,24 @@ if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -x /usr/bin/dbus-launch ]; then
     eval "$(/usr/bin/dbus-launch --sh-syntax --exit-with-session)"
 fi
 
+# 2.2 Start Polkit GNOME authentication agent explicitly after DBus is ready
+if [ -x /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 ] && \
+   ! pgrep -u "$(id -u)" -f "polkit-gnome-authentication-agent-1" >/dev/null 2>&1; then
+    /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 >/dev/null 2>&1 &
+fi
+
 # 2.5 Start the Vice notification daemon (owns org.freedesktop.Notifications).
 #     Runs AFTER DBus export so the session bus is guaranteed available.
 #     Exits gracefully if another notification daemon already owns the name.
-if [ -x /opt/vice-os/vice_notification_daemon.py ]; then
-    /usr/bin/python3 /opt/vice-os/vice_notification_daemon.py > /dev/null 2>&1 &
+if [ -x /opt/vice-os/vice_notification_daemon.py ] && \
+   ! pgrep -u "$(id -u)" -f "vice_notification_daemon.py" >/dev/null 2>&1; then
+    /usr/bin/python3 /opt/vice-os/vice_notification_daemon.py >/dev/null 2>&1 &
 fi
 
 # 2.6 Start the system notifier (battery/disk/temperature alerts via notify-send).
-if [ -x /opt/vice-os/vice_system_notifier.py ]; then
-    /usr/bin/python3 /opt/vice-os/vice_system_notifier.py > /dev/null 2>&1 &
+if [ -x /opt/vice-os/vice_system_notifier.py ] && \
+   ! pgrep -u "$(id -u)" -f "vice_system_notifier.py" >/dev/null 2>&1; then
+    /usr/bin/python3 /opt/vice-os/vice_system_notifier.py >/dev/null 2>&1 &
 fi
 
 # 3. Execute XDG Autostart entries (System-wide + User-specific)
@@ -53,21 +74,26 @@ process_autostart_dir() {
                 esac
 
                 # Skip if Hidden=true
-                if grep -q "Hidden=true" "$f"; then
+                if grep -q "^Hidden=true" "$f"; then
                     continue
                 fi
 
-                # Skip our core components that we started explicitly above
+                # Skip components started explicitly above
                 case "$app_name" in
-                    vice-os-compositor.desktop|vice-os-wallpaper.desktop|vice-os-shell.desktop)
+                    vice-os-compositor.desktop|vice-os-wallpaper.desktop|vice-os-shell.desktop|vice-os-notifications.desktop|polkit-gnome-authentication-agent-1.desktop)
                         continue
                         ;;
                 esac
 
+                # Check TryExec if specified
+                try_exec=$(grep -m 1 "^TryExec=" "$f" | sed 's/^TryExec=//')
+                if [ -n "$try_exec" ] && ! command -v "$try_exec" >/dev/null 2>&1; then
+                    continue
+                fi
+
                 # Extract Exec line, remove %f, %u, etc.
                 cmd=$(grep -m 1 "^Exec=" "$f" | sed 's/^Exec=//;s/ %.*//')
                 if [ -n "$cmd" ]; then
-                    # Execute in background
                     eval "$cmd &" 2>/dev/null
                     started_apps="$started_apps $app_name"
                 fi

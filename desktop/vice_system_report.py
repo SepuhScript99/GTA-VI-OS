@@ -63,7 +63,7 @@ class SystemReport(QWidget):
         self.setWindowTitle("Vice System Report")
         self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
         self.setStyleSheet("""
-            QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+            QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
             QGroupBox { border: 1px solid #00ffff; margin-top: 8px; padding: 6px; }
             QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
             QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 12px; }
@@ -127,6 +127,11 @@ class SystemReport(QWidget):
         self._sections.clear()
         self._overview_text.clear()
         self._processes_text.clear()
+        while self._detail_layout.count():
+            item = self._detail_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
         self._progress.setVisible(True)
 
         self._worker = ReportWorker()

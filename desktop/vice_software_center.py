@@ -5,14 +5,16 @@ A package management GUI for Vice OS with apt and flatpak support.
 """
 
 import sys
+import re
+import signal
+import shutil
 import subprocess
-import json
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QProgressBar, QComboBox, QCheckBox
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QBrush
 
 
@@ -25,10 +27,21 @@ class PackageWorkerThread(QThread):
     def __init__(self, command):
         super().__init__()
         self.command = command
+        self._proc = None
+        self._stopped = False
+
+    def stop(self):
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
 
     def run(self):
         try:
-            process = subprocess.Popen(
+            self._proc = subprocess.Popen(
                 self.command,
                 shell=True,
                 stdout=subprocess.PIPE,
@@ -37,30 +50,39 @@ class PackageWorkerThread(QThread):
             )
 
             # Read output in real-time
-            while True:
-                output = process.stdout.readline()
-                if output == '' and process.poll() is not None:
+            while not self._stopped:
+                output = self._proc.stdout.readline()
+                if output == '' and self._proc.poll() is not None:
                     break
                 if output:
                     self.output_received.emit(output.strip())
 
             # Check for errors
-            stderr = process.stderr.read()
-            if stderr:
-                self.error_occurred.emit(stderr.strip())
+            if not self._stopped:
+                stderr = self._proc.stderr.read()
+                if stderr:
+                    self.error_occurred.emit(stderr.strip())
 
-            # Wait for process to complete
-            return_code = process.wait()
-            self.finished.emit(return_code == 0)
+            # Wait for process to complete cleanly
+            if self._stopped and self._proc.poll() is None:
+                try:
+                    self._proc.kill()
+                except Exception:
+                    pass
+            return_code = self._proc.wait()
+            if not self._stopped:
+                self.finished.emit(return_code == 0)
 
         except Exception as e:
-            self.error_occurred.emit(str(e))
-            self.finished.emit(False)
+            if not self._stopped:
+                self.error_occurred.emit(str(e))
+                self.finished.emit(False)
 
 
 class SoftwareCenter(QMainWindow):
     def __init__(self):
         super().__init__()
+        self._workers = []
         self.setWindowTitle("Vice Software Center")
         self.setGeometry(100, 100, 1000, 700)
         self.setStyleSheet("""
@@ -186,10 +208,10 @@ class SoftwareCenter(QMainWindow):
         search_label = QLabel("Search:")
         controls_layout.addWidget(search_label)
 
-        self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText(f"Search {package_type} packages...")
-        self.search_edit.textChanged.connect(self.filter_packages)
-        controls_layout.addWidget(self.search_edit)
+        search_edit = QLineEdit()
+        search_edit.setPlaceholderText(f"Search {package_type} packages...")
+        search_edit.textChanged.connect(self.filter_packages)
+        controls_layout.addWidget(search_edit)
 
         # Refresh button
         refresh_btn = QPushButton("Refresh")
@@ -199,37 +221,63 @@ class SoftwareCenter(QMainWindow):
         layout.addLayout(controls_layout)
 
         # Package table
-        self.package_table = QTableWidget()
-        self.package_table.setColumnCount(4)
-        self.package_table.setHorizontalHeaderLabels(["Name", "Version", "Description", "Status"])
-        self.package_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.package_table.setSelectionBehavior(QTableWidget.SelectRows)
-        layout.addWidget(self.package_table)
+        package_table = QTableWidget()
+        package_table.setColumnCount(4)
+        package_table.setHorizontalHeaderLabels(["Name", "Version", "Description", "Status"])
+        package_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        package_table.setSelectionBehavior(QTableWidget.SelectRows)
+        package_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        layout.addWidget(package_table)
 
         # Action buttons
         action_layout = QHBoxLayout()
 
-        self.install_btn = QPushButton("Install")
-        self.install_btn.clicked.connect(self.install_selected)
-        action_layout.addWidget(self.install_btn)
+        install_btn = QPushButton("Install")
+        install_btn.clicked.connect(self.install_selected)
+        action_layout.addWidget(install_btn)
 
-        self.remove_btn = QPushButton("Remove")
-        self.remove_btn.clicked.connect(self.remove_selected)
-        action_layout.addWidget(self.remove_btn)
+        remove_btn = QPushButton("Remove")
+        remove_btn.clicked.connect(self.remove_selected)
+        action_layout.addWidget(remove_btn)
 
-        self.update_btn = QPushButton("Update")
-        self.update_btn.clicked.connect(self.update_selected)
-        action_layout.addWidget(self.update_btn)
+        update_btn = QPushButton("Update")
+        update_btn.clicked.connect(self.update_selected)
+        action_layout.addWidget(update_btn)
 
         layout.addLayout(action_layout)
 
-        # Store reference to table based on package type
+        # Store reference to search/table per package type
         if package_type == "APT":
-            self.apt_table = self.package_table
+            self.apt_search_edit = search_edit
+            self.apt_table = package_table
         else:
-            self.flatpak_table = self.package_table
+            self.flatpak_search_edit = search_edit
+            self.flatpak_table = package_table
 
         return tab
+
+    def _cleanup_worker(self, w):
+        if w in self._workers:
+            self._workers.remove(w)
+
+    def _start_worker(self, command):
+        worker = PackageWorkerThread(command)
+        self._workers.append(worker)
+        worker.finished.connect(lambda _ok, w=worker: self._cleanup_worker(w))
+        return worker
+
+    def shutdown_workers(self):
+        for w in list(self._workers):
+            if w.isRunning():
+                w.stop()
+                if not w.wait(1500):
+                    w.terminate()
+                    w.wait(500)
+        self._workers.clear()
+
+    def closeEvent(self, event):
+        self.shutdown_workers()
+        super().closeEvent(event)
 
     def refresh_packages(self):
         """Refresh package lists for both APT and Flatpak."""
@@ -237,35 +285,38 @@ class SoftwareCenter(QMainWindow):
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)  # Indeterminate progress
 
-        # Refresh APT packages
-        apt_thread = PackageWorkerThread("apt list --installed 2>/dev/null")
-        apt_thread.output_received.connect(lambda output: self.process_apt_output(output))
+        self.apt_table.setRowCount(0)
+        self.flatpak_table.setRowCount(0)
+
+        # Refresh APT packages in a single fast dpkg-query invocation
+        apt_thread = self._start_worker(
+            "dpkg-query -W -f='${Package}\\t${Version}\\t${binary:Summary}\\n' 2>/dev/null"
+        )
+        apt_thread.output_received.connect(self.process_apt_output)
         apt_thread.error_occurred.connect(lambda error: self.handle_error(error, "APT"))
         apt_thread.finished.connect(lambda success: self.package_refresh_finished(success, "APT"))
         apt_thread.start()
 
-        # Refresh Flatpak packages
-        flatpak_thread = PackageWorkerThread("flatpak list --columns=application,version,branch,origin")
-        flatpak_thread.output_received.connect(lambda output: self.process_flatpak_output(output))
-        flatpak_thread.error_occurred.connect(lambda error: self.handle_error(error, "Flatpak"))
-        flatpak_thread.finished.connect(lambda success: self.package_refresh_finished(success, "Flatpak"))
-        flatpak_thread.start()
+        # Refresh Flatpak packages only if flatpak is installed
+        if shutil.which("flatpak"):
+            flatpak_thread = self._start_worker("flatpak list --columns=application,version,branch,origin")
+            flatpak_thread.output_received.connect(self.process_flatpak_output)
+            flatpak_thread.error_occurred.connect(lambda error: self.handle_error(error, "Flatpak"))
+            flatpak_thread.finished.connect(lambda success: self.package_refresh_finished(success, "Flatpak"))
+            flatpak_thread.start()
 
     def process_apt_output(self, output):
-        """Process output from apt list command."""
-        if output.startswith("Listing...") or output == "":
+        """Process output from dpkg-query command."""
+        if not output or output.startswith("Listing..."):
             return
 
-        # Parse apt output: package/version,now arch [installed]
-        parts = output.split('/')
+        parts = output.split('\t')
         if len(parts) >= 2:
-            name = parts[0]
-            rest = parts[1].split()
-            if rest:
-                version = rest[0]
-                description = self.get_apt_description(name)
-                status = "Installed" if "installed" in output else "Available"
-                self.add_apt_package(name, version, description, status)
+            name = parts[0].strip()
+            version = parts[1].strip()
+            description = parts[2].strip() if len(parts) > 2 else ""
+            if name:
+                self.add_apt_package(name, version, description or "Installed package", "Installed")
 
     def process_flatpak_output(self, output):
         """Process output from flatpak list command."""
@@ -321,7 +372,7 @@ class SoftwareCenter(QMainWindow):
                 item = self.apt_table.item(row_position, col)
                 if item:
                     item.setBackground(QBrush(QColor(0, 255, 255, 30)))
-                    item.setForeground(QBrush(QColor(0, 0, 0)))
+                    item.setForeground(QBrush(QColor("#e0ffff")))
 
     def add_flatpak_package(self, name, version, description, status):
         """Add a package to the Flatpak table."""
@@ -338,17 +389,18 @@ class SoftwareCenter(QMainWindow):
                 item = self.flatpak_table.item(row_position, col)
                 if item:
                     item.setBackground(QBrush(QColor(0, 255, 255, 30)))
-                    item.setForeground(QBrush(QColor(0, 0, 0)))
+                    item.setForeground(QBrush(QColor("#e0ffff")))
 
     def filter_packages(self):
         """Filter packages based on search text."""
-        search_text = self.search_edit.text().lower()
         current_tab = self.tab_widget.currentIndex()
 
         if current_tab == 0:  # APT tab
             table = self.apt_table
+            search_text = self.apt_search_edit.text().lower()
         else:  # Flatpak tab
             table = self.flatpak_table
+            search_text = self.flatpak_search_edit.text().lower()
 
         for row in range(table.rowCount()):
             item = table.item(row, 0)  # Name column
@@ -388,13 +440,13 @@ class SoftwareCenter(QMainWindow):
     def install_selected(self):
         """Install the selected package."""
         package_name = self.get_selected_package()
-        if not package_name:
-            QMessageBox.warning(self, "No Selection", "Please select a package to install.")
+        if not package_name or not re.match(r"^[a-zA-Z0-9.+_:-]+$", package_name):
+            QMessageBox.warning(self, "No Selection", "Please select a valid package to install.")
             return
 
         current_tab = self.tab_widget.currentIndex()
         if current_tab == 0:  # APT
-            command = f"sudo apt install -y {package_name}"
+            command = f"sudo DEBIAN_FRONTEND=noninteractive apt-get install -y {package_name}"
             self.run_package_command(command, f"Installing APT package: {package_name}")
         else:  # Flatpak
             command = f"flatpak install -y flathub {package_name}"
@@ -403,13 +455,13 @@ class SoftwareCenter(QMainWindow):
     def remove_selected(self):
         """Remove the selected package."""
         package_name = self.get_selected_package()
-        if not package_name:
-            QMessageBox.warning(self, "No Selection", "Please select a package to remove.")
+        if not package_name or not re.match(r"^[a-zA-Z0-9.+_:-]+$", package_name):
+            QMessageBox.warning(self, "No Selection", "Please select a valid package to remove.")
             return
 
         current_tab = self.tab_widget.currentIndex()
         if current_tab == 0:  # APT
-            command = f"sudo apt remove -y {package_name}"
+            command = f"sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y {package_name}"
             self.run_package_command(command, f"Removing APT package: {package_name}")
         else:  # Flatpak
             command = f"flatpak uninstall -y {package_name}"
@@ -418,13 +470,13 @@ class SoftwareCenter(QMainWindow):
     def update_selected(self):
         """Update the selected package."""
         package_name = self.get_selected_package()
-        if not package_name:
-            QMessageBox.warning(self, "No Selection", "Please select a package to update.")
+        if not package_name or not re.match(r"^[a-zA-Z0-9.+_:-]+$", package_name):
+            QMessageBox.warning(self, "No Selection", "Please select a valid package to update.")
             return
 
         current_tab = self.tab_widget.currentIndex()
         if current_tab == 0:  # APT
-            command = f"sudo apt install --only-upgrade -y {package_name}"
+            command = f"sudo DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y {package_name}"
             self.run_package_command(command, f"Updating APT package: {package_name}")
         else:  # Flatpak
             command = f"flatpak update -y {package_name}"
@@ -436,10 +488,10 @@ class SoftwareCenter(QMainWindow):
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)  # Indeterminate
 
-        worker = PackageWorkerThread(command)
-        worker.output_received.connect(lambda output: self.handle_command_output(output))
-        worker.error_occurred.connect(lambda error: self.handle_command_error(error))
-        worker.finished.connect(lambda success: self.command_finished(success))
+        worker = self._start_worker(command)
+        worker.output_received.connect(self.handle_command_output)
+        worker.error_occurred.connect(self.handle_command_error)
+        worker.finished.connect(self.command_finished)
         worker.start()
 
     def handle_command_output(self, output):
@@ -465,8 +517,25 @@ class SoftwareCenter(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     window = SoftwareCenter()
+    app.aboutToQuit.connect(window.shutdown_workers)
+
+    def _handle_sig(_signum, _frame):
+        QTimer.singleShot(0, app.quit)
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, _handle_sig)
+        except Exception:
+            pass
+    # Keep Python signal handlers responsive during Qt event loop
+    sig_pump = QTimer()
+    sig_pump.start(250)
+    sig_pump.timeout.connect(lambda: None)
+
     window.show()
-    sys.exit(app.exec_())
+    rc = app.exec_()
+    window.shutdown_workers()
+    sys.exit(rc)
 
 
 if __name__ == "__main__":

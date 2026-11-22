@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QLineEdit, QMessageBox, QAbstractItemView,
     QMenu, QAction
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QObject, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QColor, QClipboard
 
 from python.vice_utils import log_info, log_error
@@ -27,7 +27,7 @@ HISTORY_FILE = os.path.expanduser("~/.local/share/vice-os/clipboard_history.json
 MAX_ENTRIES = 200
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
@@ -59,22 +59,29 @@ def save_history(entries):
         log_error(f"Clipboard save failed: {e}")
 
 
-class ClipboardWatcher(QThread):
+class ClipboardWatcher(QObject):
+    """GUI-thread clipboard watcher using QTimer (X11-safe)."""
     new_content = pyqtSignal(str)
 
     def __init__(self, app):
         super().__init__()
         self._app = app
         self._last = ""
+        self._timer = QTimer(self)
+        self._timer.setInterval(800)
+        self._timer.timeout.connect(self._check)
 
-    def run(self):
-        import time
-        while True:
-            text = self._app.clipboard().text()
-            if text and text != self._last:
-                self._last = text
-                self.new_content.emit(text)
-            time.sleep(0.8)
+    def start(self):
+        self._timer.start()
+
+    def stop(self):
+        self._timer.stop()
+
+    def _check(self):
+        text = self._app.clipboard().text()
+        if text and text != self._last:
+            self._last = text
+            self.new_content.emit(text)
 
 
 class ClipboardManager(QWidget):

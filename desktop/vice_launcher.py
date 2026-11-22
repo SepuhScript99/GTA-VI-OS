@@ -27,7 +27,7 @@ WINDOW_WIDTH = 880
 WINDOW_HEIGHT = 580
 
 STYLE = """
-QWidget { background-color: #120e1e; color: #f4f1fa; font-family: 'Noto Sans', 'DejaVu Sans', sans-serif; }
+QWidget { background-color: #120e1e; color: #f4f1fa; font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif; }
 QLineEdit {
     background: #1b152e; color: #f4f1fa; border: 1px solid #382b57;
     border-radius: 10px; padding: 10px 14px; font-size: 14px;
@@ -66,6 +66,7 @@ CATEGORIES = {
                     "vice_file_search.py", "vice_checksum.py"],
     "Multimedia":  ["vice_audio_manager.py", "vice_font_manager.py", "vice_image_viewer.py",
                     "vice_media_player.py", "vice_pdf_viewer.py", "vice_screen_recorder.py"],
+    "Graphics":    [],
     "Office":      [],
     "Development": ["vice_software_center.py", "vice_package_search.py", "vice_iso_validator.py",
                     "vice_diagnostics.py", "vice_log_viewer.py", "vice_log_rotation.py",
@@ -90,7 +91,10 @@ _XDG_CATEGORY_MAP = {
     "AudioVideo": "Multimedia",
     "Audio": "Multimedia",
     "Video": "Multimedia",
-    "Graphics": "Multimedia",
+    "Graphics": "Graphics",
+    "Photography": "Graphics",
+    "RasterGraphics": "Graphics",
+    "2DGraphics": "Graphics",
     "Office": "Office",
     "Development": "Development",
     "IDE": "Development",
@@ -226,6 +230,7 @@ def _parse_xdg_desktop_file(filepath: str):
     icon = "application-x-executable"
     comment = ""
     cats = []
+    workdir = ""
     terminal = False
     is_app = True
 
@@ -256,12 +261,22 @@ def _parse_xdg_desktop_file(filepath: str):
                     icon = val.strip() or icon
                 elif key == "Comment":
                     comment = val.strip()
+                elif key == "Path":
+                    workdir = val.strip()
                 elif key == "Categories":
                     cats = [c.strip() for c in val.split(";") if c.strip()]
                 elif key == "NoDisplay" and val.strip().lower() == "true":
                     return None
                 elif key == "Hidden" and val.strip().lower() == "true":
                     return None
+                elif key == "OnlyShowIn":
+                    envs = {e.strip().upper() for e in val.split(";") if e.strip()}
+                    if envs and not (envs & {"OPENBOX", "XFCE", "LXDE", "GTK"}):
+                        return None
+                elif key == "NotShowIn":
+                    envs = {e.strip().upper() for e in val.split(";") if e.strip()}
+                    if "OPENBOX" in envs:
+                        return None
                 elif key == "Type" and val.strip() != "Application":
                     is_app = False
                 elif key == "Terminal":
@@ -277,15 +292,18 @@ def _parse_xdg_desktop_file(filepath: str):
         return None
 
     try:
-        args = shlex.split(exec_cmd)
+        args = [a for a in shlex.split(exec_cmd) if a != ""]
     except ValueError:
-        args = exec_cmd.split()
+        args = [a for a in exec_cmd.split() if a != ""]
     if not args:
         return None
 
     if terminal:
-        term_bin = shutil.which("xfce4-terminal") or "xterm"
-        args = [term_bin, "-e"] + args
+        term_bin = shutil.which("xfce4-terminal") or shutil.which("x-terminal-emulator") or "xterm"
+        if "xfce4-terminal" in os.path.basename(term_bin):
+            args = [term_bin, "-x"] + args
+        else:
+            args = [term_bin, "-e", " ".join(shlex.quote(a) for a in args)]
 
     category = "Utilities"
     for xdg_cat in cats:
@@ -301,6 +319,7 @@ def _parse_xdg_desktop_file(filepath: str):
         "comment": comment or name,
         "category": category,
         "args": args,
+        "workdir": workdir,
     }
 
 
@@ -308,6 +327,7 @@ def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> l
     """Discover both standard XDG .desktop apps and curated Vice OS utilities."""
     apps = []
     seen_labels = set()
+    seen_vice_scripts = set()
 
     dirs = DESKTOP_APP_DIRS if desktop_app_dirs is None else desktop_app_dirs
     for app_dir in dirs:
@@ -321,18 +341,23 @@ def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> l
             if key in seen_labels:
                 continue
             seen_labels.add(key)
+            for arg in entry.get("args", []):
+                base = os.path.basename(arg)
+                if base.startswith("vice_") and base.endswith(".py"):
+                    seen_vice_scripts.add(base)
             apps.append(entry)
 
     if include_vice_scripts:
         for path in sorted(glob.glob(os.path.join(DESKTOP_DIR, "vice_*.py"))):
             name = os.path.basename(path)
-            if name in _EXCLUDED_VICE_SCRIPTS:
+            if name in _EXCLUDED_VICE_SCRIPTS or name in seen_vice_scripts:
                 continue
             default_label = name.replace("vice_", "").replace(".py", "").replace("_", " ").title()
             label, icon = APP_LABELS.get(name, (default_label, "applications-other"))
             if label.lower() in seen_labels:
                 continue
             seen_labels.add(label.lower())
+            seen_vice_scripts.add(name)
             apps.append({
                 "id": name,
                 "name": name,
@@ -341,6 +366,7 @@ def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> l
                 "comment": label,
                 "category": _VICE_CAT_LOOKUP.get(name, "Utilities"),
                 "args": [sys.executable, path],
+                "workdir": os.path.expanduser("~"),
             })
 
     apps.sort(key=lambda item: item["label"].lower())
@@ -500,8 +526,11 @@ class AppLauncher(QWidget):
         args = app_info.get("args", [])
         if not args:
             return
+        workdir = app_info.get("workdir") or os.path.expanduser("~")
+        if not os.path.isdir(workdir):
+            workdir = os.path.expanduser("~")
         log_info(f"Launching: {' '.join(args)}")
-        QProcess.startDetached(args[0], args[1:], DESKTOP_DIR)
+        QProcess.startDetached(args[0], args[1:], workdir)
         self.close()
 
     def _toggle_fav(self, app_info):
@@ -529,8 +558,20 @@ def _configure_icon_theme():
             break
 
 
+def _configure_cjk_fonts(app: QApplication):
+    """Ensure CJK characters render properly without tofu boxes."""
+    cjk_list = ["Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans"]
+    for base in ("Noto Sans", "DejaVu Sans", "Sans", "sans-serif"):
+        QFont.insertSubstitutions(base, cjk_list)
+    font = QFont("Noto Sans", 10)
+    if hasattr(font, "setFamilies"):
+        font.setFamilies(cjk_list)
+    app.setFont(font)
+
+
 def main():
     app = QApplication(sys.argv)
+    _configure_cjk_fonts(app)
     _configure_icon_theme()
     win = AppLauncher()
     win.show()

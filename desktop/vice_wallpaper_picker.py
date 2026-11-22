@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QMessageBox, QComboBox, QCheckBox, QRadioButton, QButtonGroup
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QPixmap, QColor
+from PyQt5.QtGui import QFont, QPixmap, QColor, QImage
 
 from python.vice_utils import log_info, log_error
 
@@ -22,7 +22,7 @@ WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 660
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
@@ -52,28 +52,32 @@ def detect_session():
 
 
 def apply_wallpaper(path, mode, session):
-    """Apply wallpaper via swaybg (Wayland) or feh (X11)."""
+    """Apply wallpaper via swaybg (Wayland) or feh/nitrogen (X11)."""
     if session == "wayland":
         subprocess.run(["pkill", "swaybg"], capture_output=True)
         fill_mode = {"fill": "fill", "stretch": "stretch", "fit": "fit",
-                     "center": "center", "tile": "tile"}[mode]
+                     "center": "center", "tile": "tile"}.get(mode, "fill")
         return subprocess.Popen(["swaybg", "-i", path, "-m", fill_mode],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:  # x11
         bg_styles = {"fill": "--bg-fill", "stretch": "--bg-scale", "fit": "--bg-max",
                      "center": "--bg-center", "tile": "--bg-tile"}
         style = bg_styles.get(mode, "--bg-fill")
+        nitro_styles = {"fill": "--set-zoom-fill", "stretch": "--set-scaled",
+                        "fit": "--set-auto", "center": "--set-centered", "tile": "--set-tiled"}
         for tool in ("feh", "nitrogen"):
             if subprocess.run(["which", tool], capture_output=True).returncode == 0:
                 if tool == "feh":
                     return subprocess.Popen([tool, style, path],
                                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return subprocess.Popen([tool, nitro_styles.get(mode, "--set-zoom-fill"), path],
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return None
 
 
 class ThumbLoader(QThread):
     """Loads a thumbnail in the background."""
-    loaded = pyqtSignal(int, QPixmap)
+    loaded = pyqtSignal(int, QImage)
 
     def __init__(self, row, path):
         super().__init__()
@@ -81,9 +85,9 @@ class ThumbLoader(QThread):
         self._path = path
 
     def run(self):
-        pix = QPixmap(self._path)
-        if not pix.isNull():
-            thumb = pix.scaled(THUMB_W, THUMB_H, Qt.KeepAspectRatio,
+        img = QImage(self._path)
+        if not img.isNull():
+            thumb = img.scaled(THUMB_W, THUMB_H, Qt.KeepAspectRatio,
                                Qt.SmoothTransformation)
             self.loaded.emit(self._row, thumb)
 
@@ -238,9 +242,9 @@ class WallpaperPicker(QWidget):
 
         self._status.setText(f"{len(self._cards)} wallpaper(s)")
 
-    def _on_thumb_loaded(self, row, pix):
+    def _on_thumb_loaded(self, row, img):
         if 0 <= row < len(self._cards):
-            self._cards[row].set_thumbnail(pix)
+            self._cards[row].set_thumbnail(QPixmap.fromImage(img))
 
     def _on_card_click(self, card):
         mode = self._mode_group.button(self._mode_group.checkedId()).text()

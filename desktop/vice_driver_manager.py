@@ -6,6 +6,7 @@ Detects GPU (NVIDIA/AMD/Intel) and wireless chipsets with one-click driver insta
 
 import sys
 import os
+import re
 import subprocess
 
 sys.path.insert(0, '/opt/vice-os/lib')
@@ -24,7 +25,7 @@ WINDOW_WIDTH = 960
 WINDOW_HEIGHT = 680
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QPushButton:disabled { color: #444; border-color: #444; }
@@ -139,16 +140,21 @@ class InstallWorker(QThread):
     output_line = pyqtSignal(str)
     finished = pyqtSignal(bool)
 
-    def __init__(self, pkg):
+    def __init__(self, pkg, op="install"):
         super().__init__()
         self.pkg = pkg
+        self.op = op if op in ("install", "remove") else "install"
 
     def run(self):
-        self.output_line.emit(f"Running: sudo apt install -y {self.pkg}\n")
+        if not re.match(r"^[a-zA-Z0-9.+_:-]+$", self.pkg):
+            self.output_line.emit(f"Invalid package name: {self.pkg}")
+            self.finished.emit(False)
+            return
+        cmd = ["sudo", "DEBIAN_FRONTEND=noninteractive", "apt-get", self.op, "-y", self.pkg]
+        self.output_line.emit(f"Running: {' '.join(cmd)}\n")
         try:
             proc = subprocess.Popen(
-                f"sudo apt install -y {self.pkg}",
-                shell=True,
+                cmd,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True
             )
@@ -324,10 +330,9 @@ class DriverManager(QWidget):
         self._install_btn.setEnabled(False)
         self._remove_btn.setEnabled(False)
         self._progress.setVisible(True)
-        cmd = f"sudo apt {'install -y' if op == 'install' else 'remove -y'} {pkg}"
         self._status.setText(f"{'Installing' if op == 'install' else 'Removing'}: {pkg}")
 
-        w = InstallWorker(pkg if op == "install" else f"--remove {pkg}")
+        w = InstallWorker(pkg, op=op)
         w.output_line.connect(self._log.append)
         w.finished.connect(lambda ok: self._op_done(ok, pkg, op))
         self._workers.append(w)

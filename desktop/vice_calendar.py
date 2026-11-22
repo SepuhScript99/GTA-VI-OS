@@ -25,7 +25,7 @@ WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 640
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
@@ -225,6 +225,17 @@ class CalendarTab(QWidget):
             if ev["date"].startswith(f"{self._year}-{self._month:02d}"):
                 lines.append(f"{ev['date']} {ev['time']}  —  {ev['title']}  (repeat: {ev['recur']})")
         self._events_view.setPlainText("\n".join(lines) if lines else "No events this month")
+
+    def _add_event(self):
+        today = datetime.date.today()
+        date_str = today.isoformat() if (self._year == today.year and self._month == today.month) else f"{self._year}-{self._month:02d}-01"
+        dlg = EventDialog(date_str=date_str, parent=self)
+        if dlg.exec_() == QDialog.Accepted:
+            ev = dlg.values()
+            if ev["title"] and ev["date"]:
+                self._events.append(ev)
+                save_events(self._events)
+                self._render()
 
     def _day_double_clicked(self, row, col):
         item = self._table.item(row, col)

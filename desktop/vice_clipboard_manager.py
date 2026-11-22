@@ -27,7 +27,7 @@ HISTORY_FILE = os.path.expanduser("~/.local/share/vice-os/clipboard_history.json
 MAX_ITEMS = 200
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
@@ -68,7 +68,8 @@ def get_clipboard():
                                capture_output=True, text=True, timeout=2)
             return r.stdout
         except Exception:
-            return ""
+            cb = QApplication.clipboard()
+            return cb.text() if cb is not None else ""
 
 
 def set_clipboard(text):
@@ -81,8 +82,10 @@ def set_clipboard(text):
             proc = subprocess.Popen(["xsel", "--clipboard", "--input"],
                                     stdin=subprocess.PIPE)
             proc.communicate(text.encode())
-        except Exception as e:
-            log_error(f"Set clipboard failed: {e}")
+        except Exception:
+            cb = QApplication.clipboard()
+            if cb is not None:
+                cb.setText(text)
 
 
 class ClipboardManager(QWidget):

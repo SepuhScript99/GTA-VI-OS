@@ -26,7 +26,7 @@ WINDOW_WIDTH = 1100
 WINDOW_HEIGHT = 700
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px 12px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }

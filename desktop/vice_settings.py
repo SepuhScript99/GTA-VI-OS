@@ -37,7 +37,7 @@ PAGE_NAMES = [
 
 
 STYLE = """
-QWidget { background-color: #120e1e; color: #f4f1fa; font-family: 'Noto Sans', 'DejaVu Sans', sans-serif; font-size: 13px; }
+QWidget { background-color: #120e1e; color: #f4f1fa; font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif; font-size: 13px; }
 QPushButton { background: #1d1733; color: #f4f1fa; border: 1px solid #382b57; border-radius: 8px; padding: 7px 16px; font-weight: bold; }
 QPushButton:hover { background: #362247; color: #ff8a5b; border-color: #ff4da6; }
 QPushButton:disabled { color: #6b6187; border-color: #261e3d; }
@@ -46,7 +46,7 @@ QListWidget::item { padding: 8px 10px; border-radius: 6px; margin: 1px 0; }
 QListWidget::item:hover { background: #241c3d; color: #ffffff; }
 QListWidget::item:selected { background: #362247; color: #ff8a5b; border: 1px solid #ff4da6; font-weight: bold; }
 QStackedWidget { background: #171226; border: 1px solid #30244a; border-radius: 10px; padding: 8px; }
-QTextEdit { background: #151024; color: #f4f1fa; border: 1px solid #30244a; border-radius: 8px; font-family: monospace; font-size: 12px; padding: 6px; }
+QTextEdit { background: #151024; color: #f4f1fa; border: 1px solid #30244a; border-radius: 8px; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; font-size: 12px; padding: 6px; }
 QTableWidget { background: #151024; color: #f4f1fa; gridline-color: #2e2348; border: 1px solid #30244a; border-radius: 8px; }
 QHeaderView::section { background: #211a36; color: #ff8a5b; padding: 6px; border: 1px solid #2e2348; font-weight: bold; }
 QTableWidget::item:selected { background: #362247; color: #ff8a5b; }
@@ -84,7 +84,7 @@ DIAG_TESTS = [
     ("Disk Usage",         "df -h 2>&1 | grep -v 'tmpfs\\|loop\\|udev'"),
     ("Memory Info",        "free -h 2>&1"),
     ("Failed Services",    "systemctl list-units --state=failed --no-pager 2>&1"),
-    ("Kernel Errors",      "dmesg --level=err,crit 2>&1 | tail -20 || journalctl -k -p err -n 20 2>&1"),
+    ("Kernel Errors",      "journalctl -k -p err -n 20 --no-pager 2>&1 || sudo dmesg --level=err,crit 2>/dev/null | tail -20"),
     ("Temperature",        "cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | awk '{printf \"%.1f°C\\n\",$1/1000}' || echo 'N/A'"),
     ("Run All",            None),
 ]
@@ -218,7 +218,7 @@ class _DetectWorker(QThread):
 
     def run(self):
         checks = [
-            ("GPU", "NVIDIA", "lspci 2>/dev/null | grep -i nvidia", "nvidia-driver-535",
+            ("GPU", "NVIDIA", "lspci 2>/dev/null | grep -i nvidia", "nvidia-driver",
              "dpkg -l nvidia-driver* 2>/dev/null | grep '^ii' | head -1"),
             ("GPU", "AMD",    "lspci 2>/dev/null | grep -i 'amd\\|ati' | grep -i 'vga\\|3d'",
              "firmware-amd-graphics",
@@ -276,7 +276,7 @@ class _InstallWorker(QThread):
 
     def run(self):
         op = "remove -y" if self.remove else "install -y"
-        cmd = f"sudo apt {op} {self.pkg}"
+        cmd = f"sudo DEBIAN_FRONTEND=noninteractive apt-get {op} {self.pkg}"
         self.line_out.emit(f"$ {cmd}")
         try:
             proc = subprocess.Popen(cmd, shell=True,
@@ -624,6 +624,9 @@ class SettingsWindow(QWidget):
 
 def main():
     app = QApplication(sys.argv)
+    cjk_list = ["Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans"]
+    for base in ("Noto Sans", "DejaVu Sans", "Sans", "sans-serif", "monospace"):
+        QFont.insertSubstitutions(base, cjk_list)
     win = SettingsWindow()
     win.show()
     sys.exit(app.exec_())

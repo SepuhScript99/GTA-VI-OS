@@ -3,7 +3,10 @@
 
 import sys
 import os
+import pwd
+import shutil
 import subprocess
+from datetime import datetime
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
@@ -20,7 +23,7 @@ SCREEN_W = 1920
 SCREEN_H = 1080
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton {
     background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff;
     padding: 14px 20px; font-size: 13px;
@@ -129,7 +132,17 @@ class SessionManager(QWidget):
 
     def _lock(self):
         log_info("Lock screen requested")
-        subprocess.Popen(["xdg-screensaver", "lock"])
+        locker = next(
+            (cmd for cmd in ("swaylock", "i3lock", "slock", "xdg-screensaver") if shutil.which(cmd)),
+            None,
+        )
+        if locker == "xdg-screensaver":
+            subprocess.Popen(["xdg-screensaver", "lock"])
+        elif locker:
+            subprocess.Popen([locker])
+        else:
+            self._lock_win = LockScreen()
+            self._lock_win.showFullScreen()
 
     def _logout(self):
         if QMessageBox.question(
@@ -138,11 +151,22 @@ class SessionManager(QWidget):
             QMessageBox.Yes | QMessageBox.No
         ) == QMessageBox.Yes:
             log_info("Logout requested")
-            subprocess.Popen(["pkill", "-u", os.getenv("USER", "user")])
+            user = os.environ.get("USER") or pwd.getpwuid(os.getuid()).pw_name
+            if os.environ.get("WAYLAND_DISPLAY") and shutil.which("labwc"):
+                subprocess.Popen(["labwc", "--exit"])
+            elif shutil.which("openbox"):
+                subprocess.Popen(["openbox", "--exit"])
+            elif shutil.which("loginctl"):
+                subprocess.Popen(["loginctl", "terminate-user", user])
+            else:
+                subprocess.Popen(["pkill", "-u", user])
 
     def _switch(self):
         log_info("Switch user requested")
-        subprocess.Popen(["dm-tool", "switch-to-greeter"])
+        if shutil.which("dm-tool"):
+            subprocess.Popen(["dm-tool", "switch-to-greeter"])
+        else:
+            self._logout()
 
     def _suspend(self):
         log_info("Suspend requested")
@@ -193,11 +217,9 @@ class LockScreen(QWidget):
 
         self._timer = QTimer()
         self._timer.setInterval(1000)
-        self._timer.timeout.connect(lambda: time_label.setText(
-            __import__('datetime').datetime.now().strftime("%H:%M:%S")
-        ))
+        self._timer.timeout.connect(lambda: time_label.setText(datetime.now().strftime("%H:%M:%S")))
         self._timer.start()
-        time_label.setText(__import__('datetime').datetime.now().strftime("%H:%M:%S"))
+        time_label.setText(datetime.now().strftime("%H:%M:%S"))
 
         root.addSpacing(40)
 
@@ -210,11 +232,18 @@ class LockScreen(QWidget):
         if event.key() in (Qt.Key_Return, Qt.Key_Escape, Qt.Key_Enter):
             self.close()
 
+    def mousePressEvent(self, event):
+        self.close()
+
 
 def main():
     app = QApplication(sys.argv)
-    win = SessionManager()
-    win.show()
+    if "--lock" in sys.argv:
+        win = LockScreen()
+        win.showFullScreen()
+    else:
+        win = SessionManager()
+        win.show()
     sys.exit(app.exec_())
 
 

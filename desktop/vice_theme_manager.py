@@ -3,6 +3,7 @@
 
 import sys
 import os
+import shutil
 import subprocess
 import json
 
@@ -22,7 +23,7 @@ WINDOW_WIDTH = 900
 WINDOW_HEIGHT = 620
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
@@ -53,7 +54,7 @@ THEMES = {
 
 def build_qss(theme):
     return f"""
-QWidget {{ background-color: {theme['bg']}; color: {theme['fg']}; font-family: monospace; }}
+QWidget {{ background-color: {theme['bg']}; color: {theme['fg']}; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }}
 QPushButton {{ background: #1a1a1a; color: {theme['primary']}; border: 1px solid {theme['primary']}; padding: 5px 14px; }}
 QPushButton:hover {{ background: {theme['primary']}; color: {theme['bg']}; }}
 QPushButton:disabled {{ color: #444; border-color: #444; }}
@@ -142,6 +143,7 @@ class ThemeManager(QWidget):
 
         self._preview_frame = QFrame()
         self._preview_frame.setMinimumHeight(120)
+        self._preview_layout = QVBoxLayout(self._preview_frame)
         pv.addWidget(self._preview_frame)
 
         swatch_row = QHBoxLayout()
@@ -171,6 +173,7 @@ class ThemeManager(QWidget):
         self._font_size.setValue(11)
         size_row.addWidget(self._font_size)
         self._font_size_label = QLabel("11")
+        self._font_size.valueChanged.connect(lambda v: self._font_size_label.setText(str(v)))
         size_row.addWidget(self._font_size_label)
         fb.addLayout(size_row)
         rl.addWidget(font_box)
@@ -234,10 +237,11 @@ class ThemeManager(QWidget):
             f"background-color: {theme['bg']}; border: 2px solid {theme['primary']};"
         )
 
-        # Live preview via layout children
-        inner = QVBoxLayout(self._preview_frame)
+        # Live preview via persistent layout
+        inner = self._preview_layout
         while inner.count():
-            w = inner.takeAt(0).widget()
+            item = inner.takeAt(0)
+            w = item.widget()
             if w:
                 w.deleteLater()
 
@@ -279,14 +283,15 @@ class ThemeManager(QWidget):
         except Exception as e:
             log_error(f"QSS write failed: {e}")
 
-        # Apply GTK theme hint via gsettings
-        subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "gtk-theme",
-                        "'Adwaita-dark'"], capture_output=True)
-        if icon_theme != "System Default":
-            subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "icon-theme",
-                            f"'{icon_theme}'"], capture_output=True)
-        subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "font-name",
-                        f"'{font} {font_size}'"], capture_output=True)
+        # Apply GTK theme hint via gsettings when available
+        if shutil.which("gsettings"):
+            subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "gtk-theme",
+                            "Adwaita-dark"], capture_output=True)
+            if icon_theme != "System Default":
+                subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "icon-theme",
+                                icon_theme], capture_output=True)
+            subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "font-name",
+                            f"{font} {font_size}"], capture_output=True)
 
         self._status.setText(f"Theme applied: {self._current_theme}")
         log_info(f"Theme applied: {self._current_theme} font={font} size={font_size}")

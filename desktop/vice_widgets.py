@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QFrame, QGraphicsDropShadowEffect, QDialog, QLineEdit
 )
-from PyQt5.QtCore import Qt, QTimer, QPoint, QMimeData, QDataStream, QByteArray
+from PyQt5.QtCore import Qt, QTimer, QPoint, QPointF, QMimeData, QDataStream, QByteArray
 from PyQt5.QtGui import QFont, QColor, QPainter, QPolygon
 
 from python.vice_utils import log_info
@@ -42,7 +42,7 @@ class DragWidget(QFrame):
         self.setFixedSize(WIDGET_WIDTH, WIDGET_HEIGHT)
         self.setFrameShape(QFrame.Box)
         self.setStyleSheet(STYLE_FRAME)
-        shadow = QGraphicsDropShadowEffect(blurRadius=15, color=QColor("#ff00ff"), offset=(3, 3))
+        shadow = QGraphicsDropShadowEffect(blurRadius=15, color=QColor("#ff00ff"), offset=QPointF(3, 3))
         self.setGraphicsEffect(shadow)
 
         if x is not None:
@@ -133,16 +133,15 @@ class SystemStatsWidget(DragWidget):
             vals = list(map(int, line.split()[1:]))
             idle = vals[3]
             total = sum(vals)
-            with open("/tmp/vice_cpu_prev", "w") as pf:
-                pf.write(f"{total},{idle}")
-            try:
-                with open("/tmp/vice_cpu_prev") as pf:
-                    pt, pi = map(int, pf.read().split(","))
-                    dt, di = total - pt, idle - pi
-                    cpu = 0 if dt == 0 else int((1 - di / dt) * 100)
-                    lines.append(f"CPU: {cpu}%")
-            except Exception:
+            prev = getattr(self, "_prev_cpu", None)
+            self._prev_cpu = (total, idle)
+            if prev is None:
                 lines.append("CPU: calculating...")
+            else:
+                pt, pi = prev
+                dt, di = total - pt, idle - pi
+                cpu = 0 if dt <= 0 else int((1 - di / dt) * 100)
+                lines.append(f"CPU: {cpu}%")
         except Exception:
             lines.append("CPU: N/A")
 
@@ -164,13 +163,13 @@ class SystemStatsWidget(DragWidget):
         # Disk
         try:
             out = subprocess.check_output(
-                ["df", "-h", "--output=target,pcent", "|", "grep", "-v", "tmpfs"],
+                ["df", "-h", "--output=target,pcent"],
                 text=True, timeout=2
             )
             for line in out.splitlines()[1:]:
-                if "/home" in line or "/" == line.split()[0]:
-                    parts = line.split()
-                    lines.append(f"Disk /: {parts[1]}")
+                parts = line.split()
+                if len(parts) >= 2 and parts[0] in ("/", "/home"):
+                    lines.append(f"Disk {parts[0]}: {parts[1]}")
                     break
         except Exception:
             lines.append("Disk: N/A")
@@ -227,7 +226,7 @@ class WeatherConfigDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Weather Widget Config")
         self.setFixedSize(360, 200)
-        self.setStyleSheet("background: #0a0a0a; color: #00ffff; font-family: monospace;")
+        self.setStyleSheet("background: #0a0a0a; color: #00ffff; font-family: 'Noto Sans Mono CJK JP', 'Noto Sans CJK JP', 'Noto Sans CJK SC', monospace;")
         layout = QVBoxLayout(self)
 
         layout.addWidget(QLabel("Weather Widget Configuration"))

@@ -3,7 +3,8 @@ set -Eeuo pipefail
 
 # ============================================================================
 # GTA VI OS (Vice OS) Chroot Script: Network & Audio Fix
-# Resolves DNS conflicts and ensures user permissions for audio/video/net.
+# Resolves DNS conflicts and ensures user permissions and PipeWire services
+# are configured for audio/video/network usability.
 # ============================================================================
 
 # Source the shared library from the payload directory
@@ -42,15 +43,24 @@ RESOLV
     log_info "Configuring User Groups and Audio..."
 
     # Add the vice user to necessary groups for desktop usability
-    # (audio, video, netdev are standard Debian groups and already exist)
     if id -u vice >/dev/null 2>&1; then
         usermod -aG netdev vice 2>/dev/null || true
         usermod -aG audio vice 2>/dev/null || true
         usermod -aG video vice 2>/dev/null || true
+        if getent group render >/dev/null 2>&1; then
+            usermod -aG render vice 2>/dev/null || true
+        fi
+        if getent group plugdev >/dev/null 2>&1; then
+            usermod -aG plugdev vice 2>/dev/null || true
+        fi
         log_info "User 'vice' added to netdev, audio, and video groups."
     else
         log_warn "User 'vice' not found. Skipping group assignments."
     fi
+
+    # Enable PipeWire / WirePlumber user services globally and RTKit daemon
+    systemctl enable rtkit-daemon.service 2>/dev/null || true
+    systemctl --global enable pipewire.socket pipewire-pulse.socket pipewire.service pipewire-pulse.service wireplumber.service 2>/dev/null || true
 
     log_success "Network and audio configuration completed."
 }

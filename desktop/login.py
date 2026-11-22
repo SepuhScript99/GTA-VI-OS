@@ -7,6 +7,7 @@ Uses QProcess to prevent UI freezing during authentication and session monitorin
 
 import sys
 import os
+import shutil
 import subprocess
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QLineEdit, QComboBox,
@@ -282,8 +283,15 @@ class AnimatedLogin(QWidget):
 
         except Exception as e:
             log_error(f"Failed to start session: {e}")
-            # Fallback to xterm so the user isn't stranded on a black screen
-            subprocess.Popen(["xterm", "-e", "bash"], env=os.environ)
+            # Fallback to an installed terminal so the user isn't stranded on a black screen
+            term = next(
+                (t for t in ("xfce4-terminal", "x-terminal-emulator", "xterm") if shutil.which(t)),
+                None,
+            )
+            if term:
+                subprocess.Popen([term, "-e", "bash"], env=os.environ)
+            else:
+                subprocess.Popen(["bash"], env=os.environ)
             sys.exit(1)
 
 if __name__ == '__main__':

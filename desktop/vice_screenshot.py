@@ -26,7 +26,7 @@ WINDOW_HEIGHT = 480
 SAVE_DIR = os.path.expanduser("~/Pictures/Screenshots")
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 6px 16px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QPushButton:disabled { color: #444; border-color: #444; }
@@ -52,28 +52,44 @@ class CaptureWorker(QThread):
         self.path = path
 
     def run(self):
+        import shutil
         import time
         time.sleep(self.delay)
         try:
-            if self.mode == "Full Screen":
-                cmd = ["scrot", self.path]
-            elif self.mode == "Active Window":
-                cmd = ["scrot", "-u", self.path]
-            elif self.mode == "Select Region":
-                cmd = ["scrot", "-s", self.path]
-            else:
-                cmd = ["scrot", self.path]
-
-            r = subprocess.run(cmd, capture_output=True, timeout=30)
-            if r.returncode != 0:
-                # fallback to import (ImageMagick)
-                if self.mode == "Select Region":
-                    r2 = subprocess.run(["import", self.path], capture_output=True, timeout=30)
+            if shutil.which("scrot"):
+                if self.mode == "Active Window":
+                    cmd = ["scrot", "-u", self.path]
+                elif self.mode == "Select Region":
+                    cmd = ["scrot", "-s", self.path]
                 else:
-                    r2 = subprocess.run(["import", "-window", "root", self.path], capture_output=True, timeout=30)
-                self.done.emit(self.path, r2.returncode == 0)
-            else:
-                self.done.emit(self.path, True)
+                    cmd = ["scrot", self.path]
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if r.returncode == 0 and os.path.isfile(self.path):
+                    self.done.emit(self.path, True)
+                    return
+
+            if shutil.which("gnome-screenshot"):
+                if self.mode == "Active Window":
+                    cmd = ["gnome-screenshot", "-w", "-f", self.path]
+                elif self.mode == "Select Region":
+                    cmd = ["gnome-screenshot", "-a", "-f", self.path]
+                else:
+                    cmd = ["gnome-screenshot", "-f", self.path]
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if r.returncode == 0 and os.path.isfile(self.path):
+                    self.done.emit(self.path, True)
+                    return
+
+            if shutil.which("import"):
+                if self.mode == "Select Region":
+                    cmd = ["import", self.path]
+                else:
+                    cmd = ["import", "-window", "root", self.path]
+                r2 = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                self.done.emit(self.path, r2.returncode == 0 and os.path.isfile(self.path))
+                return
+
+            self.done.emit("No screenshot tool found (scrot, gnome-screenshot, or import)", False)
         except Exception as e:
             self.done.emit(str(e), False)
 

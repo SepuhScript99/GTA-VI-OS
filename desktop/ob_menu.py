@@ -105,7 +105,9 @@ def get_categorized_apps() -> dict:
 def generate_xml() -> str:
     """Generates the Openbox pipe menu XML."""
     categorized_apps = get_categorized_apps()
-    term_bin = shutil.which("xfce4-terminal") or "xterm"
+    term_bin = shutil.which("xfce4-terminal") or shutil.which("x-terminal-emulator") or "xterm"
+    term_flag = "-x" if os.path.basename(term_bin) == "xfce4-terminal" else "-e"
+    browser_bin = shutil.which("firefox-esr") or shutil.which("firefox") or "firefox-esr"
 
     xml_lines = ['<openbox_pipe_menu>']
 
@@ -120,7 +122,7 @@ def generate_xml() -> str:
     xml_lines.append('    <action name="Execute"><command>thunar</command></action>')
     xml_lines.append('  </item>')
     xml_lines.append('  <item label="Web Browser">')
-    xml_lines.append('    <action name="Execute"><command>firefox</command></action>')
+    xml_lines.append(f'    <action name="Execute"><command>{escape(browser_bin)}</command></action>')
     xml_lines.append('  </item>')
     xml_lines.append('  <separator />')
 
@@ -133,9 +135,9 @@ def generate_xml() -> str:
             safe_name = escape(app["name"])
             safe_exec = escape(app["exec"])
 
-            # If the app requires a terminal, wrap the command in terminal -e
+            # If the app requires a terminal, wrap the command cleanly for the detected terminal
             if app["terminal"] == "true":
-                final_cmd = f"{term_bin} -e {safe_exec}"
+                final_cmd = f"{escape(term_bin)} {term_flag} {safe_exec}"
             else:
                 final_cmd = safe_exec
 
@@ -165,8 +167,9 @@ def main():
     except Exception as e:
         # Fallback menu in case of catastrophic failure.
         # We do not include the exception string in the XML to prevent parsing errors.
-        print("<openbox_pipe_menu><item label=\"Menu Error\"><action name=\"Execute\"><command>xterm</command></action></item></openbox_pipe_menu>", file=sys.stderr)
-        print("<openbox_pipe_menu><item label=\"Menu Error (Check stderr)\"><action name=\"Execute\"><command>xterm</command></action></item></openbox_pipe_menu>")
+        fallback_term = "xfce4-terminal" if os.path.exists("/usr/bin/xfce4-terminal") else "x-terminal-emulator"
+        print(f"<openbox_pipe_menu><item label=\"Menu Error\"><action name=\"Execute\"><command>{fallback_term}</command></action></item></openbox_pipe_menu>", file=sys.stderr)
+        print(f"<openbox_pipe_menu><item label=\"Menu Error (Check stderr)\"><action name=\"Execute\"><command>{fallback_term}</command></action></item></openbox_pipe_menu>")
 
 if __name__ == "__main__":
     main()

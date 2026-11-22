@@ -70,8 +70,21 @@ main() {
     mkdir -p /opt/vice-os/lib
     cp -r /vice_payload/lib/python /opt/vice-os/lib/
 
-    # Use picom config syntax, but keep filename as compton.conf for legacy compatibility
-    cp /vice_payload/config/compton.conf /etc/xdg/compton.conf
+    # Install USB auto-mount helper script referenced by vice_usb_manager.py
+    if [ -f /vice_payload/system_utils/vice_usb_automount.py ]; then
+        mkdir -p /opt/vice-os/system_utils
+        cp /vice_payload/system_utils/vice_usb_automount.py /opt/vice-os/system_utils/
+        chmod +x /opt/vice-os/system_utils/vice_usb_automount.py
+    fi
+
+    # Install compositor configs (compton.conf legacy + picom.conf when provided)
+    mkdir -p /etc/xdg
+    if [ -f /vice_payload/config/compton.conf ]; then
+        cp /vice_payload/config/compton.conf /etc/xdg/compton.conf
+    fi
+    if [ -f /vice_payload/config/picom.conf ]; then
+        cp /vice_payload/config/picom.conf /etc/xdg/picom.conf
+    fi
 
     # Copy Openbox configuration to system skeleton and vice user
     # (22_skel_setup.sh handles .bashrc and .profile, but Openbox config is handled here)

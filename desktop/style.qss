@@ -4,7 +4,7 @@
 QWidget {
     background-color: #120e1e;
     color: #f4f1fa;
-    font-family: 'Noto Sans', 'DejaVu Sans', 'Sans';
+    font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
     font-size: 13px;
 }
 
@@ -63,6 +63,7 @@ QPushButton#TaskButton {
     padding: 3px 10px;
     min-width: 90px;
     max-width: 185px;
+    font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
     font-size: 12px;
     text-align: left;
 }
@@ -130,7 +131,7 @@ QPushButton#PowerButton:hover {
 }
 
 /* --- Instant Mint Cinnamon-Style Start Menu Popup --- */
-QWidget#StartMenuPopup {
+QWidget#StartMenuPopup, QWidget#VolumePopup {
     background-color: rgba(20, 15, 34, 246);
     border: 1px solid #ff4da6;
     border-radius: 14px;
@@ -162,6 +163,7 @@ QListWidget#StartCatList {
     border-radius: 10px;
     padding: 4px;
     outline: none;
+    font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
 }
 
 QListWidget#StartCatList::item {
@@ -187,6 +189,7 @@ QListWidget#StartAppList {
     border-radius: 10px;
     padding: 4px;
     outline: none;
+    font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
 }
 
 QListWidget#StartAppList::item {

@@ -96,13 +96,22 @@ def create_desktop_file(app_name, meta):
     script_path = os.path.join(DESKTOP_DIR, app_name)
     executable = sys.executable
 
+    icon = meta.get("icon", "applications-other")
+    if icon == "applications-other":
+        try:
+            from vice_launcher import APP_LABELS
+            if app_name in APP_LABELS:
+                icon = APP_LABELS[app_name][1]
+        except Exception:
+            pass
+
     content = f"""[Desktop Entry]
 Version=1.0
 Type=Application
 Name={meta['name']}
 Comment={meta['comment']}
 Exec={executable} {script_path}
-Icon=computer
+Icon={icon}
 Terminal=false
 Categories={meta['cat']};
 StartupNotify=true

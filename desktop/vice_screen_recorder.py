@@ -23,7 +23,7 @@ WINDOW_HEIGHT = 560
 SAVE_DIR = os.path.expanduser("~/Videos/Recordings")
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 6px 16px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QPushButton:disabled { color: #444; border-color: #444; }
@@ -45,7 +45,7 @@ QLabel { color: #00ffff; }
 
 
 def get_display_size():
-    """Query display size via xdotool/xdpyinfo; fallback 1920x1080."""
+    """Query display size via xdpyinfo or xrandr; fallback 1920x1080."""
     try:
         out = subprocess.check_output(["xdpyinfo"], text=True, timeout=3)
         for line in out.splitlines():
@@ -54,13 +54,23 @@ def get_display_size():
                 return dims.split("x")[0], dims.split("x")[1]
     except Exception:
         pass
+    try:
+        out = subprocess.check_output(["xrandr", "--current"], text=True, timeout=3)
+        for line in out.splitlines():
+            if "*" in line:
+                res = line.strip().split()[0]
+                if "x" in res:
+                    w, h = res.split("x", 1)
+                    return w, h
+    except Exception:
+        pass
     return "1920", "1080"
 
 
 def get_audio_source():
-    """Detect PulseAudio source name for capture."""
+    """Detect PulseAudio/PipeWire monitor source name for desktop audio capture."""
     try:
-        r = subprocess.run(["pactl", "get-default-source"], capture_output=True, text=True, timeout=3)
+        r = subprocess.run(["pactl", "get-default-sink"], capture_output=True, text=True, timeout=3)
         if r.returncode == 0 and r.stdout.strip():
             return r.stdout.strip() + ".monitor"
     except Exception:
@@ -79,7 +89,11 @@ class RecordWorker(QThread):
 
     def run(self):
         self._proc = subprocess.Popen(
-            self._cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            self._cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
         for line in self._proc.stdout:
             self.line.emit(line.rstrip())

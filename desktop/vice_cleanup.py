@@ -23,7 +23,7 @@ WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 620
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QPushButton:disabled { color: #444; border-color: #444; }
@@ -268,7 +268,7 @@ class SystemCleanup(QWidget):
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self._table.setSelectionBehavior(QAbstractItemView.NoSelection)
+        self._table.setSelectionMode(QAbstractItemView.NoSelection)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
         root.addWidget(self._table, 1)
 

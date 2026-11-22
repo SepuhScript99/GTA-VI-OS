@@ -13,10 +13,17 @@ import datetime
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-import dbus
-import dbus.service
-import dbus.mainloop.glib
-from gi.repository import GLib
+try:
+    import dbus
+    import dbus.service
+    import dbus.mainloop.glib
+    from gi.repository import GLib
+    _HAS_DBUS = True
+except ImportError as _imp_err:
+    dbus = None
+    GLib = None
+    _HAS_DBUS = False
+    _DBUS_ERR = str(_imp_err)
 
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout
 from PyQt5.QtCore import Qt, QTimer
@@ -36,18 +43,18 @@ QWidget {
 }
 QLabel#summary {
     color: #00ffff;
-    font-family: monospace;
+    font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace;
     font-size: 13px;
     font-weight: bold;
 }
 QLabel#body {
     color: #aaffff;
-    font-family: monospace;
+    font-family: "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans", monospace;
     font-size: 11px;
 }
 QLabel#urgency {
     color: #ff00ff;
-    font-family: monospace;
+    font-family: "Noto Sans CJK JP", "Noto Sans CJK SC", monospace;
     font-size: 9px;
 }
 """
@@ -128,7 +135,10 @@ class NotificationPopup(QWidget):
             QTimer.singleShot(timeout, self.close)
 
 
-class ViceNotificationDaemon(dbus.service.Object):
+_DbusBase = dbus.service.Object if _HAS_DBUS else object
+
+
+class ViceNotificationDaemon(_DbusBase):
     def __init__(self, bus, qt_app):
         self._bus = bus
         self._app = qt_app
@@ -141,7 +151,7 @@ class ViceNotificationDaemon(dbus.service.Object):
 
     @dbus.service.method("org.freedesktop.Notifications",
                          in_signature="susssasa{sv}i", out_signature="u",
-                         sender_keyword="sender")
+                         sender_keyword="sender") if _HAS_DBUS else (lambda f: f)
     def Notify(self, app_name, replaces_id, app_icon, summary,
                body, actions, hints, expire_timeout, sender=None):
         self._id_counter += 1
@@ -167,10 +177,15 @@ class ViceNotificationDaemon(dbus.service.Object):
         log_info(f"Notify [{urgency}] {summary_str}")
         append_history(summary_str, body_str, urgency, str(app_name))
 
+        while len(self._active) >= MAX_VISIBLE:
+            oldest_id = next(iter(self._active))
+            self._cleanup_popup(oldest_id)
+
         popup = NotificationPopup(summary_str, body_str, urgency, timeout, str(app_name))
+        self._active[nid] = popup
         self._reposition()
         if timeout > 0:
-            QTimer.singleShot(timeout + 50, lambda: self._cleanup_popup(nid))
+            QTimer.singleShot(timeout + 50, lambda n=nid: self._cleanup_popup(n))
 
         return dbus.UInt32(nid)
 
@@ -189,24 +204,29 @@ class ViceNotificationDaemon(dbus.service.Object):
                 popup.move(screen.width() - popup.width() - 20, y)
                 y += popup.height() + 8
 
-    @dbus.service.method("org.freedesktop.Notifications",
-                         in_signature="", out_signature="as")
+    @(dbus.service.method("org.freedesktop.Notifications",
+                          in_signature="", out_signature="as") if _HAS_DBUS else (lambda f: f))
     def GetCapabilities(self):
         return dbus.Array(["actions", "body", "body-markup", "icon-static",
                            "urgency"], signature="s")
 
-    @dbus.service.method("org.freedesktop.Notifications",
-                         in_signature="", out_signature="ssss")
+    @(dbus.service.method("org.freedesktop.Notifications",
+                          in_signature="", out_signature="ssss") if _HAS_DBUS else (lambda f: f))
     def GetServerInformation(self):
         return ("Vice OS Notifications", "Vice OS Project", "1.0", "1.2")
 
-    @dbus.service.method("org.freedesktop.Notifications",
-                         in_signature="u", out_signature="")
+    @(dbus.service.method("org.freedesktop.Notifications",
+                          in_signature="u", out_signature="") if _HAS_DBUS else (lambda f: f))
     def CloseNotification(self, nid):
         self._cleanup_popup(int(nid))
 
 
 def main():
+    if not _HAS_DBUS:
+        log_error(f"Notification daemon dependencies missing (python3-dbus/python3-gi): {_DBUS_ERR}")
+        print(f"Error: missing python3-dbus / python3-gi ({_DBUS_ERR})", file=sys.stderr)
+        sys.exit(1)
+
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 
     qt_app = QApplication(sys.argv)
@@ -234,9 +254,15 @@ def main():
     log_info("Vice notification daemon started on org.freedesktop.Notifications")
     print("Vice OS notification daemon running (org.freedesktop.Notifications)")
 
-    loop = GLib.MainLoop()
+    # Pump GLib main context inside Qt event loop so both DBus signals and Qt popups work cleanly
+    glib_ctx = GLib.MainContext.default()
+    pump = QTimer()
+    pump.setInterval(50)
+    pump.timeout.connect(lambda: [glib_ctx.iteration(False) for _ in range(5) if glib_ctx.pending()])
+    pump.start()
+
     try:
-        loop.run()
+        sys.exit(qt_app.exec_())
     except KeyboardInterrupt:
         pass
 

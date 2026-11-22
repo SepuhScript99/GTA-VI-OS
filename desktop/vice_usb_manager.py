@@ -21,7 +21,7 @@ WINDOW_WIDTH = 860
 WINDOW_HEIGHT = 520
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QPushButton:disabled { color: #444; border-color: #444; }
@@ -37,7 +37,20 @@ QSpinBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; paddi
 QLabel { color: #00ffff; }
 """
 
-DAEMON_SCRIPT = os.path.join(os.path.dirname(__file__), "system_utils", "vice_usb_automount.py")
+def _find_daemon_script():
+    base = os.path.dirname(os.path.abspath(__file__))
+    for candidate in (
+        os.path.join(base, "system_utils", "vice_usb_automount.py"),
+        os.path.join(os.path.dirname(base), "system_utils", "vice_usb_automount.py"),
+        "/opt/vice-os/system_utils/vice_usb_automount.py",
+        "/usr/local/system_utils/vice_usb_automount.py",
+    ):
+        if os.path.exists(candidate):
+            return candidate
+    return "/opt/vice-os/system_utils/vice_usb_automount.py"
+
+
+DAEMON_SCRIPT = _find_daemon_script()
 
 
 class UsbWorker(QThread):

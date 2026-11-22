@@ -62,7 +62,7 @@ test_critical_packages() {
     local pkg_list="$WORKDIR/config/packages.list"
     local missing=0
 
-    for pkg in thunar stalonetray firefox-esr xorg openbox python3-pyqt5 pipewire; do
+    for pkg in thunar stalonetray firefox-esr xorg openbox python3-pyqt5 pipewire pipewire-pulse wireplumber alsa-utils ffmpeg libavcodec-extra fonts-noto-cjk polkitd librsvg2-common; do
         if grep -q "^$pkg$" "$pkg_list"; then
             :
         else
@@ -281,7 +281,7 @@ test_config_integrity() {
     log_info "--- Test: Configuration files ---"
 
     local missing=0
-    for f in grub.cfg fstab packages.list os-release openbox_rc.xml; do
+    for f in grub.cfg fstab packages.list os-release openbox_rc.xml picom.conf firefox/vice-os.js firefox/policies.json fontconfig/99-vice-cjk.conf; do
         if [ ! -f "$WORKDIR/config/$f" ]; then
             log_error "Missing config: $f"
             missing=$((missing + 1))

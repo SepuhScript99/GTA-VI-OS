@@ -10,8 +10,11 @@ import unittest
 from unittest.mock import patch, mock_open, MagicMock
 import sys
 import os
+import re
 import ast
 import glob
+import json
+import configparser
 import tempfile
 import xml.etree.ElementTree as ET
 
@@ -342,6 +345,262 @@ class TestWindowManagementConfig(unittest.TestCase):
             self.assertIn(required, pkgs, f"Missing standard desktop package: {required}")
         self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, "config", "qt5ct", "qt5ct.conf")))
         self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, "config", "skel", "Desktop", "firefox.desktop")))
+
+
+class TestLiveVmMediaFontDesktopRegression(unittest.TestCase):
+    """Regression tests covering CJK fonts, PipeWire/ALSA audio, codecs/Firefox/picom, and shortcuts."""
+
+    def _read(self, *parts):
+        with open(os.path.join(REPO_ROOT, *parts), "r", encoding="utf-8") as fp:
+            return fp.read()
+
+    def _load_packages(self):
+        text = self._read("config", "packages.list")
+        pkgs = set()
+        for line in text.splitlines():
+            clean = line.split("#", 1)[0].strip()
+            if clean:
+                pkgs.add(clean)
+        return pkgs
+
+    def test_cjk_fonts_and_fontconfig_fallback(self):
+        pkgs = self._load_packages()
+        self.assertIn("fontconfig", pkgs)
+        self.assertIn("fonts-noto-cjk", pkgs)
+
+        fc_path = os.path.join(REPO_ROOT, "config", "fontconfig", "99-vice-cjk.conf")
+        self.assertTrue(os.path.isfile(fc_path), "Missing config/fontconfig/99-vice-cjk.conf")
+        ET.parse(fc_path)
+        fc_text = self._read("config", "fontconfig", "99-vice-cjk.conf")
+        for token in ("sans-serif", "serif", "monospace", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Color Emoji"):
+            self.assertIn(token, fc_text)
+
+        tuning = self._read("chroot_scripts", "02_system_tuning.sh")
+        self.assertIn("config/fontconfig", tuning)
+        self.assertIn("/etc/fonts/conf.avail", tuning)
+        self.assertIn("fc-cache -f", tuning)
+
+        qss = self._read("desktop", "style.qss")
+        for widget_sel in ("QWidget {", "QPushButton#TaskButton {", "QListWidget#StartCatList {", "QListWidget#StartAppList {"):
+            self.assertIn(widget_sel, qss)
+        self.assertIn("Noto Sans CJK JP", qss)
+        self.assertIn("Noto Sans CJK SC", qss)
+
+        shell_code = self._read("desktop", "vice_shell.py")
+        self.assertIn("def _configure_cjk_fonts", shell_code)
+        self.assertIn("QFont.insertSubstitutions", shell_code)
+        self.assertIn("Noto Sans CJK JP", shell_code)
+        self.assertIn("_configure_cjk_fonts(app)", shell_code)
+
+        rc_text = self._read("config", "openbox_rc.xml")
+        self.assertIn("Noto Sans CJK JP", rc_text)
+        self.assertIn("Noto Sans CJK SC", rc_text)
+
+    def test_pipewire_alsa_audio_stack_and_session_startup(self):
+        pkgs = self._load_packages()
+        self.assertNotIn("pulseaudio", pkgs, "Conflicting pulseaudio daemon must not be in packages.list")
+        for required in (
+            "pipewire", "pipewire-audio", "pipewire-pulse", "pipewire-alsa",
+            "wireplumber", "alsa-utils", "alsa-ucm-conf", "rtkit",
+            "pulseaudio-utils", "pavucontrol", "libcanberra-pulse",
+        ):
+            self.assertIn(required, pkgs, f"Missing audio package: {required}")
+
+        systemd_setup = self._read("chroot_scripts", "19_systemd_setup.sh")
+        self.assertIn("rm -f /etc/pipewire/pipewire.conf", systemd_setup)
+        self.assertIn("/etc/pipewire/pipewire.conf.d/10-vice-audio.conf", systemd_setup)
+        pw_dropin = re.search(r"cat <<'PWCONF'[^\n]*\n(.*?)\nPWCONF", systemd_setup, re.DOTALL)
+        self.assertIsNotNone(pw_dropin, "Missing PWCONF drop-in heredoc in 19_systemd_setup.sh")
+        self.assertNotIn("libpipewire-module-protocol-pulse", pw_dropin.group(1))
+
+        optimize = self._read("chroot_scripts", "90_optimize.sh")
+        self.assertIn("rm -f /etc/pipewire/pipewire.conf", optimize)
+
+        net_audio = self._read("chroot_scripts", "05_network_audio_fix.sh")
+        self.assertIn("rtkit-daemon.service", net_audio)
+        self.assertIn("pipewire.socket", net_audio)
+        self.assertIn("wireplumber.service", net_audio)
+
+        for rel in (("desktop", "dbus_session.sh"), ("desktop", "wayland_session.sh")):
+            sess = self._read(*rel)
+            self.assertIn("start_audio_stack", sess)
+            self.assertIn("/usr/bin/pipewire", sess)
+            self.assertIn("/usr/bin/wireplumber", sess)
+            self.assertIn("/usr/bin/pipewire-pulse", sess)
+            self.assertIn("amixer", sess)
+            self.assertIn("85% unmute", sess)
+            self.assertIn("auto_null", sess)
+            self.assertIn("set-sink-volume", sess)
+
+    def test_video_codecs_firefox_prefs_and_vm_safe_picom(self):
+        pkgs = self._load_packages()
+        for required in (
+            "ffmpeg", "libavcodec-extra", "gstreamer1.0-libav",
+            "gstreamer1.0-plugins-base", "gstreamer1.0-plugins-good",
+            "gstreamer1.0-plugins-bad", "gstreamer1.0-plugins-ugly",
+            "gstreamer1.0-pipewire", "libgl1-mesa-dri", "libglx-mesa0",
+            "libegl1", "mesa-va-drivers", "mesa-utils", "vainfo",
+        ):
+            self.assertIn(required, pkgs, f"Missing video/Mesa package: {required}")
+
+        ff_prefs = self._read("config", "firefox", "vice-os.js")
+        for expected in (
+            'pref("media.av1.enabled", false);',
+            'pref("media.ffmpeg.enabled", true);',
+            'pref("media.ffvpx.enabled", true);',
+            'pref("media.rdd-ffmpeg.enabled", true);',
+            'pref("layers.gpu-process.enabled", false);',
+            'pref("widget.dmabuf.force-enabled", false);',
+            'pref("browser.aboutwelcome.enabled", false);',
+        ):
+            self.assertIn(expected, ff_prefs)
+
+        policies = json.loads(self._read("config", "firefox", "policies.json"))
+        self.assertIn("policies", policies)
+
+        tuning = self._read("chroot_scripts", "02_system_tuning.sh")
+        self.assertIn("/etc/firefox-esr/vice-os.js", tuning)
+        self.assertIn("/etc/firefox-esr/policies/policies.json", tuning)
+        self.assertIn("/etc/xdg/picom.conf", tuning)
+
+        for cfg in ("picom.conf", "compton.conf"):
+            text = self._read("config", cfg)
+            self.assertIn('backend = "xrender";', text)
+            self.assertIn("shadow = false;", text)
+            self.assertIn("fading = false;", text)
+            self.assertIn("blur-background = false;", text)
+            self.assertIn("unredir-if-possible = true;", text)
+            self.assertIn("unredir-if-possible-exclude = [];", text)
+
+        autostart = self._read("config", "skel", ".config", "openbox", "autostart")
+        self.assertIn("/etc/xdg/picom.conf", autostart)
+        self.assertIn("llvmpipe", autostart)
+
+    def test_desktop_shortcuts_polkit_and_runtime_deps(self):
+        pkgs = self._load_packages()
+        for required in (
+            "polkitd", "pkexec", "policykit-1-gnome",
+            "librsvg2-common", "libqt5svg5", "python3-pyqt5.qtsvg",
+            "hicolor-icon-theme", "desktop-file-utils", "shared-mime-info",
+            "dconf-gsettings-backend", "gsettings-desktop-schemas", "libglib2.0-bin",
+            "libnotify-bin", "at-spi2-core", "python3-dbus", "python3-gi",
+            "python3-psutil", "python3-systemd", "poppler-utils",
+            "x11-utils", "xclip", "scrot",
+        ):
+            self.assertIn(required, pkgs, f"Missing runtime/polkit/SVG package: {required}")
+
+        desktop_dir = os.path.join(REPO_ROOT, "config", "skel", "Desktop")
+        shortcuts = sorted(glob.glob(os.path.join(desktop_dir, "*.desktop")))
+        self.assertGreaterEqual(len(shortcuts), 10)
+        for path in shortcuts:
+            cp = configparser.ConfigParser(interpolation=None)
+            cp.read(path, encoding="utf-8")
+            self.assertIn("Desktop Entry", cp.sections(), f"Missing [Desktop Entry] in {path}")
+            entry = cp["Desktop Entry"]
+            self.assertEqual(entry.get("Type"), "Application", f"Invalid Type in {path}")
+            for field in ("Name", "Exec", "Icon", "Categories"):
+                self.assertTrue(entry.get(field, "").strip(), f"Empty {field} in {path}")
+            exec_bin = entry["Exec"].split()[0]
+            if exec_bin == "python3":
+                script_target = os.path.basename(entry["Exec"].split()[1])
+                self.assertTrue(os.path.isfile(os.path.join(DESKTOP_DIR, script_target)),
+                                f"Shortcut {path} targets missing desktop script {script_target}")
+            else:
+                self.assertIn(exec_bin, pkgs, f"Shortcut {path} executable '{exec_bin}' not in packages.list")
+
+        skel_setup = self._read("chroot_scripts", "22_skel_setup.sh")
+        self.assertIn('chmod 755 "$dest_dir"/Desktop/*.desktop', skel_setup)
+
+        autostart = self._read("config", "skel", ".config", "openbox", "autostart")
+        self.assertIn("polkit-gnome-authentication-agent-1", autostart)
+        self.assertIn("vice-os-notifications.desktop", autostart)
+
+
+class TestViceAppsRuntimeSafety(unittest.TestCase):
+    """Regression tests for vice_shell responsiveness and live-VM PyQt5 bug fixes."""
+
+    def _read(self, name):
+        with open(os.path.join(DESKTOP_DIR, name), "r", encoding="utf-8") as fp:
+            return fp.read()
+
+    def test_vice_shell_event_driven_taskbar_and_async_audio(self):
+        code = self._read("vice_shell.py")
+        self.assertIn('["xprop", "-root", "-spy", "_NET_CLIENT_LIST", "_NET_ACTIVE_WINDOW"]', code)
+        self.assertIn("_poll_busy", code)
+        self.assertIn("_debounce", code)
+        self.assertIn("class VolumePopup", code)
+        self.assertIn('"vicevolumepopup"', code)
+        self.assertIn("def _get_audio_state", code)
+        self.assertIn("timeout=0.6", code)
+
+    def test_no_pyqt5_api_regressions_across_desktop_scripts(self):
+        for f in sorted(glob.glob(os.path.join(DESKTOP_DIR, "*.py"))):
+            fname = os.path.basename(f)
+            code = self._read(fname)
+            tree = ast.parse(code, filename=fname)
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module == "PyQt5.QtWidgets":
+                    imported = {a.name for a in node.names}
+                    self.assertNotIn("QProcess", imported, f"{fname} imports QProcess from QtWidgets")
+                if isinstance(node, ast.Call):
+                    if (
+                        isinstance(node.func, ast.Attribute)
+                        and node.func.attr == "getlogin"
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "os"
+                    ):
+                        self.fail(f"{fname} calls os.getlogin(), which fails without utmp/controlling tty")
+                    if isinstance(node.func, ast.Name) and node.func.id == "QGraphicsDropShadowEffect":
+                        for kw in node.keywords:
+                            if kw.arg == "offset":
+                                self.assertNotIsInstance(
+                                    kw.value, ast.Tuple,
+                                    f"{fname} passes tuple to QGraphicsDropShadowEffect(offset=...); use QPointF"
+                                )
+
+            self.assertNotIn("setSelectionBehavior(QAbstractItemView.NoSelection)", code, fname)
+            self.assertNotIn("setSelectionBehavior(QAbstractItemView.ExtendedSelection)", code, fname)
+
+            table_attrs = set(re.findall(r"self\.(\w+)\s*=\s*QTableWidget\b", code))
+            for attr in table_attrs:
+                self.assertNotIn(
+                    f"self.{attr}.currentRowChanged", code,
+                    f"{fname}: QTableWidget '{attr}' has no currentRowChanged signal"
+                )
+
+    def test_fixed_vice_apps_behavioral_guards(self):
+        cal_tree = ast.parse(self._read("vice_calendar.py"), filename="vice_calendar.py")
+        cal_methods = set()
+        for node in cal_tree.body:
+            if isinstance(node, ast.ClassDef) and node.name == "CalendarTab":
+                cal_methods = {n.name for n in node.body if isinstance(n, ast.FunctionDef)}
+        self.assertIn("_add_event", cal_methods)
+
+        sc_code = self._read("vice_software_center.py")
+        sc_tree = ast.parse(sc_code, filename="vice_software_center.py")
+        class_methods = {}
+        for node in sc_tree.body:
+            if isinstance(node, ast.ClassDef):
+                class_methods[node.name] = {n.name for n in node.body if isinstance(n, ast.FunctionDef)}
+        self.assertIn("stop", class_methods.get("PackageWorkerThread", set()))
+        self.assertIn("shutdown_workers", class_methods.get("SoftwareCenter", set()))
+        self.assertIn("closeEvent", class_methods.get("SoftwareCenter", set()))
+        self.assertNotIn("QColor(0, 0, 0)", sc_code)
+
+        theme_code = self._read("vice_theme_manager.py")
+        self.assertIn("self._preview_layout = QVBoxLayout(self._preview_frame)", theme_code)
+        self.assertEqual(theme_code.count("QVBoxLayout(self._preview_frame)"), 1)
+
+        notif_code = self._read("vice_notification_daemon.py")
+        self.assertIn("except ImportError", notif_code)
+        self.assertIn("_HAS_DBUS", notif_code)
+
+        sys_notif_code = self._read("vice_system_notifier.py")
+        self.assertIn('shutil.which("notify-send")', sys_notif_code)
+
+        launcher_code = self._read("vice_launcher.py")
+        self.assertNotIn("args = [term_bin, \"-e\"] + args", launcher_code)
 
 
 if __name__ == "__main__":

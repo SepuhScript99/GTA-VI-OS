@@ -25,7 +25,7 @@ WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 680
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QPushButton:disabled { color: #444; border-color: #444; }
@@ -193,9 +193,11 @@ class DiskManager(QWidget):
 
     def _load_usage(self):
         self._usage_table.setRowCount(0)
-        for child in self._bars_widget.children():
-            if hasattr(child, 'deleteLater'):
-                child.deleteLater()
+        while self._bars_layout.count():
+            item = self._bars_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
 
         out, _ = run_cmd(["df", "-h", "--output=source,size,used,avail,pcent,target"])
         if not out:

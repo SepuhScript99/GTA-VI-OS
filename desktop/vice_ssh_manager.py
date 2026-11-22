@@ -3,6 +3,7 @@
 
 import sys
 import os
+import shutil
 import subprocess
 import json
 
@@ -23,7 +24,7 @@ WINDOW_WIDTH = 980
 WINDOW_HEIGHT = 620
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QPushButton:disabled { color: #444; border-color: #444; }
@@ -388,16 +389,20 @@ class SSHManager(QWidget):
         if not s:
             return
         cmd_str = " ".join(self._build_cmd(s))
-        try:
+        term = next(
+            (t for t in ("x-terminal-emulator", "xfce4-terminal", "xterm") if shutil.which(t)),
+            None,
+        )
+        if term:
             subprocess.Popen(
-                ["x-terminal-emulator", "-e", cmd_str],
+                [term, "-e", cmd_str],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
             self._status.setText(f"Opened terminal to {s['host']}")
-        except FileNotFoundError:
+        else:
             QMessageBox.information(
                 self, "No Terminal",
-                "x-terminal-emulator not found.\nUse the built-in Connect instead."
+                "No terminal emulator found.\nUse the built-in Connect instead."
             )
 
     def _list_keys(self):

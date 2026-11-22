@@ -25,7 +25,7 @@ WINDOW_WIDTH = 1100
 WINDOW_HEIGHT = 700
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QPushButton:disabled { color: #444; border-color: #444; }
@@ -236,7 +236,7 @@ class PackageSearch(QWidget):
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self._table.currentRowChanged.connect(self._on_selected)
+        self._table.currentCellChanged.connect(lambda row, _c, _pr, _pc: self._on_selected(row))
         ll.addWidget(self._table)
 
         act_row = QHBoxLayout()

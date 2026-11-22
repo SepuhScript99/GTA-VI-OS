@@ -3,8 +3,8 @@ set -Eeuo pipefail
 
 # ============================================================================
 # GTA VI OS (Vice OS) Chroot Script: Build Optimization
-# Reduces ISO size, optimizes boot time, and tunes memory management.
-# Runs before 99_cleanup.sh.
+# Reduces ISO size, optimizes boot time, rebuilds font/desktop caches, and
+# tunes memory management. Runs before 99_cleanup.sh.
 # ============================================================================
 
 if [ ! -f /vice_payload/lib/common.sh ]; then
@@ -41,7 +41,7 @@ main() {
     rm -rf /var/cache/apt/*.bin 2>/dev/null || true
     rm -rf /var/cache/apt/archives/partial/* 2>/dev/null || true
 
-    # ── 4. Remove unnecessary kernel modules (keep common drivers) ──
+    # ── 4. Remove unnecessary kernel modules (keep common drivers & sound/GPU) ──
     log_info "Removing unnecessary kernel modules..."
     local modules_dir="/lib/modules"
     if [ -d "$modules_dir" ]; then
@@ -72,10 +72,11 @@ main() {
         rm -rf "$firmware_dir/liquidio" 2>/dev/null || true
     fi
 
-    # ── 6. Mask slow-starting or unnecessary systemd services ──
-    log_info "Masking non-essential systemd services for faster boot..."
+    # ── 6. Mask slow-starting or unnecessary systemd services and their timers ──
+    log_info "Masking non-essential systemd services and timers for faster boot..."
     local services_to_mask=(
-        "apt-daily.service" "apt-daily-upgrade.service"
+        "apt-daily.service" "apt-daily.timer"
+        "apt-daily-upgrade.service" "apt-daily-upgrade.timer"
         "man-db.service" "man-db.timer"
     )
     for svc in "${services_to_mask[@]}"; do
@@ -90,17 +91,39 @@ main() {
 DefaultOOMPolicy=continue
 SYSTEMD
 
-    # ── 8. Tune kernel parameters for desktop responsiveness ──
+    # ── 8. Tune kernel parameters for desktop responsiveness (ZRAM-compatible) ──
     log_info "Tuning kernel parameters..."
     mkdir -p /etc/sysctl.d
     cat <<SYSCTL > /etc/sysctl.d/99-vice-desktop.conf
 # Vice OS desktop responsiveness tuning
-vm.swappiness=10
+vm.swappiness=100
 vm.vfs_cache_pressure=50
-vm.dirty_ratio=10
+vm.dirty_ratio=15
 vm.dirty_background_ratio=5
 kernel.numa_balancing=0
 SYSCTL
+
+    # ── 9. Safeguard PipeWire drop-in & rebuild font/desktop/icon/MIME caches ──
+    if [ -f /etc/pipewire/pipewire.conf.d/10-vice-audio.conf ]; then
+        rm -f /etc/pipewire/pipewire.conf
+    fi
+    if command -v fc-cache >/dev/null 2>&1; then
+        log_info "Refreshing system fontconfig cache..."
+        fc-cache -f 2>/dev/null || true
+    fi
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database -q /usr/share/applications 2>/dev/null || true
+    fi
+    if command -v update-mime-database >/dev/null 2>&1 && [ -d /usr/share/mime ]; then
+        update-mime-database /usr/share/mime 2>/dev/null || true
+    fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        for theme_dir in /usr/share/icons/Papirus-Dark /usr/share/icons/hicolor; do
+            if [ -d "$theme_dir" ]; then
+                gtk-update-icon-cache -q -f "$theme_dir" 2>/dev/null || true
+            fi
+        done
+    fi
 
     log_success "Build optimization completed."
 }

@@ -3,6 +3,8 @@
 
 import sys
 import os
+import pwd
+import shutil
 import subprocess
 from datetime import datetime
 
@@ -11,9 +13,9 @@ sys.path.insert(0, '/opt/vice-os/lib')
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QSystemTrayIcon, QMenu, QAction, QFrame, QGraphicsDropShadowEffect,
-    QProcess, QMessageBox
+    QMessageBox
 )
-from PyQt5.QtCore import Qt, QTimer, QPoint, QPropertyAnimation
+from PyQt5.QtCore import Qt, QTimer, QPoint, QPropertyAnimation, QProcess
 from PyQt5.QtGui import QFont, QColor, QIcon, QPixmap, QPainter
 
 from python.vice_utils import log_info
@@ -214,11 +216,29 @@ class QuickActionsMenu(QMenu):
         self.addAction("🚪 Logout", self._logout)
 
     def _volume(self): self._open("vice_audio_manager.py")
-    def _network(self): self._open("vice_network_diagnostics.py")
+    def _network(self): self._open("vice_network_monitor.py")
     def _battery(self): self._open("vice_power_manager.py")
     def _screenshot(self): self._open("vice_screenshot.py")
-    def _lock(self): subprocess.Popen(["xdg-screensaver", "lock"])
-    def _logout(self): subprocess.Popen(["pkill", "-u", os.getlogin()])
+
+    def _lock(self):
+        locker = next((c for c in ("swaylock", "i3lock", "slock", "xdg-screensaver") if shutil.which(c)), None)
+        if locker == "xdg-screensaver":
+            subprocess.Popen(["xdg-screensaver", "lock"])
+        elif locker:
+            subprocess.Popen([locker])
+        else:
+            path = os.path.join(DESKTOP_DIR, "vice_session_manager.py")
+            if os.path.exists(path):
+                subprocess.Popen([sys.executable, path, "--lock"])
+
+    def _logout(self):
+        if os.environ.get("WAYLAND_DISPLAY") and shutil.which("labwc"):
+            subprocess.Popen(["labwc", "--exit"])
+        elif shutil.which("openbox"):
+            subprocess.Popen(["openbox", "--exit"])
+        else:
+            user = os.environ.get("USER") or pwd.getpwuid(os.getuid()).pw_name
+            subprocess.Popen(["pkill", "-u", user])
     def _shutdown(self): subprocess.Popen(["systemctl", "poweroff"])
     def _reboot(self): subprocess.Popen(["systemctl", "reboot"])
     def _suspend(self): subprocess.Popen(["systemctl", "suspend"])
@@ -324,7 +344,7 @@ class Panel(QWidget):
             path = os.path.join(DESKTOP_DIR, "vice_launcher.py")
             if os.path.exists(path):
                 self._launcher_proc = QProcess(self)
-                self._launcher_proc.startDetached(sys.executable, [path])
+                self._launcher_proc.start(sys.executable, [path])
                 log_info("Launcher opened")
 
     def _launch_app(self, script):

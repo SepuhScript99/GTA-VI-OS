@@ -3,8 +3,8 @@ set -Eeuo pipefail
 
 # ============================================================================
 # GTA VI OS (Vice OS) DBus Session Initializer
-# Starts a user DBus session, loads Xresources, and launches PulseAudio/Pipewire
-# before handing off to Openbox. Required because we bypass display managers.
+# Starts a user DBus session, loads Xresources, ensures PipeWire/WirePlumber
+# and ALSA/Pulse sink levels are active and unmuted before handing off to Openbox.
 # ============================================================================
 
 # Source the shared library if available (for consistent logging)
@@ -15,6 +15,75 @@ else
     log_warn() { echo "[WARN] $1" >&2; }
     log_error() { echo "[ERROR] $1" >&2; }
 fi
+
+start_audio_stack() {
+    # Prefer systemd --user when active (started via PAM/logind)
+    if command -v systemctl > /dev/null 2>&1 && timeout 3 systemctl --user show-environment > /dev/null 2>&1; then
+        log_info "Starting PipeWire via systemd user session..."
+        timeout 5 systemctl --user start pipewire.socket pipewire-pulse.socket pipewire.service wireplumber.service pipewire-pulse.service 2>/dev/null || true
+    fi
+
+    # Fallback / verification for sessions launched without active systemd --user
+    if command -v pipewire > /dev/null 2>&1; then
+        if ! pgrep -u "$(id -u)" -x pipewire > /dev/null 2>&1; then
+            log_info "Starting PipeWire daemon directly..."
+            nohup /usr/bin/pipewire > /dev/null 2>&1 &
+            local w=0
+            while [ "$w" -lt 20 ] && [ ! -S "$XDG_RUNTIME_DIR/pipewire-0" ]; do
+                sleep 0.1
+                w=$((w + 1))
+            done
+        fi
+        if command -v wireplumber > /dev/null 2>&1 && ! pgrep -u "$(id -u)" -x wireplumber > /dev/null 2>&1; then
+            nohup /usr/bin/wireplumber > /dev/null 2>&1 &
+        fi
+        if command -v pipewire-pulse > /dev/null 2>&1 && ! pgrep -u "$(id -u)" -x pipewire-pulse > /dev/null 2>&1; then
+            nohup /usr/bin/pipewire-pulse > /dev/null 2>&1 &
+        fi
+    elif ! pgrep -u "$(id -u)" -x pulseaudio > /dev/null 2>&1; then
+        if command -v pulseaudio > /dev/null 2>&1; then
+            log_info "Starting PulseAudio..."
+            /usr/bin/pulseaudio --start --log-target=syslog || true
+        fi
+    fi
+
+    # Immediately unmute ALSA hardware playback controls across detected cards
+    if command -v amixer > /dev/null 2>&1 && [ -r /proc/asound/cards ]; then
+        local card
+        for card in $(awk '/^[[:space:]]*[0-9]+/ {print $1}' /proc/asound/cards 2>/dev/null || true); do
+            local ctrl
+            for ctrl in Master PCM Front Surround Center LFE Side Headphone Speaker; do
+                amixer -c "$card" sset "$ctrl" 85% unmute > /dev/null 2>&1 || true
+            done
+        done
+    fi
+
+    # Set default Pulse/PipeWire sink unmuted at 85% once a real audio sink appears
+    (
+        local i=0
+        while [ "$i" -lt 25 ]; do
+            if [ -S "$XDG_RUNTIME_DIR/pulse/native" ] && command -v pactl > /dev/null 2>&1; then
+                if timeout 2 pactl info > /dev/null 2>&1; then
+                    local sink
+                    sink=$(timeout 2 pactl get-default-sink 2>/dev/null || true)
+                    if [ -n "$sink" ] && [ "$sink" != "auto_null" ] && [ "$sink" != "@DEFAULT_SINK@" ]; then
+                        timeout 2 pactl set-sink-mute "$sink" 0 > /dev/null 2>&1 || true
+                        timeout 2 pactl set-sink-volume "$sink" 85% > /dev/null 2>&1 || true
+                        exit 0
+                    fi
+                fi
+            elif command -v wpctl > /dev/null 2>&1; then
+                if timeout 2 wpctl get-volume @DEFAULT_AUDIO_SINK@ > /dev/null 2>&1; then
+                    timeout 2 wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 > /dev/null 2>&1 || true
+                    timeout 2 wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.85 > /dev/null 2>&1 || true
+                    exit 0
+                fi
+            fi
+            sleep 0.2
+            i=$((i + 1))
+        done
+    ) &
+}
 
 main() {
     log_info "Initializing desktop session environment..."
@@ -57,15 +126,15 @@ main() {
 
     # 4. Push environment variables to DBus and Systemd user session
     log_info "Updating DBus activation environment..."
+    export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-x11}"
+    export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
     if command -v dbus-update-activation-environment > /dev/null 2>&1; then
-        # We include XAUTHORITY here to ensure DBus activated apps can connect to X
-        export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
         dbus-update-activation-environment --all --systemd 2>/dev/null || true
     fi
 
     # Safely import environment to systemd user session without hanging
     if command -v systemctl > /dev/null 2>&1; then
-        timeout 5 systemctl --user import-environment DISPLAY XAUTHORITY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS 2>/dev/null || true
+        timeout 5 systemctl --user import-environment DISPLAY XAUTHORITY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS XDG_SESSION_TYPE 2>/dev/null || true
     fi
 
     # 5. Load Xresources (CRITICAL: Openbox does not do this automatically)
@@ -78,27 +147,8 @@ main() {
         log_warn "xrdb not found. Skipping Xresources loading."
     fi
 
-    # 6. Start PipeWire/PulseAudio only if not already managed by systemd or running
-    if [ ! -S "$XDG_RUNTIME_DIR/pulse/native" ] && \
-       ! pgrep -u "$(id -u)" -x pipewire > /dev/null 2>&1 && \
-       ! pgrep -u "$(id -u)" -x pipewire-pulse > /dev/null 2>&1; then
-        if command -v systemctl > /dev/null 2>&1 && systemctl --user status > /dev/null 2>&1; then
-            log_info "Starting PipeWire via systemd user session..."
-            systemctl --user start pipewire pipewire-pulse wireplumber 2>/dev/null || true
-        elif command -v pipewire > /dev/null 2>&1; then
-            log_info "Starting PipeWire..."
-            /usr/bin/pipewire &
-            /usr/bin/pipewire-pulse &
-            if command -v wireplumber > /dev/null 2>&1; then
-                /usr/bin/wireplumber &
-            fi
-        elif ! pgrep -u "$(id -u)" -x pulseaudio > /dev/null 2>&1; then
-            if command -v pulseaudio > /dev/null 2>&1; then
-                log_info "Starting PulseAudio..."
-                /usr/bin/pulseaudio --start --log-target=syslog
-            fi
-        fi
-    fi
+    # 6. Start PipeWire/WirePlumber/pipewire-pulse and set default 85% unmuted levels
+    start_audio_stack
 
     # 7. Launch session watchdog (auto-restarts vice_shell.py on crash)
     if [ -f /opt/vice-os/session_watchdog.py ]; then

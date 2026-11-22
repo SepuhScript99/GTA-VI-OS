@@ -88,7 +88,7 @@ LOCALES = [
 ]
 
 PAGE_STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QLabel { color: #00ffff; }
 QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
 QListWidget { background: #0d0d0d; color: #00ffff; border: 1px solid #00ffff; }

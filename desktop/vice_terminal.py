@@ -42,13 +42,13 @@ SHELLS = ["/bin/bash", "/bin/zsh", "/bin/sh", "/usr/bin/fish"]
 def make_style(theme):
     t = THEMES[theme]
     return f"""
-    QWidget {{ background-color: {t['bg']}; color: {t['fg']}; font-family: monospace; }}
+    QWidget {{ background-color: {t['bg']}; color: {t['fg']}; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }}
     QPushButton {{ background: #1a1a1a; color: {t['fg']}; border: 1px solid {t['fg']}; padding: 4px 12px; }}
     QPushButton:hover {{ background: {t['fg']}; color: {t['bg']}; }}
     QTabBar::tab {{ background: #1a1a1a; color: {t['fg']}; padding: 5px 14px; }}
     QTabBar::tab:selected {{ background: {t['fg']}; color: {t['bg']}; }}
     QTabWidget::pane {{ border: 1px solid {t['fg']}; }}
-    QPlainTextEdit {{ background: {t['bg']}; color: {t['fg']}; border: none; font-family: monospace; font-size: 12px; }}
+    QPlainTextEdit {{ background: {t['bg']}; color: {t['fg']}; border: none; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; font-size: 12px; }}
     QComboBox {{ background: #1a1a1a; color: {t['fg']}; border: 1px solid {t['fg']}; padding: 3px; }}
     QMenuBar {{ background: {t['bg']}; color: {t['fg']}; }}
     QMenuBar::item:selected {{ background: {t['fg']}; color: {t['bg']}; }}

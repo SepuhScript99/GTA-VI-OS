@@ -8,7 +8,9 @@ Taskbar window switcher, pinned quick-launch icons, system metrics, and Run Menu
 
 import sys
 import os
+import re
 import time
+import threading
 import traceback
 import argparse
 import shlex
@@ -27,9 +29,9 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton,
     QHBoxLayout, QVBoxLayout, QLineEdit, QShortcut,
     QMenu, QSizePolicy, QListWidget, QListWidgetItem,
-    QStyleOption, QStyle
+    QSlider, QStyleOption, QStyle
 )
-from PyQt5.QtCore import Qt, QTimer, QSize, QEvent, QProcess
+from PyQt5.QtCore import Qt, QTimer, QSize, QEvent, QProcess, pyqtSignal
 from PyQt5.QtGui import QFont, QKeySequence, QIcon, QPainter
 
 from python.vice_utils import launch_command, get_cpu_usage, get_ram_usage, log_info, log_error
@@ -42,21 +44,65 @@ _WALL_MODULE = None
 _PANEL_CONF = None
 _LAUNCHER_MODULE = None
 
+_CJK_FONT_FAMILIES = (
+    "Noto Sans",
+    "Noto Sans CJK JP",
+    "Noto Sans CJK SC",
+    "Noto Sans CJK TC",
+    "Noto Sans CJK KR",
+    "DejaVu Sans",
+)
+
+_MONO_CJK_FAMILIES = (
+    "DejaVu Sans Mono",
+    "Noto Sans Mono CJK JP",
+    "Noto Sans Mono CJK SC",
+    "Noto Sans CJK JP",
+    "Noto Sans CJK SC",
+)
+
 _SKIP_TASKBAR_TITLES = {
-    "vicetopbar", "vicedock", "vicetaskbar", "vicestartmenu",
+    "vicetopbar", "vicedock", "vicetaskbar", "vicestartmenu", "vicevolumepopup",
     "run command", "stalonetray", "nm-applet", "vice panel",
-    "desktop", "desktop — pcmanfm",
+    "desktop", "desktop — pcmanfm", "vice os — desktop widgets",
+    "vicepanel", "polkit-gnome-authentication-agent-1",
 }
 
 _COMMAND_FALLBACKS = {
     "xfce4-terminal": ["xfce4-terminal", "xterm"],
     "mousepad": ["mousepad", "geany", "python3 /opt/vice-os/vice_text_editor.py"],
+    "geany": ["geany", "mousepad", "python3 /opt/vice-os/vice_text_editor.py"],
     "firefox-esr": ["firefox-esr", "firefox"],
     "firefox": ["firefox-esr", "firefox"],
     "xfce4-taskmanager": ["xfce4-taskmanager", "python3 /opt/vice-os/vice_task_manager.py"],
     "arandr": ["arandr", "python3 /opt/vice-os/vice_display_manager.py"],
     "lxappearance": ["lxappearance", "python3 /opt/vice-os/vice_theme_manager.py"],
+    "galculator": ["galculator", "python3 /opt/vice-os/vice_calculator.py"],
+    "celluloid": ["celluloid", "mpv", "python3 /opt/vice-os/vice_media_player.py"],
+    "mpv": ["mpv", "celluloid", "python3 /opt/vice-os/vice_media_player.py"],
+    "ristretto": ["ristretto", "feh", "python3 /opt/vice-os/vice_image_viewer.py"],
+    "qpdfview": ["qpdfview", "python3 /opt/vice-os/vice_pdf_viewer.py"],
+    "file-roller": ["file-roller", "python3 /opt/vice-os/vice_archive_manager.py"],
+    "gnome-screenshot": ["gnome-screenshot", "python3 /opt/vice-os/vice_screenshot.py"],
+    "pavucontrol": ["pavucontrol", "python3 /opt/vice-os/vice_audio_manager.py"],
+    "nm-connection-editor": ["nm-connection-editor", "python3 /opt/vice-os/vice_wifi_connect.py"],
+    "gparted": ["gparted", "python3 /opt/vice-os/vice_disk_manager.py"],
+    "synaptic": ["synaptic-pkexec", "synaptic", "python3 /opt/vice-os/vice_software_center.py"],
 }
+
+
+def _configure_cjk_fonts(app: QApplication):
+    """Register Noto Sans CJK fallbacks so Japanese/CJK window titles render without tofu boxes."""
+    cjk_list = list(_CJK_FONT_FAMILIES)
+    mono_list = list(_MONO_CJK_FAMILIES)
+    for base in ("Noto Sans", "DejaVu Sans", "Sans", "sans-serif", "Arial"):
+        QFont.insertSubstitutions(base, cjk_list)
+    for mono in ("monospace", "Monospace", "DejaVu Sans Mono"):
+        QFont.insertSubstitutions(mono, mono_list)
+    base_font = QFont("Noto Sans", 10)
+    if hasattr(base_font, "setFamilies"):
+        base_font.setFamilies(cjk_list)
+    app.setFont(base_font)
 
 
 def _configure_icon_theme():
@@ -241,7 +287,10 @@ class _StyledWidget(QWidget):
 
 
 class TaskbarWidget(QWidget):
-    """Live X11 taskbar showing open & minimized client windows via wmctrl/xdotool."""
+    """Live X11 taskbar showing open & minimized client windows via xprop spy + wmctrl/xdotool."""
+
+    _polled = pyqtSignal(list, object)
+    _spy_event = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -251,13 +300,72 @@ class TaskbarWidget(QWidget):
         self._layout.setSpacing(6)
         self._layout.addStretch(1)
         self._buttons = {}
+        self._last_windows = None
+        self._last_active = None
+        self._poll_busy = False
+        self._spy_stop = False
+        self._spy_proc = None
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
+        self._polled.connect(self._apply_poll_result)
+        self._debounce = QTimer(self)
+        self._debounce.setSingleShot(True)
+        self._debounce.setInterval(80)
+        self._debounce.timeout.connect(self._refresh)
+        self._spy_event.connect(self._schedule_refresh)
+
+        has_spy = self._start_x11_spy()
         self._poll_timer = QTimer(self)
-        self._poll_timer.setInterval(1200)
+        self._poll_timer.setInterval(6000 if has_spy else 2500)
         self._poll_timer.timeout.connect(self._refresh)
         self._poll_timer.start()
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._stop_spy)
         self._refresh()
+
+    def _schedule_refresh(self):
+        if not self._debounce.isActive():
+            self._debounce.start()
+
+    def _start_x11_spy(self) -> bool:
+        """Watch X11 root properties via xprop -spy for 0% idle CPU taskbar updates."""
+        if os.environ.get("WAYLAND_DISPLAY") or not shutil.which("xprop"):
+            return False
+
+        def _spy_loop():
+            try:
+                proc = subprocess.Popen(
+                    ["xprop", "-root", "-spy", "_NET_CLIENT_LIST", "_NET_ACTIVE_WINDOW"],
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+                )
+                self._spy_proc = proc
+                while not self._spy_stop and proc.poll() is None:
+                    line = proc.stdout.readline()
+                    if not line:
+                        break
+                    try:
+                        self._spy_event.emit()
+                    except RuntimeError:
+                        break
+            except Exception:
+                pass
+
+        threading.Thread(target=_spy_loop, daemon=True).start()
+        return True
+
+    def _stop_spy(self):
+        self._spy_stop = True
+        proc = self._spy_proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+
+    def closeEvent(self, event):
+        self._stop_spy()
+        super().closeEvent(event)
 
     def _get_windows(self) -> list:
         """Return list of (window_id_int, title) via wmctrl -l."""
@@ -265,7 +373,8 @@ class TaskbarWidget(QWidget):
             return []
         try:
             out = subprocess.check_output(
-                ["wmctrl", "-l"], text=True, stderr=subprocess.DEVNULL, timeout=2
+                ["wmctrl", "-l"], text=True, encoding="utf-8", errors="replace",
+                stderr=subprocess.DEVNULL, timeout=0.8
             )
         except Exception:
             return []
@@ -280,7 +389,7 @@ class TaskbarWidget(QWidget):
                 continue
             clean_title = title.strip()
             low = clean_title.lower()
-            if not clean_title or low in _SKIP_TASKBAR_TITLES or low.startswith("pcmanfm"):
+            if not clean_title or low in _SKIP_TASKBAR_TITLES or low == "pcmanfm":
                 continue
             try:
                 windows.append((int(wid_hex, 16), clean_title))
@@ -289,21 +398,57 @@ class TaskbarWidget(QWidget):
         return windows
 
     def _get_active_window(self):
-        """Return currently focused X11 window ID via xdotool, or None."""
-        if os.environ.get("WAYLAND_DISPLAY") or not shutil.which("xdotool"):
+        """Return currently focused X11 window ID via xprop or xdotool fallback, or None."""
+        if os.environ.get("WAYLAND_DISPLAY"):
             return None
-        try:
-            out = subprocess.check_output(
-                ["xdotool", "getactivewindow"],
-                text=True, stderr=subprocess.DEVNULL, timeout=2
-            )
-            return int(out.strip())
-        except Exception:
-            return None
+        if shutil.which("xprop"):
+            try:
+                out = subprocess.check_output(
+                    ["xprop", "-root", "_NET_ACTIVE_WINDOW"],
+                    text=True, stderr=subprocess.DEVNULL, timeout=0.5
+                )
+                m = re.search(r"0x([0-9a-fA-F]+)", out)
+                if m:
+                    wid = int(m.group(1), 16)
+                    return wid if wid != 0 else None
+            except Exception:
+                pass
+        if shutil.which("xdotool"):
+            try:
+                out = subprocess.check_output(
+                    ["xdotool", "getactivewindow"],
+                    text=True, stderr=subprocess.DEVNULL, timeout=0.6
+                )
+                return int(out.strip())
+            except Exception:
+                return None
+        return None
 
     def _refresh(self):
-        windows = self._get_windows()
-        active_wid = self._get_active_window()
+        if self._poll_busy:
+            return
+        self._poll_busy = True
+
+        def _worker():
+            try:
+                windows = self._get_windows()
+                active_wid = self._get_active_window()
+            except Exception:
+                windows, active_wid = [], None
+            try:
+                self._polled.emit(windows, active_wid)
+            except RuntimeError:
+                self._poll_busy = False
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _apply_poll_result(self, windows, active_wid):
+        self._poll_busy = False
+        if windows == self._last_windows and active_wid == self._last_active:
+            return
+        self._last_windows = list(windows)
+        self._last_active = active_wid
+
         current_ids = {wid for wid, _ in windows}
 
         for wid in list(self._buttons.keys()):
@@ -333,8 +478,11 @@ class TaskbarWidget(QWidget):
             label = title if len(title) <= 22 else title[:20] + "…"
             if btn.text() != label:
                 btn.setText(label)
-            btn.setToolTip(title)
-            btn.setChecked(active_wid is not None and wid == active_wid)
+            if btn.toolTip() != title:
+                btn.setToolTip(title)
+            is_active = active_wid is not None and wid == active_wid
+            if btn.isChecked() != is_active:
+                btn.setChecked(is_active)
 
     def _toggle_window(self, wid: int):
         """Focus/restore an inactive window, or minimize the active window."""
@@ -394,6 +542,7 @@ class StartMenuPopup(_StyledWidget):
 
     _CAT_REMAP = {
         "Utilities": "Accessories",
+        "Graphics": "Graphics",
         "Internet": "Internet",
         "Office": "Office",
         "Development": "Development",
@@ -545,7 +694,7 @@ class StartMenuPopup(_StyledWidget):
     def _map_app_category(self, app_entry: dict) -> str:
         raw_cat = app_entry.get("category", "Utilities")
         name_low = app_entry.get("label", "").lower()
-        if any(k in name_low for k in ("ristretto", "image viewer", "screenshot")):
+        if any(k in name_low for k in ("ristretto", "image viewer", "screenshot", "feh")):
             return "Graphics"
         return self._CAT_REMAP.get(raw_cat, "Accessories")
 
@@ -599,7 +748,14 @@ class StartMenuPopup(_StyledWidget):
         if not args:
             return
         self.hide()
-        QProcess.startDetached(args[0], args[1:], os.path.expanduser("~"))
+        workdir = data.get("workdir") or os.path.expanduser("~")
+        if not os.path.isdir(workdir):
+            workdir = os.path.expanduser("~")
+        ok = QProcess.startDetached(args[0], args[1:], workdir)
+        if not ok:
+            cmd_str = " ".join(shlex.quote(a) for a in args)
+            log_error(f"StartMenu: QProcess.startDetached failed for {cmd_str}")
+            launch_command(cmd_str)
 
     def _run_and_hide(self, candidates: list):
         self.hide()
@@ -729,14 +885,265 @@ class RunMenu(_StyledWidget):
             self.close()
 
 
+_AUDIO_CACHE = (85, False, False)
+
+
+def _run_audio_cmd_async(cmd: list, timeout: float = 0.6) -> None:
+    """Run an audio control command off the UI thread with bounded timeout."""
+    def _runner():
+        try:
+            subprocess.run(
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=_runner, daemon=True).start()
+
+
+def _get_audio_state() -> tuple:
+    """Return (volume_pct, muted, available) via pactl with amixer fallback."""
+    global _AUDIO_CACHE
+    if shutil.which("pactl"):
+        try:
+            vol_out = subprocess.check_output(
+                ["pactl", "get-sink-volume", "@DEFAULT_SINK@"],
+                text=True, stderr=subprocess.DEVNULL, timeout=0.6
+            )
+            mute_out = subprocess.check_output(
+                ["pactl", "get-sink-mute", "@DEFAULT_SINK@"],
+                text=True, stderr=subprocess.DEVNULL, timeout=0.6
+            )
+            m = re.search(r"(\d+)%", vol_out)
+            vol = int(m.group(1)) if m else 85
+            muted = "yes" in mute_out.lower()
+            _AUDIO_CACHE = (min(max(vol, 0), 150), muted, True)
+            return _AUDIO_CACHE
+        except Exception:
+            pass
+    if shutil.which("amixer"):
+        try:
+            out = subprocess.check_output(
+                ["amixer", "sget", "Master"],
+                text=True, stderr=subprocess.DEVNULL, timeout=0.6
+            )
+            m = re.search(r"\[(\d+)%\]", out)
+            vol = int(m.group(1)) if m else 85
+            muted = "[off]" in out.lower()
+            _AUDIO_CACHE = (min(max(vol, 0), 100), muted, True)
+            return _AUDIO_CACHE
+        except Exception:
+            pass
+    _AUDIO_CACHE = (85, False, False)
+    return _AUDIO_CACHE
+
+
+def _set_audio_volume(pct: int) -> None:
+    """Set default sink volume percentage via pactl with amixer fallback."""
+    global _AUDIO_CACHE
+    pct = min(max(int(pct), 0), 150)
+    _, muted, avail = _AUDIO_CACHE
+    _AUDIO_CACHE = (pct, muted, avail)
+    if shutil.which("pactl"):
+        _run_audio_cmd_async(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{pct}%"])
+    elif shutil.which("amixer"):
+        _run_audio_cmd_async(["amixer", "sset", "Master", f"{min(pct, 100)}%", "unmute"])
+
+
+def _adjust_audio_volume(delta: int) -> None:
+    """Adjust default sink volume by signed *delta* percent via pactl/amixer."""
+    global _AUDIO_CACHE
+    sign = "+" if delta >= 0 else "-"
+    step = abs(int(delta))
+    vol, muted, avail = _AUDIO_CACHE
+    _AUDIO_CACHE = (min(max(vol + int(delta), 0), 150), muted, avail)
+    if shutil.which("pactl"):
+        _run_audio_cmd_async(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{sign}{step}%"])
+    elif shutil.which("amixer"):
+        _run_audio_cmd_async(["amixer", "sset", "Master", f"{step}%{sign}"])
+
+
+def _toggle_audio_mute() -> None:
+    """Toggle default sink mute via pactl with amixer fallback."""
+    global _AUDIO_CACHE
+    vol, muted, avail = _AUDIO_CACHE
+    _AUDIO_CACHE = (vol, not muted, avail)
+    if shutil.which("pactl"):
+        _run_audio_cmd_async(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"])
+    elif shutil.which("amixer"):
+        _run_audio_cmd_async(["amixer", "sset", "Master", "toggle"])
+
+
+class VolumePopup(_StyledWidget):
+    """Lightweight bottom-right popup for quick volume slider, mute toggle, and mixer launch."""
+
+    _synced = pyqtSignal(int, bool, bool)
+
+    def __init__(self, on_change_cb=None):
+        super().__init__()
+        self._on_change_cb = on_change_cb
+        self.last_deactivated_at = 0.0
+        self._updating_ui = False
+        self._sync_busy = False
+        self._synced.connect(self._apply_audio_state)
+        self._init_ui()
+
+    def _init_ui(self):
+        self.setWindowTitle("ViceVolumePopup")
+        self.setObjectName("VolumePopup")
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(10)
+
+        header = QHBoxLayout()
+        title = QLabel("Audio Output", self)
+        title.setStyleSheet("color: #ff8a5b; font-weight: bold;")
+        header.addWidget(title)
+        header.addStretch(1)
+        self._pct_label = QLabel("85%", self)
+        self._pct_label.setStyleSheet("color: #00e5c3; font-weight: bold;")
+        header.addWidget(self._pct_label)
+        layout.addLayout(header)
+
+        slider_row = QHBoxLayout()
+        self._mute_btn = QPushButton("Mute", self)
+        self._mute_btn.setObjectName("QuickUtilButton")
+        self._mute_btn.setCheckable(True)
+        self._mute_btn.setFocusPolicy(Qt.NoFocus)
+        self._mute_btn.clicked.connect(self._handle_mute)
+        slider_row.addWidget(self._mute_btn)
+
+        self._slider = QSlider(Qt.Horizontal, self)
+        self._slider.setRange(0, 150)
+        self._slider.setValue(85)
+        self._slider.valueChanged.connect(self._handle_slider)
+        slider_row.addWidget(self._slider, 1)
+        layout.addLayout(slider_row)
+
+        btn_row = QHBoxLayout()
+        mixer_btn = QPushButton("Audio Mixer (pavucontrol)", self)
+        mixer_btn.setFocusPolicy(Qt.NoFocus)
+        mixer_btn.clicked.connect(self._open_mixer)
+        btn_row.addWidget(mixer_btn)
+        layout.addLayout(btn_row)
+
+        QShortcut(QKeySequence("Escape"), self).activated.connect(self.hide)
+
+    def sync_from_system(self):
+        vol, muted, avail = _AUDIO_CACHE
+        self._apply_audio_state(vol, muted, avail)
+        if self._sync_busy:
+            return
+        self._sync_busy = True
+
+        def _probe():
+            v, m, a = _get_audio_state()
+            try:
+                self._synced.emit(v, m, a)
+            except RuntimeError:
+                self._sync_busy = False
+
+        threading.Thread(target=_probe, daemon=True).start()
+
+    def _apply_audio_state(self, vol: int, muted: bool, avail: bool):
+        self._sync_busy = False
+        self._updating_ui = True
+        try:
+            self._slider.setValue(min(vol, 150))
+            self._mute_btn.setChecked(muted)
+            self._mute_btn.setText("Unmute" if muted else "Mute")
+            if not avail:
+                self._pct_label.setText("No sink")
+            elif muted:
+                self._pct_label.setText(f"{vol}% (Muted)")
+            else:
+                self._pct_label.setText(f"{vol}%")
+        finally:
+            self._updating_ui = False
+
+    def _handle_slider(self, value: int):
+        if self._updating_ui:
+            return
+        self._pct_label.setText(f"{value}%")
+        _set_audio_volume(value)
+        if self._on_change_cb:
+            self._on_change_cb()
+
+    def _handle_mute(self):
+        if self._updating_ui:
+            return
+        _toggle_audio_mute()
+        self.sync_from_system()
+        if self._on_change_cb:
+            self._on_change_cb()
+
+    def _open_mixer(self):
+        self.hide()
+        _launch_candidates(["pavucontrol", "python3 /opt/vice-os/vice_audio_manager.py"])
+
+    def open_above(self, anchor_btn: QWidget):
+        screen = QApplication.primaryScreen()
+        if not screen:
+            return
+        self.sync_from_system()
+        geo = screen.geometry()
+        pc = _pc()
+        w, h = 290, 132
+        btn_global = anchor_btn.mapToGlobal(anchor_btn.rect().topRight())
+        x = min(max(geo.x() + 10, btn_global.x() - w), geo.x() + geo.width() - w - 10)
+        y = geo.y() + geo.height() - pc.DOCK_HEIGHT - h - 8
+        self.setGeometry(x, y, w, h)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.ActivationChange and not self.isActiveWindow():
+            if self.isVisible():
+                self.last_deactivated_at = time.monotonic()
+                self.hide()
+        super().changeEvent(event)
+
+
+class _VolumeButton(QPushButton):
+    """Taskbar speaker button supporting scroll-wheel volume adjustments."""
+
+    def __init__(self, parent=None, wheel_cb=None):
+        super().__init__(parent)
+        self._wheel_cb = wheel_cb
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y()
+        if delta != 0 and self._wheel_cb is not None:
+            self._wheel_cb(5 if delta > 0 else -5)
+            event.accept()
+            return
+        super().wheelEvent(event)
+
+
 class BottomTaskbar(_StyledWidget):
     """Unified Mint Cinnamon-style bottom panel: Start button, pinned icons, live taskbar, tray & clock."""
+
+    _audio_updated = pyqtSignal(int, bool, bool)
 
     def __init__(self):
         super().__init__()
         self._disk_label = None
         self._battery_btn = None
+        self._showing_desktop = False
+        self._info_ticks = 0
+        self._audio_probe_busy = False
+        self._last_clock_text = ""
+        self._last_clock_tip = ""
+        self._last_sysinfo_text = ""
+        self._last_bat_text = ""
+        self._audio_updated.connect(self._apply_audio_indicator)
         self._start_menu = StartMenuPopup(self.logout, self._run_power_action)
+        self._volume_popup = VolumePopup(self._refresh_audio_indicator)
         self.initUI()
 
     def initUI(self):
@@ -826,20 +1233,15 @@ class BottomTaskbar(_StyledWidget):
         )
         layout.addWidget(self.net_btn)
 
-        self.audio_btn = QPushButton(self)
+        self.audio_btn = _VolumeButton(self, wheel_cb=self._on_audio_wheel)
         self.audio_btn.setObjectName("QuickUtilButton")
         self.audio_btn.setFocusPolicy(Qt.NoFocus)
         self.audio_btn.setFixedHeight(32)
-        self.audio_btn.setToolTip("Volume & Audio Devices")
-        audio_icon = _theme_icon("audio-volume-high", "multimedia-volume-control")
-        if not audio_icon.isNull():
-            self.audio_btn.setIcon(audio_icon)
-            self.audio_btn.setIconSize(QSize(18, 18))
-        else:
-            self.audio_btn.setText("Vol")
-        self.audio_btn.clicked.connect(
-            lambda: _launch_candidates(["pavucontrol", "python3 /opt/vice-os/vice_audio_manager.py"])
-        )
+        self.audio_btn.clicked.connect(self.toggle_volume_popup)
+        self.audio_btn.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.audio_btn.customContextMenuRequested.connect(self._show_audio_menu)
+        self._apply_audio_indicator(*_AUDIO_CACHE)
+        QTimer.singleShot(500, self._refresh_audio_indicator)
         layout.addWidget(self.audio_btn)
 
         if _POWER_MODULE is not None:
@@ -884,12 +1286,75 @@ class BottomTaskbar(_StyledWidget):
 
         # Fast IPC polling for Super/Windows key (--toggle-menu)
         self._ipc_timer = QTimer(self)
-        self._ipc_timer.setInterval(100)
+        self._ipc_timer.setInterval(120)
         self._ipc_timer.timeout.connect(self._check_toggle_trigger)
         self._ipc_timer.start()
 
         # Pre-load app index shortly after startup for instant Start Menu opening
         QTimer.singleShot(800, self._start_menu.reload_apps)
+
+    def _on_audio_wheel(self, delta: int):
+        _adjust_audio_volume(delta)
+        self._apply_audio_indicator(*_AUDIO_CACHE)
+        QTimer.singleShot(180, self._refresh_audio_indicator)
+        if self._volume_popup.isVisible():
+            self._volume_popup.sync_from_system()
+
+    def toggle_volume_popup(self):
+        if self._volume_popup.isVisible():
+            self._volume_popup.hide()
+            return
+        if time.monotonic() - self._volume_popup.last_deactivated_at < 0.25:
+            return
+        self._volume_popup.open_above(self.audio_btn)
+
+    def _show_audio_menu(self, pos):
+        menu = QMenu(self)
+        menu.addAction("Mute / Unmute", lambda: (_toggle_audio_mute(), self._apply_audio_indicator(*_AUDIO_CACHE), QTimer.singleShot(180, self._refresh_audio_indicator)))
+        menu.addAction("Volume +10%", lambda: self._on_audio_wheel(10))
+        menu.addAction("Volume -10%", lambda: self._on_audio_wheel(-10))
+        menu.addSeparator()
+        menu.addAction("Open Audio Mixer (pavucontrol)",
+                       lambda: _launch_candidates(["pavucontrol", "python3 /opt/vice-os/vice_audio_manager.py"]))
+        menu.addAction("Open Vice Audio Manager",
+                       lambda: launch_command("python3 /opt/vice-os/vice_audio_manager.py"))
+        menu.exec_(self.audio_btn.mapToGlobal(pos))
+
+    def _refresh_audio_indicator(self):
+        if self._audio_probe_busy:
+            return
+        self._audio_probe_busy = True
+
+        def _probe():
+            vol, muted, avail = _get_audio_state()
+            try:
+                self._audio_updated.emit(vol, muted, avail)
+            except RuntimeError:
+                self._audio_probe_busy = False
+
+        threading.Thread(target=_probe, daemon=True).start()
+
+    def _apply_audio_indicator(self, vol: int, muted: bool, avail: bool):
+        self._audio_probe_busy = False
+        if not avail or muted or vol == 0:
+            icon = _theme_icon("audio-volume-muted", "audio-volume-low", "multimedia-volume-control")
+        elif vol < 35:
+            icon = _theme_icon("audio-volume-low", "audio-volume-high", "multimedia-volume-control")
+        elif vol < 75:
+            icon = _theme_icon("audio-volume-medium", "audio-volume-high", "multimedia-volume-control")
+        else:
+            icon = _theme_icon("audio-volume-high", "multimedia-volume-control")
+        if not icon.isNull():
+            self.audio_btn.setIcon(icon)
+            self.audio_btn.setIconSize(QSize(18, 18))
+            if self.audio_btn.text():
+                self.audio_btn.setText("")
+        else:
+            self.audio_btn.setText("Mute" if muted else f"{vol}%")
+        status = "Muted" if muted else f"{vol}%"
+        tip = f"Volume: {status} (Click: controls, Scroll: adjust, Right-click: mixer)" if avail else "Audio Mixer (pavucontrol)"
+        if self.audio_btn.toolTip() != tip:
+            self.audio_btn.setToolTip(tip)
 
     def _check_toggle_trigger(self):
         trig = _toggle_trigger_path()
@@ -909,7 +1374,12 @@ class BottomTaskbar(_StyledWidget):
         self._start_menu.open_at_bottom_left()
 
     def _toggle_show_desktop(self):
-        if shutil.which("xdotool"):
+        self._showing_desktop = not self._showing_desktop
+        if shutil.which("wmctrl"):
+            state = "on" if self._showing_desktop else "off"
+            subprocess.Popen(["wmctrl", "-k", state],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif shutil.which("xdotool"):
             subprocess.Popen(["xdotool", "key", "super+d"],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -936,8 +1406,14 @@ class BottomTaskbar(_StyledWidget):
         self.setGeometry(geo.x(), geo.y() + geo.height() - h, geo.width(), h)
 
     def update_info(self):
-        self.clock.setText(time.strftime("%H:%M\n%a %d/%m"))
-        self.clock.setToolTip(time.strftime("%A, %d %B %Y — Click for Calendar"))
+        clock_text = time.strftime("%H:%M\n%a %d/%m")
+        if clock_text != self._last_clock_text:
+            self._last_clock_text = clock_text
+            self.clock.setText(clock_text)
+        clock_tip = time.strftime("%A, %d %B %Y — Click for Calendar")
+        if clock_tip != self._last_clock_tip:
+            self._last_clock_tip = clock_tip
+            self.clock.setToolTip(clock_tip)
         try:
             cpu_text = get_cpu_usage()
             ram_text = get_ram_usage()
@@ -946,12 +1422,21 @@ class BottomTaskbar(_StyledWidget):
                 self._init_disk_label()
             if self._disk_label:
                 parts.append(self._disk_label)
-            self.sysinfo.setText(" · ".join(parts))
+            sysinfo_text = " · ".join(parts)
+            if sysinfo_text != self._last_sysinfo_text:
+                self._last_sysinfo_text = sysinfo_text
+                self.sysinfo.setText(sysinfo_text)
             if self._battery_btn is not None and _POWER_MODULE is not None:
-                self._battery_btn.setText(_POWER_MODULE._read_battery_status())
+                bat_text = _POWER_MODULE._read_battery_status()
+                if bat_text != self._last_bat_text:
+                    self._last_bat_text = bat_text
+                    self._battery_btn.setText(bat_text)
         except Exception as e:
             log_error(f"Failed to update system info: {e}")
             self.sysinfo.setText("System info")
+        self._info_ticks += 1
+        if self._info_ticks % 5 == 0:
+            self._refresh_audio_indicator()
 
     def _init_disk_label(self):
         try:
@@ -1044,6 +1529,7 @@ if __name__ == '__main__':
     _load_helper_modules()
 
     app = QApplication(sys.argv)
+    _configure_cjk_fonts(app)
     _configure_icon_theme()
     load_stylesheet(app)
 
@@ -1063,9 +1549,11 @@ if __name__ == '__main__':
         app.setQuitOnLastWindowClosed(False)
 
         if _TRAY_MODULE is not None:
-            try:
-                _TRAY_MODULE.start_systray()
-            except Exception as e:
-                log_error(f"Systray initialization failed: {e}")
+            def _launch_systray():
+                try:
+                    _TRAY_MODULE.start_systray()
+                except Exception as e:
+                    log_error(f"Systray initialization failed: {e}")
+            threading.Thread(target=_launch_systray, daemon=True).start()
 
     sys.exit(app.exec_())

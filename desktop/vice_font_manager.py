@@ -26,7 +26,7 @@ WINDOW_HEIGHT = 640
 USER_FONT_DIR = os.path.expanduser("~/.local/share/fonts")
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
@@ -39,15 +39,33 @@ QLabel { color: #00ffff; }
 QSplitter::handle { background: #00ffff; width: 1px; }
 """
 
-PREVIEW_TEXT = "The quick brown fox jumps over the lazy dog\nABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789"
+PREVIEW_TEXT = (
+    "The quick brown fox jumps over the lazy dog\n"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789\n"
+    "日本語テスト 漢字 カタカナ ひらがな 中文測試 한국어"
+)
 
 
 class FontLoader(QThread):
     done = pyqtSignal(list)
 
     def run(self):
-        db = QFontDatabase()
-        families = sorted(db.families())
+        families = []
+        try:
+            r = subprocess.run(
+                ["fc-list", ":", "family"],
+                capture_output=True, text=True, timeout=10
+            )
+            if r.returncode == 0 and r.stdout:
+                seen = set()
+                for line in r.stdout.splitlines():
+                    for part in line.split(","):
+                        name = part.strip()
+                        if name:
+                            seen.add(name)
+                families = sorted(seen, key=str.lower)
+        except Exception:
+            families = []
         self.done.emit(families)
 
 
@@ -154,6 +172,8 @@ class FontManager(QWidget):
         self._loader = w
 
     def _on_fonts_loaded(self, families):
+        if not families:
+            families = sorted(QFontDatabase().families(), key=str.lower)
         self._families = families
         self._filter_fonts()
         self._count_label.setText(f"{len(families)} font(s) installed")

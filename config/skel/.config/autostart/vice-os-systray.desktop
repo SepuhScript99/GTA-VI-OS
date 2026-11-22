@@ -1,10 +1,11 @@
 [Desktop Entry]
 Type=Application
 Name=Vice OS System Tray
-Comment=Start the stalonetray system tray for applets (nm-applet, polkit)
-Exec=stalonetray --dockapp-mode none --decorations none --geometry 1x1-0+0
+Comment=Managed by vice_shell.py / systray_manager.py to avoid duplicate stalonetray
+Exec=stalonetray --dockapp-mode none --decorations none --skip-taskbar --skip-pager --geometry 1x1-0+0
 Terminal=false
-X-GNOME-Autostart-enabled=true
+Hidden=true
+X-GNOME-Autostart-enabled=false
 X-GNOME-Autostart-Delay=2
 StartupNotify=false
 Icon=preferences-system-notifications

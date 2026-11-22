@@ -11,6 +11,7 @@ network-manager
 network-manager-gnome
 ufw
 fail2ban
+python3-systemd
 open-vm-tools
 open-vm-tools-desktop
 virtualbox-guest-utils
@@ -30,7 +31,10 @@ nitrogen
 thunar
 stalonetray
 x11-xserver-utils
+x11-utils
 xbacklight
+xclip
+scrot
 dbus-x11
 wmctrl
 xdotool
@@ -41,9 +45,24 @@ gvfs-backends
 thunar-archive-plugin
 xdg-utils
 xdg-user-dirs
+desktop-file-utils
+shared-mime-info
+dconf-gsettings-backend
+gsettings-desktop-schemas
+libglib2.0-bin
+libnotify-bin
+at-spi2-core
 arc-theme
 papirus-icon-theme
 adwaita-icon-theme
+hicolor-icon-theme
+librsvg2-common
+libgl1-mesa-dri
+libglx-mesa0
+libegl1
+mesa-va-drivers
+mesa-utils
+vainfo
 arandr
 lxappearance
 pcmanfm
@@ -64,27 +83,50 @@ swaylock
 swayidle
 
 # --- Authentication & Security ---
+polkitd
+pkexec
 policykit-1-gnome
 
 # --- Fonts ---
+fontconfig
 fonts-dejavu-core
 fonts-noto-core
+fonts-noto-cjk
 fonts-liberation
 fonts-noto-color-emoji
 
-# --- Audio ---
+# --- Audio & Multimedia Codecs ---
 pulseaudio-utils
 pipewire
 pipewire-audio
+pipewire-pulse
+pipewire-alsa
 wireplumber
+alsa-utils
+alsa-ucm-conf
+rtkit
 pavucontrol
 libcanberra-gtk3-module
+libcanberra-pulse
+ffmpeg
+libavcodec-extra
+gstreamer1.0-libav
+gstreamer1.0-plugins-base
+gstreamer1.0-plugins-good
+gstreamer1.0-plugins-bad
+gstreamer1.0-plugins-ugly
+gstreamer1.0-pipewire
 
 # --- Python & UI Frameworks ---
 python3
 python3-pyqt5
+python3-pyqt5.qtsvg
+libqt5svg5
 python3-pil
 python3-xdg
+python3-dbus
+python3-gi
+python3-psutil
 qt5ct
 
 # --- Applications ---
@@ -104,6 +146,7 @@ mousepad
 ristretto
 celluloid
 qpdfview
+poppler-utils
 xfce4-taskmanager
 unzip
 zip

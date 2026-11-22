@@ -20,10 +20,10 @@ WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 560
 
 STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QPushButton {
     background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff;
-    padding: 10px; font-size: 14px; font-family: monospace;
+    padding: 10px; font-size: 14px; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace;
 }
 QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QPushButton:pressed { background: #ff00ff; color: #0a0a0a; }
@@ -33,7 +33,7 @@ QPushButton#eqBtn { background: #003333; border-color: #00ffff; font-weight: bol
 QPushButton#eqBtn:hover { background: #00ffff; }
 QLineEdit {
     background: #0d0d0d; color: #00ffff; border: 1px solid #00ffff;
-    padding: 8px; font-size: 18px; font-family: monospace;
+    padding: 8px; font-size: 18px; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace;
 }
 QTextEdit { background: #0d0d0d; color: #aaffff; border: 1px solid #1a4a4a; font-size: 11px; }
 QTabBar::tab { background: #1a1a1a; color: #00ffff; padding: 6px 14px; }

@@ -113,18 +113,18 @@ main() {
 
     # --- Test 7: PipeWire and tools present in packages.list ---
     local missing_audio=0
-    for p in "pipewire" "pipewire-audio" "wireplumber" "pulseaudio-utils"; do
-        if ! grep -q "^$p" "$pkg_file"; then
+    for p in "pipewire" "pipewire-audio" "pipewire-pulse" "pipewire-alsa" "wireplumber" "alsa-utils" "alsa-ucm-conf" "rtkit" "pulseaudio-utils"; do
+        if ! grep -q "^${p}$" "$pkg_file"; then
             missing_audio=$((missing_audio + 1))
         fi
     done
     if [ "$missing_audio" -eq 0 ]; then
-        record_result "PipeWire modern audio stack present in packages.list" "PASS"
+        record_result "PipeWire modern audio + ALSA stack present in packages.list" "PASS"
     else
-        record_result "PipeWire modern audio stack present in packages.list" "FAIL" "$missing_audio missing audio packages"
+        record_result "PipeWire modern audio + ALSA stack present in packages.list" "FAIL" "$missing_audio missing audio packages"
     fi
 
-    # --- Test 8: XML configuration validation (Openbox, Labwc, Thunar) ---
+    # --- Test 8: XML configuration validation (Openbox, Labwc, Thunar, Fontconfig) ---
     local xml_valid=true
     local python_bin="python"
     if python3 -c "import sys" >/dev/null 2>&1; then
@@ -144,7 +144,8 @@ files = [
     os.path.join(root_dir, 'config', 'skel', '.config', 'openbox', 'menu.xml'),
     os.path.join(root_dir, 'config', 'labwc', 'menu.xml'),
     os.path.join(root_dir, 'config', 'labwc', 'rc.xml'),
-    os.path.join(root_dir, 'config', 'thunar', 'uca.xml')
+    os.path.join(root_dir, 'config', 'thunar', 'uca.xml'),
+    os.path.join(root_dir, 'config', 'fontconfig', '99-vice-cjk.conf')
 ]
 
 for f in files:
@@ -158,9 +159,9 @@ for f in files:
     fi
 
     if [ "$xml_valid" = true ]; then
-        record_result "All XML configuration files valid (Openbox, Labwc, Thunar)" "PASS"
+        record_result "All XML configuration files valid (Openbox, Labwc, Thunar, Fontconfig)" "PASS"
     else
-        record_result "All XML configuration files valid (Openbox, Labwc, Thunar)" "FAIL" "XML parser error"
+        record_result "All XML configuration files valid (Openbox, Labwc, Thunar, Fontconfig)" "FAIL" "XML parser error"
     fi
 
     # --- Test 9: Desktop Autostart Notifications Exec target exists ---
@@ -198,6 +199,10 @@ for f in files:
         "$CONFIG_DIR/systemd/system/vp-autoupdate.service"
         "$CONFIG_DIR/systemd/system/vp-firewall.service"
         "$CONFIG_DIR/systemd/system/zram-setup.service"
+        "$CONFIG_DIR/picom.conf"
+        "$CONFIG_DIR/firefox/vice-os.js"
+        "$CONFIG_DIR/firefox/policies.json"
+        "$CONFIG_DIR/fontconfig/99-vice-cjk.conf"
     )
     for c in "${critical_configs[@]}"; do
         if [ ! -f "$c" ]; then
@@ -215,6 +220,26 @@ for f in files:
         record_result "ARM64 / Raspberry Pi architecture support files present" "PASS"
     else
         record_result "ARM64 / Raspberry Pi architecture support files present" "FAIL" "Missing ARM64 support"
+    fi
+
+    # --- Test 13: Chroot media/Firefox/CJK/fail2ban/PipeWire/timer hardening ---
+    local tuning_sh="$CHROOT_SCRIPTS_DIR/02_system_tuning.sh"
+    local systemd_sh="$CHROOT_SCRIPTS_DIR/19_systemd_setup.sh"
+    local opt_sh="$CHROOT_SCRIPTS_DIR/90_optimize.sh"
+    local hard_ok=true
+    grep -q '/etc/firefox-esr/vice-os.js' "$tuning_sh" || hard_ok=false
+    grep -q 'backend = systemd' "$tuning_sh" || hard_ok=false
+    grep -q '/etc/fonts/conf.avail' "$tuning_sh" || hard_ok=false
+    grep -q 'rm -f /etc/pipewire/pipewire.conf' "$systemd_sh" || hard_ok=false
+    grep -q '10-vice-audio.conf' "$systemd_sh" || hard_ok=false
+    grep -q 'apt-daily.timer' "$opt_sh" || hard_ok=false
+    grep -q 'apt-daily-upgrade.timer' "$opt_sh" || hard_ok=false
+    "$python_bin" -c "import json, sys; json.load(open(sys.argv[1], encoding='utf-8'))" \
+        "$target_dir/config/firefox/policies.json" 2>/dev/null || hard_ok=false
+    if [ "$hard_ok" = true ]; then
+        record_result "Chroot media, Firefox ESR, CJK fontconfig, PipeWire drop-in, fail2ban, and timer masking verified" "PASS"
+    else
+        record_result "Chroot media, Firefox ESR, CJK fontconfig, PipeWire drop-in, fail2ban, and timer masking verified" "FAIL" "Missing chroot hardening"
     fi
 
     echo ""

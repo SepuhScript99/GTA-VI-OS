@@ -11,6 +11,7 @@ notification daemon (or any org.freedesktop.Notifications server).
 
 import sys
 import os
+import shutil
 import subprocess
 import time
 import json
@@ -34,12 +35,27 @@ TEMP_WARN_C = 75
 
 
 def notify(title, body, urgency="normal", icon="dialog-warning"):
-    """Send a desktop notification via notify-send."""
-    timeout = "5000" if urgency != "critical" else "0"
-    subprocess.run(
-        ["notify-send", "-i", icon, "-u", urgency, "-t", timeout, title, body],
-        capture_output=True, timeout=5
-    )
+    """Send a desktop notification via notify-send or gdbus fallback."""
+    timeout_ms = "5000" if urgency != "critical" else "0"
+    try:
+        if shutil.which("notify-send"):
+            subprocess.run(
+                ["notify-send", "-i", icon, "-u", urgency, "-t", timeout_ms, title, body],
+                capture_output=True, timeout=5
+            )
+        elif shutil.which("gdbus"):
+            subprocess.run(
+                [
+                    "gdbus", "call", "--session",
+                    "--dest", "org.freedesktop.Notifications",
+                    "--object-path", "/org/freedesktop/Notifications",
+                    "--method", "org.freedesktop.Notifications.Notify",
+                    "vice-os", "0", icon, title, body, "[]", "{}", timeout_ms
+                ],
+                capture_output=True, timeout=5
+            )
+    except Exception as e:
+        log_error(f"Notification dispatch failed: {e}")
     # Also record in the Vice notification history for the history viewer
     try:
         os.makedirs(os.path.dirname(NOTIF_HISTORY), exist_ok=True)

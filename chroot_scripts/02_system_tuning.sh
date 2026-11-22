@@ -3,7 +3,8 @@ set -Eeuo pipefail
 
 # ============================================================================
 # GTA VI OS (Vice OS) Chroot Script: System Tuning & Security
-# Applies sysctl, dphys-swapfile, and NetworkManager configurations.
+# Applies sysctl, dphys-swapfile, NetworkManager, Fail2ban, Firefox ESR,
+# Fontconfig CJK/Emoji fallbacks, and Picom configurations.
 # Note: Systemd unit installation is handled by 19_systemd_setup.sh
 # ============================================================================
 
@@ -13,6 +14,90 @@ if [ ! -f /vice_payload/lib/common.sh ]; then
     exit 1
 fi
 source /vice_payload/lib/common.sh
+
+install_firefox_defaults() {
+    log_info "Configuring Firefox ESR defaults and policies..."
+    local ff_src="/vice_payload/config/firefox"
+
+    if [ -f "$ff_src/vice-os.js" ]; then
+        mkdir -p /etc/firefox-esr
+        cp "$ff_src/vice-os.js" /etc/firefox-esr/vice-os.js
+        chown root:root /etc/firefox-esr/vice-os.js
+        chmod 644 /etc/firefox-esr/vice-os.js
+
+        # Also link into browser/defaults/preferences if it is a separate directory
+        local ff_pref_dir="/usr/lib/firefox-esr/browser/defaults/preferences"
+        if [ -d "$ff_pref_dir" ] && [ ! -L "$ff_pref_dir" ]; then
+            ln -sf /etc/firefox-esr/vice-os.js "$ff_pref_dir/vice-os.js"
+        fi
+        log_info "Installed Firefox ESR preferences (/etc/firefox-esr/vice-os.js)."
+    else
+        log_warn "config/firefox/vice-os.js not found in payload!"
+    fi
+
+    if [ -f "$ff_src/policies.json" ]; then
+        mkdir -p /etc/firefox/policies /etc/firefox-esr/policies
+        cp "$ff_src/policies.json" /etc/firefox/policies/policies.json
+        cp "$ff_src/policies.json" /etc/firefox-esr/policies/policies.json
+        chown root:root /etc/firefox/policies/policies.json /etc/firefox-esr/policies/policies.json
+        chmod 644 /etc/firefox/policies/policies.json /etc/firefox-esr/policies/policies.json
+        log_info "Installed Firefox ESR policies.json."
+    fi
+}
+
+install_fontconfig_defaults() {
+    log_info "Installing Fontconfig CJK and Emoji fallback rules..."
+    local fc_src="/vice_payload/config/fontconfig"
+
+    if [ -d "$fc_src" ]; then
+        mkdir -p /etc/fonts/conf.avail /etc/fonts/conf.d
+        for conf in "$fc_src"/*.conf; do
+            if [ -f "$conf" ]; then
+                local name
+                name=$(basename "$conf")
+                cp "$conf" "/etc/fonts/conf.avail/$name"
+                chown root:root "/etc/fonts/conf.avail/$name"
+                chmod 644 "/etc/fonts/conf.avail/$name"
+                ln -sf "../conf.avail/$name" "/etc/fonts/conf.d/$name"
+                log_info "Installed fontconfig rule: $name"
+            fi
+        done
+    else
+        log_warn "config/fontconfig not found in payload!"
+    fi
+
+    if command -v fc-cache > /dev/null 2>&1; then
+        log_info "Rebuilding fontconfig cache..."
+        fc-cache -f || true
+    fi
+}
+
+install_picom_config() {
+    if [ -f /vice_payload/config/picom.conf ]; then
+        mkdir -p /etc/xdg
+        cp /vice_payload/config/picom.conf /etc/xdg/picom.conf
+        chown root:root /etc/xdg/picom.conf
+        chmod 644 /etc/xdg/picom.conf
+        log_info "Installed lightweight Picom configuration (/etc/xdg/picom.conf)."
+    fi
+}
+
+configure_fail2ban() {
+    if [ -d /etc/fail2ban ] || command -v fail2ban-server > /dev/null 2>&1; then
+        mkdir -p /etc/fail2ban/jail.d
+        cat <<'F2B' > /etc/fail2ban/jail.d/99-vice-os.conf
+# Debian 12 uses systemd-journald instead of /var/log/auth.log by default
+[DEFAULT]
+backend = systemd
+
+[sshd]
+backend = systemd
+F2B
+        chown root:root /etc/fail2ban/jail.d/99-vice-os.conf
+        chmod 644 /etc/fail2ban/jail.d/99-vice-os.conf
+        log_info "Configured Fail2ban sshd jail to use systemd journal backend."
+    fi
+}
 
 main() {
     log_info "Applying kernel tunings..."
@@ -51,6 +136,11 @@ main() {
     else
         log_warn "NetworkManager DNS config not found in payload!"
     fi
+
+    configure_fail2ban
+    install_firefox_defaults
+    install_fontconfig_defaults
+    install_picom_config
 
     # Pre-allow SSH if ufw is operational; first-boot initialization is completed by vp-firewall.service
     ufw allow ssh 2>/dev/null || true

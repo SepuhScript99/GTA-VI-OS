@@ -25,7 +25,7 @@ from PyQt5.QtGui import (
 from python.vice_utils import log_info, log_error
 
 STYLE = """
-QMainWindow, QWidget { background-color: #0a0a0a; color: #00ffff; font-family: monospace; }
+QMainWindow, QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
 QMenuBar { background: #0a0a0a; color: #00ffff; border-bottom: 1px solid #1a1a1a; }
 QMenuBar::item:selected { background: #00ffff; color: #0a0a0a; }
 QMenu { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; }
@@ -35,7 +35,7 @@ QPushButton:hover { background: #00ffff; color: #0a0a0a; }
 QTabBar::tab { background: #1a1a1a; color: #00ffff; padding: 5px 14px; }
 QTabBar::tab:selected { background: #00ffff; color: #0a0a0a; }
 QTabWidget::pane { border: 1px solid #00ffff; }
-QPlainTextEdit { background: #0a0a0a; color: #ccffff; border: none; font-family: monospace; font-size: 13px; }
+QPlainTextEdit { background: #0a0a0a; color: #ccffff; border: none; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; font-size: 13px; }
 QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
 QCheckBox { color: #00ffff; }
 QCheckBox::indicator { width: 13px; height: 13px; background: #1a1a1a; border: 1px solid #00ffff; }
