@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 GTA VI OS (Vice OS) — Leonida FM Radio.
-Real PipeWire/mpv-backed audio & internet radio player featuring GTA-inspired
-Leonida FM stations, custom stream URLs, local audio playback, live track
-metadata via mpv IPC, volume control, and clean process shutdown on close.
+Real PipeWire/mpv-backed audio & internet radio player featuring Leonida FM
+stations, custom stream URLs, local audio playback, live track metadata via
+mpv IPC, volume control, and clean process shutdown on close.
+Styled via vice_theme (Noto Sans CJK fallback).
 """
 
 import json
@@ -16,14 +17,25 @@ import sys
 import tempfile
 
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont, QIcon, QPixmap
 from PyQt5.QtWidgets import (
-    QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
-    QSlider, QVBoxLayout, QWidget
+    QApplication, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
+    QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QSlider,
+    QVBoxLayout, QWidget
 )
 
-sys.path.insert(0, "/opt/vice-os/lib")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _p in ("/opt/vice-os", _HERE, "/opt/vice-os/lib"):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    load_tool_icon,
+    make_button,
+    make_card,
+    make_header,
+)
 
 try:
     from python.vice_utils import log_error, log_info  # noqa: E402
@@ -35,24 +47,15 @@ except ImportError:
         print(f"[ERROR] {msg}", file=sys.stderr)
 
 
-CJK_FONTS = [
-    "Noto Sans",
-    "Noto Sans CJK JP",
-    "Noto Sans CJK SC",
-    "Noto Sans CJK TC",
-    "Noto Sans CJK KR",
-    "DejaVu Sans",
-]
-
 STATIONS = [
     {
         "name": "Vice Sunset 104.5 FM",
-        "genre": "Synthwave · Neon Highway",
+        "genre": "Synthwave · Coastal Highway",
         "url": "https://stream.nightride.fm/nightride.mp3",
     },
     {
         "name": "Leonida Wave 98.3 FM",
-        "genre": "Chillwave · Coastal Drive",
+        "genre": "Chillwave · Dusk Drive",
         "url": "https://stream.nightride.fm/chillsynth.mp3",
     },
     {
@@ -62,7 +65,7 @@ STATIONS = [
     },
     {
         "name": "Starfish Vapor 101.7",
-        "genre": "Chillwave · Vapor Sunset",
+        "genre": "Chillwave · Sunset Horizon",
         "url": "https://ice2.somafm.com/vaporwaves-128-mp3",
     },
     {
@@ -77,138 +80,6 @@ STATIONS = [
     },
 ]
 
-STYLE = """
-QMainWindow, QWidget#RootWidget {
-    background-color: #120e1e;
-    color: #f4f1fa;
-    font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
-    font-size: 13px;
-}
-QFrame#TunerCard {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #211438, stop:0.6 #2e153d, stop:1 #16223c);
-    border: 1px solid #ff4da6;
-    border-radius: 14px;
-}
-QLabel#StationTitle {
-    color: #ffd166;
-    font-size: 20px;
-    font-weight: bold;
-    background: transparent;
-}
-QLabel#TrackTitle {
-    color: #00e5ff;
-    font-size: 14px;
-    font-weight: bold;
-    background: transparent;
-}
-QLabel#StatusPill {
-    color: #ff8a5b;
-    font-size: 12px;
-    font-weight: bold;
-    background: transparent;
-}
-QListWidget#StationList {
-    background-color: #181229;
-    color: #f4f1fa;
-    border: 1px solid #382b57;
-    border-radius: 10px;
-    padding: 6px;
-    outline: none;
-}
-QListWidget#StationList::item {
-    padding: 10px 12px;
-    margin: 2px 0;
-    border-radius: 8px;
-}
-QListWidget#StationList::item:selected {
-    background-color: #362049;
-    color: #ffd166;
-    border: 1px solid #ff4da6;
-}
-QListWidget#StationList::item:hover {
-    background-color: #241b3d;
-}
-QLineEdit {
-    background-color: #1b152e;
-    color: #f4f1fa;
-    border: 1px solid #3c2e5e;
-    border-radius: 8px;
-    padding: 8px 12px;
-}
-QLineEdit:focus {
-    border-color: #ff4da6;
-}
-QPushButton {
-    background-color: #1e1733;
-    color: #f4f1fa;
-    border: 1px solid #43346b;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    border-color: #ff8a5b;
-    background-color: #2c2047;
-}
-QPushButton#PlayBtn {
-    background-color: #351b42;
-    color: #ffd166;
-    border: 1px solid #ff4da6;
-}
-QPushButton#PlayBtn:hover {
-    background-color: #ff4da6;
-    color: #120e1e;
-}
-QPushButton#StopBtn {
-    color: #ff6b8b;
-    border-color: #ff6b8b;
-}
-QPushButton#StopBtn:hover {
-    background-color: #ff6b8b;
-    color: #120e1e;
-}
-QSlider::groove:horizontal {
-    background: #1d1633;
-    height: 8px;
-    border: 1px solid #403166;
-    border-radius: 4px;
-}
-QSlider::sub-page:horizontal {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #ff4da6, stop:1 #00e5ff);
-    border-radius: 4px;
-}
-QSlider::handle:horizontal {
-    background: #ffd166;
-    width: 16px;
-    height: 16px;
-    margin: -5px 0;
-    border-radius: 8px;
-}
-"""
-
-
-def _configure_cjk_fonts(app: QApplication) -> None:
-    for fam in ("Noto Sans", "DejaVu Sans", "Sans", "sans-serif"):
-        QFont.insertSubstitutions(fam, CJK_FONTS)
-    font = QFont("Noto Sans", 10)
-    if hasattr(font, "setFamilies"):
-        font.setFamilies(CJK_FONTS)
-    app.setFont(font)
-
-
-def _load_app_icon() -> QIcon:
-    for path in (
-        "/usr/share/icons/hicolor/64x64/apps/vice-tool-radio.png",
-        "/usr/share/pixmaps/vice-tool-radio.png",
-        "/usr/share/pixmaps/vice-app.png",
-    ):
-        if os.path.isfile(path):
-            pm = QPixmap(path)
-            if not pm.isNull():
-                return QIcon(pm)
-    return QIcon.fromTheme("multimedia-player")
-
 
 class LeonidaRadioApp(QMainWindow):
     """Main window for Leonida FM Radio backed by mpv + PipeWire."""
@@ -216,9 +87,9 @@ class LeonidaRadioApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Leonida FM Radio — Vice OS")
-        self.resize(760, 560)
+        self.resize(780, 580)
         self.setMinimumSize(640, 480)
-        icon = _load_app_icon()
+        icon = load_tool_icon("vice-tool-radio", "multimedia-player")
         if not icon.isNull():
             self.setWindowIcon(icon)
 
@@ -246,110 +117,110 @@ class LeonidaRadioApp(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 14)
         layout.setSpacing(12)
 
-        # Now Playing Tuner Banner
-        tuner = QFrame(root)
-        tuner.setObjectName("TunerCard")
-        tuner_layout = QVBoxLayout(tuner)
-        tuner_layout.setContentsMargins(18, 14, 18, 14)
-        tuner_layout.setSpacing(6)
+        self._header = make_header(
+            title="Leonida FM Radio",
+            subtitle="PipeWire & mpv Audio Streamer",
+            icon_name="vice-tool-radio",
+            badge_text="OFF AIR",
+            badge_variant="neutral",
+            parent=root,
+        )
+        layout.addWidget(self._header)
 
-        hdr = QHBoxLayout()
-        brand = QLabel("LEONIDA FM RADIO · PIPEWIRE AUDIO", tuner)
-        brand.setStyleSheet("color: #ff8a5b; font-size: 11px; font-weight: bold; letter-spacing: 1px; background: transparent;")
-        hdr.addWidget(brand)
-        hdr.addStretch(1)
-        self._status_lbl = QLabel("● OFF AIR", tuner)
-        self._status_lbl.setObjectName("StatusPill")
-        hdr.addWidget(self._status_lbl)
-        tuner_layout.addLayout(hdr)
-
+        # Now Playing Card
+        tuner = make_card(parent=root, margins=(16, 14, 16, 14), spacing=6)
         self._station_lbl = QLabel(self._current_station, tuner)
-        self._station_lbl.setObjectName("StationTitle")
-        tuner_layout.addWidget(self._station_lbl)
+        self._station_lbl.setStyleSheet(
+            f"color: {COLORS['text_primary']}; font-size: 19px; font-weight: bold;"
+        )
+        tuner.body_layout.addWidget(self._station_lbl)
 
         self._track_lbl = QLabel(self._current_genre, tuner)
-        self._track_lbl.setObjectName("TrackTitle")
+        self._track_lbl.setObjectName("ValueReadout")
+        self._track_lbl.setStyleSheet(
+            f"color: {COLORS['text_secondary']}; font-size: 13px; font-weight: normal;"
+        )
         self._track_lbl.setWordWrap(True)
-        tuner_layout.addWidget(self._track_lbl)
-
+        tuner.body_layout.addWidget(self._track_lbl)
         layout.addWidget(tuner)
 
-        # Station Presets List
-        presets_lbl = QLabel("Leonida Station Presets (double-click or press Tune In):", root)
-        presets_lbl.setStyleSheet("color: #cfc6e6; font-weight: bold;")
-        layout.addWidget(presets_lbl)
-
-        self._station_list = QListWidget(root)
-        self._station_list.setObjectName("StationList")
+        # Station Presets Card
+        presets_card = make_card(
+            title="Station Presets",
+            subtitle="Double-click a station or press Tune In to start playback",
+            parent=root,
+        )
+        self._station_list = QListWidget(presets_card)
         for idx, st in enumerate(STATIONS):
             item = QListWidgetItem(f"{st['name']}   —   {st['genre']}")
             item.setData(Qt.UserRole, idx)
             self._station_list.addItem(item)
         self._station_list.setCurrentRow(0)
         self._station_list.itemDoubleClicked.connect(lambda _item: self._play_selected())
-        layout.addWidget(self._station_list, 1)
+        presets_card.body_layout.addWidget(self._station_list, 1)
+        layout.addWidget(presets_card, 1)
 
-        # Custom URL + Local File Row
+        # Custom Stream & Local File Row
         custom_row = QHBoxLayout()
         custom_row.setSpacing(8)
         self._url_input = QLineEdit(root)
-        self._url_input.setPlaceholderText("Custom radio stream URL (https://... or icecast stream)...")
+        self._url_input.setPlaceholderText("Custom stream URL (https://... or icecast stream)...")
         self._url_input.returnPressed.connect(self._play_custom_url)
         custom_row.addWidget(self._url_input, 1)
 
-        url_btn = QPushButton("Play URL", root)
+        url_btn = make_button("Play URL", variant="secondary", parent=root)
         url_btn.clicked.connect(self._play_custom_url)
         custom_row.addWidget(url_btn)
 
-        file_btn = QPushButton("Local File...", root)
+        file_btn = make_button("Local File...", variant="secondary", parent=root)
         file_btn.clicked.connect(self._pick_local_file)
         custom_row.addWidget(file_btn)
         layout.addLayout(custom_row)
 
-        # Playback + Volume Controls
+        # Playback + Volume Controls Card
+        ctrl_card = make_card(parent=root, margins=(14, 10, 14, 10), spacing=0)
         ctrl_row = QHBoxLayout()
-        ctrl_row.setSpacing(10)
+        ctrl_row.setSpacing(8)
 
-        self._play_btn = QPushButton("Tune In", root)
-        self._play_btn.setObjectName("PlayBtn")
+        self._play_btn = make_button("Tune In", variant="primary", parent=ctrl_card)
         self._play_btn.clicked.connect(self._play_selected)
         ctrl_row.addWidget(self._play_btn)
 
-        self._pause_btn = QPushButton("Pause", root)
+        self._pause_btn = make_button("Pause", variant="secondary", parent=ctrl_card)
         self._pause_btn.clicked.connect(self._toggle_pause)
         self._pause_btn.setEnabled(False)
         ctrl_row.addWidget(self._pause_btn)
 
-        self._stop_btn = QPushButton("Stop", root)
-        self._stop_btn.setObjectName("StopBtn")
+        self._stop_btn = make_button("Stop", variant="danger", parent=ctrl_card)
         self._stop_btn.clicked.connect(self._stop_playback)
         self._stop_btn.setEnabled(False)
         ctrl_row.addWidget(self._stop_btn)
 
-        ctrl_row.addSpacing(12)
+        ctrl_row.addStretch(1)
 
-        self._mute_btn = QPushButton("Mute", root)
+        self._mute_btn = make_button("Mute", variant="secondary", parent=ctrl_card)
         self._mute_btn.setCheckable(True)
         self._mute_btn.clicked.connect(self._toggle_mute)
         ctrl_row.addWidget(self._mute_btn)
 
-        vol_title = QLabel("Vol:", root)
-        vol_title.setStyleSheet("color: #cfc6e6; font-weight: bold;")
+        vol_title = QLabel("Volume", ctrl_card)
+        vol_title.setObjectName("MutedLabel")
         ctrl_row.addWidget(vol_title)
 
-        self._vol_slider = QSlider(Qt.Horizontal, root)
+        self._vol_slider = QSlider(Qt.Horizontal, ctrl_card)
         self._vol_slider.setRange(0, 100)
         self._vol_slider.setValue(80)
         self._vol_slider.setFixedWidth(150)
         self._vol_slider.valueChanged.connect(self._on_volume_changed)
         ctrl_row.addWidget(self._vol_slider)
 
-        self._vol_lbl = QLabel("80%", root)
+        self._vol_lbl = QLabel("80%", ctrl_card)
         self._vol_lbl.setFixedWidth(38)
-        self._vol_lbl.setStyleSheet("color: #00e5ff; font-weight: bold;")
+        self._vol_lbl.setStyleSheet(f"color: {COLORS['accent_aqua']}; font-weight: bold;")
         ctrl_row.addWidget(self._vol_lbl)
 
-        layout.addLayout(ctrl_row)
+        ctrl_card.body_layout.addLayout(ctrl_row)
+        layout.addWidget(ctrl_card)
 
     def _ipc_command(self, cmd_list: list):
         if not hasattr(socket, "AF_UNIX") or not os.path.exists(self._socket_path):
@@ -403,8 +274,7 @@ class LeonidaRadioApp(QMainWindow):
         self._pause_btn.setText("Pause")
         self._pause_btn.setEnabled(False)
         self._stop_btn.setEnabled(False)
-        self._status_lbl.setText("● OFF AIR")
-        self._status_lbl.setStyleSheet("color: #ff8a5b; font-size: 12px; font-weight: bold; background: transparent;")
+        self._header.set_badge("OFF AIR", "neutral")
 
     def _start_stream(self, target: str, title: str, subtitle: str) -> None:
         if not shutil.which("mpv"):
@@ -449,8 +319,10 @@ class LeonidaRadioApp(QMainWindow):
         self._paused = False
         self._station_lbl.setText(title)
         self._track_lbl.setText(f"Connecting · {subtitle}")
-        self._status_lbl.setText("● LIVE")
-        self._status_lbl.setStyleSheet("color: #00e5ff; font-size: 12px; font-weight: bold; background: transparent;")
+        self._track_lbl.setStyleSheet(
+            f"color: {COLORS['accent_aqua']}; font-size: 13px; font-weight: 600;"
+        )
+        self._header.set_badge("LIVE", "aqua")
         self._pause_btn.setText("Pause")
         self._pause_btn.setEnabled(True)
         self._stop_btn.setEnabled(True)
@@ -490,7 +362,7 @@ class LeonidaRadioApp(QMainWindow):
         self._paused = not self._paused
         self._ipc_command(["set_property", "pause", self._paused])
         self._pause_btn.setText("Resume" if self._paused else "Pause")
-        self._status_lbl.setText("● PAUSED" if self._paused else "● LIVE")
+        self._header.set_badge("PAUSED" if self._paused else "LIVE", "gold" if self._paused else "aqua")
 
     def _toggle_mute(self) -> None:
         self._muted = self._mute_btn.isChecked()
@@ -511,6 +383,7 @@ class LeonidaRadioApp(QMainWindow):
         if rc is not None:
             self._stop_playback()
             self._track_lbl.setText(f"Stream stopped (mpv exited with code {rc}).")
+            self._track_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 13px;")
             return
 
         title = self._ipc_command(["get_property", "media-title"])
@@ -527,8 +400,7 @@ class LeonidaRadioApp(QMainWindow):
 def main() -> None:
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication(sys.argv)
-    _configure_cjk_fonts(app)
-    app.setStyleSheet(STYLE)
+    apply_app_theme(app)
     win = LeonidaRadioApp()
     app.aboutToQuit.connect(win._stop_playback)
     win.show()

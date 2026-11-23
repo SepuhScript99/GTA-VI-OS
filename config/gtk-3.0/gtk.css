@@ -1,41 +1,41 @@
-/* GTA VI OS (Vice OS) GTK3 CSS Overrides — Leonida Dark Violet & Sunset Pink */
+/* GTA VI OS (Vice OS) GTK3 CSS Overrides — Leonida Dark Slate & Coastal Sunset */
 
 window, dialog, .background {
-    background-color: #120e1e;
-    color: #f4f1fa;
+    background-color: #0D0E15;
+    color: #F5F6FA;
 }
 
 headerbar, titlebar {
-    background-color: #1a142d;
-    color: #f4f1fa;
-    border-bottom: 1px solid #352754;
+    background-color: #141621;
+    color: #F5F6FA;
+    border-bottom: 1px solid #262A3D;
     box-shadow: none;
 }
 
 menubar {
-    background-color: #181229;
-    color: #f4f1fa;
-    border-bottom: 1px solid #2e2348;
+    background-color: #141621;
+    color: #F5F6FA;
+    border-bottom: 1px solid #262A3D;
     padding: 2px 4px;
 }
 
 menubar > menuitem {
     background-color: transparent;
-    color: #d6cee8;
+    color: #A6AEBF;
     border: none;
     border-radius: 5px;
     padding: 4px 8px;
 }
 
 menubar > menuitem:hover {
-    background-color: #2b1f45;
-    color: #ff8a5b;
+    background-color: #1B1E2D;
+    color: #F5F6FA;
 }
 
 toolbar {
-    background-color: #181229;
-    color: #f4f1fa;
-    border-bottom: 1px solid #2e2348;
+    background-color: #141621;
+    color: #F5F6FA;
+    border-bottom: 1px solid #262A3D;
     padding: 3px 6px;
 }
 
@@ -48,101 +48,136 @@ scrolledwindow,
 placessidebar,
 placessidebar list,
 placessidebar row {
-    background-color: #120e1e;
-    color: #f4f1fa;
+    background-color: #0D0E15;
+    color: #F5F6FA;
 }
 
 placessidebar,
 placessidebar list {
-    background-color: #161126;
-    border-right: 1px solid #2e2348;
+    background-color: #141621;
+    border-right: 1px solid #262A3D;
 }
 
 placessidebar row:selected,
 .view:selected,
 treeview.view:selected,
 iconview:selected {
-    background-color: #3a234d;
-    color: #ff8a5b;
+    background-color: #2B2230;
+    color: #FF9A62;
 }
 
 iconview,
 FmDesktop {
-    color: #ffffff;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+    color: #F5F6FA;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.92);
 }
 
 entry, spinbutton {
-    background-color: #1b152e;
-    color: #f4f1fa;
-    border: 1px solid #382b57;
+    background-color: #1B1E2D;
+    color: #F5F6FA;
+    border: 1px solid #262A3D;
     border-radius: 6px;
     padding: 4px 8px;
     box-shadow: none;
 }
 
 entry:focus, spinbutton:focus {
-    border-color: #ff4da6;
-    background-color: #231b3b;
+    border-color: #FF5E7E;
+    background-color: #1F2334;
 }
 
 button, combobox button {
-    background-color: #1d1733;
-    color: #f4f1fa;
-    border: 1px solid #352852;
+    background-color: #1B1E2D;
+    color: #F5F6FA;
+    border: 1px solid #262A3D;
     border-radius: 6px;
     padding: 4px 10px;
     box-shadow: none;
 }
 
+button label,
+togglebutton label {
+    color: #F5F6FA;
+}
+
 button:hover, combobox button:hover {
-    background-color: #292045;
-    border-color: #ff4da6;
-    color: #ffffff;
+    background-color: #23273A;
+    border-color: #353B54;
+    color: #F5F6FA;
 }
 
 button:active, button:checked {
-    background-color: #3a234d;
-    color: #ff8a5b;
-    border-color: #ff4da6;
+    background-color: #2B2230;
+    color: #FF9A62;
+    border-color: #FF5E7E;
+}
+
+button.suggested-action {
+    background-color: #FF5E7E;
+    color: #0D0E15;
+    border-color: #FF5E7E;
+}
+
+button.suggested-action label {
+    color: #0D0E15;
 }
 
 toolbar button {
     background-color: transparent;
+    color: #F5F6FA;
     border: 1px solid transparent;
     border-radius: 6px;
 }
 
 toolbar button:hover {
-    background-color: #261e3f;
-    border-color: #3d2e5e;
+    background-color: #1B1E2D;
+    border-color: #353B54;
+}
+
+notebook > header {
+    background-color: #141621;
+    border-bottom: 1px solid #262A3D;
+}
+
+notebook > header tab {
+    background-color: #141621;
+    color: #A6AEBF;
+    border: 1px solid transparent;
+    padding: 5px 10px;
+}
+
+notebook > header tab:checked {
+    background-color: #1B1E2D;
+    color: #F5F6FA;
+    border-bottom: 2px solid #FF5E7E;
 }
 
 selection {
-    background-color: #6b2458;
-    color: #ffffff;
+    background-color: #4A2438;
+    color: #F5F6FA;
 }
 
 menu, popover, popover.background {
-    background-color: #181229;
-    color: #f4f1fa;
-    border: 1px solid #382b57;
+    background-color: #1B1E2D;
+    color: #F5F6FA;
+    border: 1px solid #353B54;
     border-radius: 8px;
 }
 
 menu menuitem {
     padding: 5px 10px;
+    color: #F5F6FA;
     border: none;
 }
 
 menu menuitem:hover, menu menuitem:active {
-    background-color: #362247;
-    color: #ff8a5b;
+    background-color: #2B2230;
+    color: #FF9A62;
     border-radius: 4px;
 }
 
 separator {
-    background-color: #2e2348;
+    background-color: #262A3D;
     min-width: 1px;
     min-height: 1px;
 }
@@ -153,48 +188,78 @@ scrollbar {
 }
 
 scrollbar slider {
-    background-color: #3a2c59;
+    background-color: #2D3248;
     border-radius: 5px;
     min-width: 6px;
     min-height: 6px;
 }
 
 scrollbar slider:hover {
-    background-color: #ff4da6;
+    background-color: #FF5E7E;
 }
 
 tooltip, tooltip.background {
-    background-color: #181229;
-    color: #f4f1fa;
-    border: 1px solid #ff4da6;
+    background-color: #1B1E2D;
+    color: #F5F6FA;
+    border: 1px solid #353B54;
     border-radius: 6px;
 }
 
 progressbar {
-    background-color: #1b152e;
-    color: #f4f1fa;
-    border: 1px solid #352852;
+    background-color: #1B1E2D;
+    color: #F5F6FA;
+    border: 1px solid #262A3D;
     border-radius: 6px;
 }
 
 progressbar progress {
-    background-color: #ff4da6;
+    background-color: #FF5E7E;
     border-radius: 5px;
 }
 
 scale trough {
-    background-color: #1b152e;
-    border: 1px solid #352852;
+    background-color: #1B1E2D;
+    border: 1px solid #262A3D;
     border-radius: 4px;
 }
 
 scale highlight {
-    background-color: #ff4da6;
+    background-color: #FF5E7E;
     border-radius: 4px;
 }
 
 infobar {
-    background-color: #181229;
-    color: #f4f1fa;
-    border: 1px solid #352852;
+    background-color: #141621;
+    color: #F5F6FA;
+    border: 1px solid #262A3D;
+}
+
+/* --- Galculator Explicit High-Contrast Legibility Overrides --- */
+#galculator,
+#galculator textview,
+#galculator textview text,
+#galculator entry,
+#galculator label {
+    color: #F5F6FA;
+}
+
+#galculator textview,
+#galculator textview text {
+    background-color: #141621;
+}
+
+#galculator button {
+    background-color: #1B1E2D;
+    color: #F5F6FA;
+    border-color: #262A3D;
+}
+
+#galculator button:hover {
+    background-color: #23273A;
+    border-color: #353B54;
+}
+
+/* --- Terminal Comfortable Inner Padding --- */
+vte-terminal {
+    padding: 8px 10px;
 }

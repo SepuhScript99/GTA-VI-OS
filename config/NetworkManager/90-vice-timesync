@@ -1,0 +1,32 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+# ============================================================================
+# NetworkManager Dispatcher Hook: Vice OS Host Clock & Timezone Auto-Sync
+# Installed to /etc/NetworkManager/dispatcher.d/90-vice-timesync (chmod 755)
+# ============================================================================
+
+IFACE="${1:-}"
+ACTION="${2:-}"
+
+if [ "$IFACE" = "lo" ]; then
+    exit 0
+fi
+
+case "$ACTION" in
+    up|connectivity-change)
+        if [ "$ACTION" = "connectivity-change" ] && [ "${CONNECTIVITY_STATE:-}" = "NONE" ]; then
+            exit 0
+        fi
+        if [ -x /usr/local/bin/vice-timesync ]; then
+            if command -v systemd-run >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+                systemd-run --quiet --no-block /usr/local/bin/vice-timesync --auto >/dev/null 2>&1 || \
+                    nohup /usr/local/bin/vice-timesync --auto >/dev/null 2>&1 &
+            else
+                nohup /usr/local/bin/vice-timesync --auto >/dev/null 2>&1 &
+            fi
+        fi
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,14 @@
+[Unit]
+Description=Vice OS Host Clock and Timezone Auto-Sync
+Documentation=man:chronyd(8)
+After=local-fs.target network.target chrony.service virtualbox-guest-utils.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vice-timesync --auto
+TimeoutStartSec=20
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

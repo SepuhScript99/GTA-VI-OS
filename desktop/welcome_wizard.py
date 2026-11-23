@@ -1,40 +1,52 @@
 #!/usr/bin/env python3
 """
-GTA VI OS (Vice OS) First-Boot Welcome Wizard
-Guides new users through initial system setup:
-  - Welcome / Introduction
-  - Timezone and region configuration
-  - Keyboard layout selection
-  - Wi-Fi network connection
-  - Optional software installation (Docker, VS Code, Flatpak)
-  - Finish
-
-Uses QStackedWidget for page navigation and calls system_utils scripts
-for configuration changes. Writes a flag file on completion so the
-wizard only runs once.
+GTA VI OS (Vice OS) First-Boot Welcome Wizard.
+Guides new users through initial system setup (timezone, locale, keyboard,
+Wi-Fi, theme, optional apps) using the Leonida Coastal Dusk design system.
 """
 
-import sys
+import json
 import os
 import subprocess
-import json
+import sys
 
-sys.path.insert(0, '/opt/vice-os/lib')
-
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QStackedWidget, QComboBox, QListWidget, QListWidgetItem, QCheckBox,
-    QProgressBar, QMessageBox
-)
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont, QPixmap
+from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QProgressBar,
+    QPushButton,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from python.vice_utils import log_error, log_info  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    build_app_qss,
+    configure_cjk_fonts,
+    configure_icon_theme,
+    get_logo_icon,
+)
 
 FLAG_FILE = os.path.expanduser("~/.config/vice-os/welcome_completed")
 STYLE_FILE = "/opt/vice-os/style.qss"
-WIZARD_WIDTH = 640
-WIZARD_HEIGHT = 480
+WIZARD_WIDTH = 660
+WIZARD_HEIGHT = 500
 
 TIMEZONES = [
     "America/New_York", "America/Chicago", "America/Denver",
@@ -67,17 +79,16 @@ KEYBOARD_LAYOUTS = [
 
 OPTIONAL_APPS = [
     ("Docker Engine", "Container runtime for development and deployment"),
-    ("VS Code", "Microsoft Visual Studio Code editor"),
-    ("Flatpak Support", "Flathub repository + Flatpak runtime for sandboxed apps"),
+    ("VS Code", "Visual Studio Code editor"),
+    ("Flatpak Support", "Flathub repository and Flatpak runtime for sandboxed apps"),
 ]
 
 THEMES = [
-    ("Cyberpunk Cyan",  "#00ffff", "#ff00ff", "#0a0a0a"),
-    ("Blood Red",       "#ff2222", "#ff8800", "#0a0a0a"),
-    ("Matrix Green",    "#00ff41", "#00aa00", "#0a0a0a"),
-    ("Neon Purple",     "#bf00ff", "#ff00ff", "#0a0a0a"),
-    ("Solar Gold",      "#ffd700", "#ff8c00", "#0a0a0a"),
-    ("Ice Blue",        "#88ccff", "#0088ff", "#0d0d12"),
+    ("Leonida Sunset", "#FF5E7E", "#FF9A62", "#0D0E15"),
+    ("Keys Aqua", "#36D6C3", "#FF9A62", "#0D0E15"),
+    ("Golden Hour", "#F7C873", "#FF5E7E", "#0D0E15"),
+    ("Twilight Slate", "#A6AEBF", "#FF5E7E", "#141621"),
+    ("Emerald Mint", "#3ED598", "#36D6C3", "#0D0E15"),
 ]
 
 LOCALES = [
@@ -87,82 +98,77 @@ LOCALES = [
     "nl_NL.UTF-8", "sv_SE.UTF-8", "tr_TR.UTF-8", "ar_SA.UTF-8",
 ]
 
-PAGE_STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QLabel { color: #00ffff; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QListWidget { background: #0d0d0d; color: #00ffff; border: 1px solid #00ffff; }
-QListWidget::item:selected { background: #00ffff; color: #0a0a0a; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QCheckBox { color: #cccccc; padding: 4px; }
-QCheckBox::indicator { width: 14px; height: 14px; background: #1a1a1a; border: 1px solid #00ffff; }
-QCheckBox::indicator:checked { background: #00ffff; }
-QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; }
-QProgressBar::chunk { background: #00ffff; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-"""
+PAGE_STYLE = build_app_qss()
 
 
 class WelcomePage(QWidget):
     """First page — welcome message and overview."""
+
     def __init__(self):
         super().__init__()
-        layout = QVBoxLayout()
+        c = COLORS
+        layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(10)
+
+        logo_lbl = QLabel(self)
+        logo_lbl.setAlignment(Qt.AlignCenter)
+        icon = get_logo_icon()
+        if not icon.isNull():
+            logo_lbl.setPixmap(icon.pixmap(72, 72))
 
         title = QLabel("Welcome to Vice OS")
-        title.setFont(QFont("Arial", 28, QFont.Bold))
-        title.setStyleSheet("color: #00FFFF;")
+        title.setFont(QFont("Noto Sans", 24, QFont.Bold))
+        title.setStyleSheet(f"color: {c['text_primary']};")
         title.setAlignment(Qt.AlignCenter)
 
-        subtitle = QLabel("Let's get your system set up in a few steps.")
-        subtitle.setFont(QFont("Arial", 14))
-        subtitle.setStyleSheet("color: #FFFFFF;")
+        subtitle = QLabel("Leonida Coastal Dusk Workstation")
+        subtitle.setStyleSheet(f"color: {c['accent_peach']}; font-size: 14px; font-weight: 600;")
         subtitle.setAlignment(Qt.AlignCenter)
 
         desc = QLabel(
-            "We'll help you configure:\n"
-            "  - Timezone and region\n"
-            "  - Keyboard layout\n"
-            "  - Wi-Fi network\n"
-            "  - Optional software\n\n"
-            "Click Next to begin."
+            "Configure your initial workspace in a few steps:\n"
+            "  • Account & Hostname\n"
+            "  • Timezone, Locale & Keyboard\n"
+            "  • Wi-Fi & Color Accent\n"
+            "  • Optional Developer Runtimes"
         )
-        desc.setFont(QFont("Arial", 12))
-        desc.setStyleSheet("color: #CCCCCC;")
+        desc.setStyleSheet(f"color: {c['text_secondary']}; font-size: 13px;")
         desc.setAlignment(Qt.AlignCenter)
 
         layout.addStretch()
+        if not icon.isNull():
+            layout.addWidget(logo_lbl)
         layout.addWidget(title)
-        layout.addSpacing(10)
         layout.addWidget(subtitle)
-        layout.addSpacing(20)
+        layout.addSpacing(8)
         layout.addWidget(desc)
         layout.addStretch()
-        self.setLayout(layout)
 
 
 class TimezonePage(QWidget):
     """Timezone selection page."""
+
     def __init__(self):
         super().__init__()
-        layout = QVBoxLayout()
+        c = COLORS
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
 
         title = QLabel("Select Your Timezone")
-        title.setFont(QFont("Arial", 20, QFont.Bold))
-        title.setStyleSheet("color: #00FFFF;")
+        title.setStyleSheet(f"color: {c['text_primary']}; font-size: 18px; font-weight: bold;")
+
+        sub = QLabel("Choose your default timezone (Vice TimeSync can also sync automatically online):")
+        sub.setStyleSheet(f"color: {c['text_secondary']};")
 
         self.combo = QComboBox()
         self.combo.addItems(TIMEZONES)
         self.combo.setCurrentText("UTC")
 
         layout.addWidget(title)
-        layout.addSpacing(10)
-        layout.addWidget(QLabel("Choose your timezone from the list below:"))
+        layout.addWidget(sub)
         layout.addWidget(self.combo)
         layout.addStretch()
-        self.setLayout(layout)
 
     def get_selected_timezone(self) -> str:
         return self.combo.currentText()
@@ -170,27 +176,29 @@ class TimezonePage(QWidget):
 
 class KeyboardPage(QWidget):
     """Keyboard layout selection page."""
+
     def __init__(self):
         super().__init__()
-        layout = QVBoxLayout()
+        c = COLORS
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
 
         title = QLabel("Select Keyboard Layout")
-        title.setFont(QFont("Arial", 20, QFont.Bold))
-        title.setStyleSheet("color: #00FFFF;")
+        title.setStyleSheet(f"color: {c['text_primary']}; font-size: 18px; font-weight: bold;")
+
+        sub = QLabel("Choose your hardware keyboard layout:")
+        sub.setStyleSheet(f"color: {c['text_secondary']};")
 
         self.list_widget = QListWidget()
         for code, name in KEYBOARD_LAYOUTS:
             item = QListWidgetItem(f"{name} ({code})")
             item.setData(Qt.UserRole, code)
             self.list_widget.addItem(item)
-
         self.list_widget.setCurrentRow(0)
 
         layout.addWidget(title)
-        layout.addSpacing(10)
-        layout.addWidget(QLabel("Choose your keyboard layout:"))
+        layout.addWidget(sub)
         layout.addWidget(self.list_widget)
-        self.setLayout(layout)
 
     def get_selected_layout(self) -> str:
         item = self.list_widget.currentItem()
@@ -201,33 +209,32 @@ class KeyboardPage(QWidget):
 
 class NetworkPage(QWidget):
     """Wi-Fi network selection and connection page."""
+
     def __init__(self):
         super().__init__()
-        self.setLayout(QVBoxLayout())
+        c = COLORS
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
 
         title = QLabel("Connect to Wi-Fi")
-        title.setFont(QFont("Arial", 20, QFont.Bold))
-        title.setStyleSheet("color: #00FFFF;")
+        title.setStyleSheet(f"color: {c['text_primary']}; font-size: 18px; font-weight: bold;")
 
-        self.status_label = QLabel("Scanning for networks...")
-        self.status_label.setStyleSheet("color: #FF00FF;")
+        self.status_label = QLabel("Ready to scan wireless networks.")
+        self.status_label.setStyleSheet(f"color: {c['accent_aqua']};")
 
-        self.scan_button = QPushButton("Scan")
+        self.scan_button = QPushButton("Scan Networks")
         self.scan_button.clicked.connect(self.scan_networks)
 
         self.network_list = QListWidget()
         self.network_list.itemClicked.connect(self.on_network_selected)
 
-        self.skip_button = QPushButton("Skip — I'll connect later")
-        self.skip_button.setObjectName("DockButton")
+        self.skip_button = QPushButton("Skip for now")
 
-        self.layout().addWidget(title)
-        self.layout().addSpacing(10)
-        self.layout().addWidget(self.status_label)
-        self.layout().addWidget(self.scan_button)
-        self.layout().addWidget(self.network_list)
-        self.layout().addStretch()
-        self.layout().addWidget(self.skip_button)
+        layout.addWidget(title)
+        layout.addWidget(self.status_label)
+        layout.addWidget(self.scan_button)
+        layout.addWidget(self.network_list, 1)
+        layout.addWidget(self.skip_button)
 
     def scan_networks(self):
         self.status_label.setText("Scanning...")
@@ -238,16 +245,17 @@ class NetworkPage(QWidget):
         try:
             result = subprocess.run(
                 ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "dev", "wifi", "list"],
-                capture_output=True, text=True, timeout=15
+                capture_output=True, text=True, timeout=15,
             )
             if result.returncode == 0 and result.stdout.strip():
                 for line in result.stdout.strip().splitlines():
                     parts = line.split(":")
                     if len(parts) >= 1 and parts[0]:
-                        item = QListWidgetItem(f"{parts[0]}  ({parts[1]}%)")
+                        sig = parts[1] if len(parts) > 1 else "?"
+                        item = QListWidgetItem(f"{parts[0]} ({sig}%)")
                         item.setData(Qt.UserRole, parts[0])
                         self.network_list.addItem(item)
-                self.status_label.setText(f"Found {self.network_list.count()} networks.")
+                self.status_label.setText(f"Found {self.network_list.count()} network(s).")
             else:
                 self.status_label.setText("No Wi-Fi networks found or Wi-Fi is disabled.")
         except Exception as e:
@@ -267,18 +275,20 @@ class NetworkPage(QWidget):
 
 class UserSetupPage(QWidget):
     """User account setup page."""
+
     def __init__(self):
         super().__init__()
-        from PyQt5.QtWidgets import QLineEdit, QFormLayout
-        layout = QVBoxLayout()
+        c = COLORS
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
 
         title = QLabel("User Account Setup")
-        title.setFont(QFont("monospace", 18, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff;")
+        title.setStyleSheet(f"color: {c['text_primary']}; font-size: 18px; font-weight: bold;")
         layout.addWidget(title)
-        layout.addSpacing(10)
-        layout.addWidget(QLabel("Configure your user account:"))
-        layout.addSpacing(8)
+
+        sub = QLabel("Configure your local account and hostname:")
+        sub.setStyleSheet(f"color: {c['text_secondary']};")
+        layout.addWidget(sub)
 
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignRight)
@@ -299,10 +309,9 @@ class UserSetupPage(QWidget):
         self.autologin_cb.setChecked(True)
 
         layout.addLayout(form)
-        layout.addSpacing(10)
+        layout.addSpacing(8)
         layout.addWidget(self.autologin_cb)
         layout.addStretch()
-        self.setLayout(layout)
 
     def get_values(self):
         return {
@@ -314,48 +323,48 @@ class UserSetupPage(QWidget):
 
 
 class ThemePage(QWidget):
-    """Theme picker page."""
+    """Theme accent picker page."""
+
     def __init__(self):
         super().__init__()
-        layout = QVBoxLayout()
+        c = COLORS
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
 
-        title = QLabel("Choose Your Theme")
-        title.setFont(QFont("monospace", 18, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff;")
+        title = QLabel("Choose Your Accent Style")
+        title.setStyleSheet(f"color: {c['text_primary']}; font-size: 18px; font-weight: bold;")
         layout.addWidget(title)
-        layout.addSpacing(10)
-        layout.addWidget(QLabel("Select a color theme for Vice OS:"))
-        layout.addSpacing(8)
+
+        sub = QLabel("Select a Leonida accent profile for Vice OS:")
+        sub.setStyleSheet(f"color: {c['text_secondary']};")
+        layout.addWidget(sub)
 
         self._preview = QLabel()
         self._preview.setFixedHeight(48)
         self._preview.setAlignment(Qt.AlignCenter)
-        self._preview.setFont(QFont("monospace", 13, QFont.Bold))
+        self._preview.setFont(QFont("Noto Sans", 13, QFont.Bold))
         layout.addWidget(self._preview)
-        layout.addSpacing(6)
 
         self.theme_list = QListWidget()
         for name, primary, accent, bg in THEMES:
             item = QListWidgetItem(name)
             item.setData(Qt.UserRole, (primary, accent, bg))
-            from PyQt5.QtGui import QColor
             item.setForeground(QColor(primary))
             self.theme_list.addItem(item)
         self.theme_list.setCurrentRow(0)
         self.theme_list.currentItemChanged.connect(self._preview_theme)
         layout.addWidget(self.theme_list)
         layout.addStretch()
-        self.setLayout(layout)
         self._preview_theme(self.theme_list.currentItem(), None)
 
     def _preview_theme(self, current, _prev):
         if not current:
             return
         primary, accent, bg = current.data(Qt.UserRole)
-        self._preview.setText(f"Vice OS  —  {current.text()}")
+        self._preview.setText(f"Vice OS — {current.text()}")
         self._preview.setStyleSheet(
             f"background-color: {bg}; color: {primary}; "
-            f"border: 2px solid {accent}; padding: 4px;"
+            f"border: 1px solid {accent}; border-radius: 8px; padding: 6px;"
         )
 
     def get_selected_theme(self):
@@ -363,28 +372,31 @@ class ThemePage(QWidget):
         if item:
             primary, accent, bg = item.data(Qt.UserRole)
             return {"name": item.text(), "primary": primary, "accent": accent, "bg": bg}
-        return {"name": "Cyberpunk Cyan", "primary": "#00ffff", "accent": "#ff00ff", "bg": "#0a0a0a"}
+        return {"name": "Leonida Sunset", "primary": "#FF5E7E", "accent": "#FF9A62", "bg": "#0D0E15"}
 
 
 class LocalePage(QWidget):
     """Locale / language selection page."""
+
     def __init__(self):
         super().__init__()
-        layout = QVBoxLayout()
+        c = COLORS
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
 
         title = QLabel("Language & Locale")
-        title.setFont(QFont("monospace", 18, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff;")
+        title.setStyleSheet(f"color: {c['text_primary']}; font-size: 18px; font-weight: bold;")
         layout.addWidget(title)
-        layout.addSpacing(10)
-        layout.addWidget(QLabel("Select system locale:"))
+
+        sub = QLabel("Select system locale:")
+        sub.setStyleSheet(f"color: {c['text_secondary']};")
+        layout.addWidget(sub)
 
         self.combo = QComboBox()
         self.combo.addItems(LOCALES)
         self.combo.setCurrentText("en_US.UTF-8")
         layout.addWidget(self.combo)
         layout.addStretch()
-        self.setLayout(layout)
 
     def get_locale(self):
         return self.combo.currentText()
@@ -392,17 +404,20 @@ class LocalePage(QWidget):
 
 class SoftwarePage(QWidget):
     """Optional software installation page."""
+
     def __init__(self):
         super().__init__()
-        layout = QVBoxLayout()
+        c = COLORS
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
 
         title = QLabel("Install Optional Software")
-        title.setFont(QFont("monospace", 18, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff;")
-
+        title.setStyleSheet(f"color: {c['text_primary']}; font-size: 18px; font-weight: bold;")
         layout.addWidget(title)
-        layout.addSpacing(10)
-        layout.addWidget(QLabel("Select additional software to install:"))
+
+        sub = QLabel("Select additional developer runtimes to install:")
+        sub.setStyleSheet(f"color: {c['text_secondary']};")
+        layout.addWidget(sub)
 
         self.checkboxes = []
         for name, desc in OPTIONAL_APPS:
@@ -413,9 +428,7 @@ class SoftwarePage(QWidget):
         self.progress = QProgressBar()
         self.progress.setVisible(False)
         layout.addWidget(self.progress)
-
         layout.addStretch()
-        self.setLayout(layout)
 
     def get_selected_apps(self) -> list:
         selected = []
@@ -427,45 +440,44 @@ class SoftwarePage(QWidget):
 
 class FinishPage(QWidget):
     """Final page — summary and completion."""
+
     def __init__(self):
         super().__init__()
-        layout = QVBoxLayout()
+        c = COLORS
+        layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(12)
 
-        title = QLabel("Setup Complete!")
-        title.setFont(QFont("monospace", 26, QFont.Bold))
-        title.setStyleSheet("color: #00ffff;")
+        title = QLabel("Setup Complete")
+        title.setStyleSheet(f"color: {c['accent_aqua']}; font-size: 24px; font-weight: bold;")
         title.setAlignment(Qt.AlignCenter)
 
         self.summary = QLabel("")
-        self.summary.setStyleSheet("color: #888; font-size: 12px;")
+        self.summary.setStyleSheet(f"color: {c['text_secondary']}; font-size: 12px;")
         self.summary.setAlignment(Qt.AlignCenter)
         self.summary.setWordWrap(True)
 
-        desc = QLabel("Your Vice OS system is ready.\nClick Finish to start.")
-        desc.setFont(QFont("monospace", 13))
-        desc.setStyleSheet("color: #cccccc;")
+        desc = QLabel("Your Vice OS workstation is ready.\nClick Finish to begin.")
+        desc.setStyleSheet(f"color: {c['text_primary']}; font-size: 13px;")
         desc.setAlignment(Qt.AlignCenter)
 
         layout.addStretch()
         layout.addWidget(title)
-        layout.addSpacing(10)
         layout.addWidget(self.summary)
-        layout.addSpacing(10)
         layout.addWidget(desc)
         layout.addStretch()
-        self.setLayout(layout)
 
     def set_summary(self, tz, locale, theme_name, username, hostname):
         self.summary.setText(
             f"User: {username}  |  Host: {hostname}\n"
             f"Timezone: {tz}  |  Locale: {locale}\n"
-            f"Theme: {theme_name}"
+            f"Accent: {theme_name}"
         )
 
 
 class WelcomeWizard(QWidget):
-    """Main wizard window with stacked pages and navigation."""
+    """Main managed wizard window with stacked pages and navigation."""
+
     def __init__(self):
         super().__init__()
         self.pages = []
@@ -473,17 +485,19 @@ class WelcomeWizard(QWidget):
         self.initUI()
 
     def initUI(self):
+        c = COLORS
         self.setWindowTitle("Vice OS — Setup Wizard")
         self.resize(WIZARD_WIDTH, WIZARD_HEIGHT)
         self.setMinimumSize(WIZARD_WIDTH, WIZARD_HEIGHT)
         self.setStyleSheet(PAGE_STYLE)
 
-        main_layout = QVBoxLayout()
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 16, 20, 16)
+        main_layout.setSpacing(12)
 
-        # Step indicator
         self._step_label = QLabel()
         self._step_label.setAlignment(Qt.AlignRight)
-        self._step_label.setStyleSheet("color: #555; font-size: 11px; margin-right: 4px;")
+        self._step_label.setStyleSheet(f"color: {c['text_muted']}; font-size: 11px;")
         main_layout.addWidget(self._step_label)
 
         self.stack = QStackedWidget()
@@ -506,7 +520,7 @@ class WelcomeWizard(QWidget):
         for page in self.pages:
             self.stack.addWidget(page)
 
-        main_layout.addWidget(self.stack)
+        main_layout.addWidget(self.stack, 1)
 
         btn_layout = QHBoxLayout()
         self.back_btn = QPushButton("Back")
@@ -516,11 +530,11 @@ class WelcomeWizard(QWidget):
         btn_layout.addStretch()
 
         self.next_btn = QPushButton("Next")
+        self.next_btn.setObjectName("PrimaryButton")
         self.next_btn.clicked.connect(self.go_next)
         btn_layout.addWidget(self.next_btn)
 
         main_layout.addLayout(btn_layout)
-        self.setLayout(main_layout)
         self._update_step()
 
     def _update_step(self):
@@ -586,7 +600,7 @@ class WelcomeWizard(QWidget):
         theme_conf = os.path.expanduser("~/.config/vice-os/theme.json")
         os.makedirs(os.path.dirname(theme_conf), exist_ok=True)
         try:
-            with open(theme_conf, "w") as f:
+            with open(theme_conf, "w", encoding="utf-8") as f:
                 json.dump(theme, f, indent=2)
             log_info(f"Theme saved: {theme['name']}")
         except Exception as e:
@@ -608,38 +622,32 @@ class WelcomeWizard(QWidget):
                     log_error(f"Install failed {app}: {e}")
 
         self._finish_page.set_summary(
-            tz, locale, theme["name"],
-            user_info["username"], user_info["hostname"]
+            tz, locale, theme["name"], user_info["username"], user_info["hostname"]
         )
 
     def finish(self):
-        flag_dir = os.path.dirname(FLAG_FILE)
-        os.makedirs(flag_dir, exist_ok=True)
-        with open(FLAG_FILE, "w") as f:
+        os.makedirs(os.path.dirname(FLAG_FILE), exist_ok=True)
+        with open(FLAG_FILE, "w", encoding="utf-8") as f:
             f.write("completed")
         log_info("Welcome wizard completed.")
-
-        # Register all Vice OS applications (menu entries + autostart)
-        # so every tool is discoverable right after first boot.
         self._register_apps()
-
         QApplication.quit()
 
     @staticmethod
     def _register_apps():
-        setup_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                    "vice_setup_apps.py")
+        setup_script = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "vice_setup_apps.py"
+        )
         if os.path.exists(setup_script):
             try:
-                subprocess.run([sys.executable, setup_script],
-                               capture_output=True, timeout=60)
+                subprocess.run([sys.executable, setup_script], capture_output=True, timeout=60)
                 log_info("Registered all Vice OS applications")
             except Exception as e:
                 log_error(f"App registration failed: {e}")
 
 
 def create_flag_file():
-    """Ensure the flag directory exists (no-op, called if needed)."""
+    """Ensure the flag directory exists."""
     os.makedirs(os.path.dirname(FLAG_FILE), exist_ok=True)
 
 
@@ -649,16 +657,13 @@ def has_wizard_run() -> bool:
 
 
 def load_stylesheet(app: QApplication):
-    if os.path.exists(STYLE_FILE):
-        try:
-            with open(STYLE_FILE) as f:
-                app.setStyleSheet(f.read())
-        except IOError:
-            pass
+    apply_app_theme(app)
 
 
 def main():
     app = QApplication(sys.argv)
+    configure_cjk_fonts(app)
+    configure_icon_theme()
     load_stylesheet(app)
 
     wizard = WelcomeWizard()

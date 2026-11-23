@@ -24,15 +24,19 @@ APT_OPTS=(
 main() {
     log_info "Configuring Chrony (NTP) time synchronization..."
 
-    # 1. Install Chrony package
-    log_info "Installing chrony package..."
-    apt-get "${APT_OPTS[@]}" install -y --no-install-recommends chrony
+    # 1. Install Chrony package if not already installed by 01_install_packages.sh
+    if ! command -v chronyd >/dev/null 2>&1; then
+        log_info "Installing chrony package..."
+        apt-get "${APT_OPTS[@]}" install -y --no-install-recommends chrony
+    else
+        log_info "Chrony package already installed."
+    fi
 
     # 2. Mask systemd-timesyncd to prevent conflicts
     log_info "Masking systemd-timesyncd to prevent NTP conflicts..."
     systemctl mask systemd-timesyncd.service 2>/dev/null || true
 
-    # 3. Install Chrony configuration
+    # 3. Install and tune Chrony configuration
     local chrony_src="/vice_payload/config/default/chrony"
     local chrony_dest="/etc/chrony/chrony.conf"
 
@@ -43,9 +47,22 @@ main() {
 
     mkdir -p /etc/chrony
     cp "$chrony_src" "$chrony_dest"
+
+    # Allow instant clock step whenever offset > 1s (essential for VM suspend/resume & Live ISO)
+    if grep -qE '^[[:space:]]*makestep[[:space:]]+' "$chrony_dest"; then
+        sed -i -E 's/^[[:space:]]*makestep[[:space:]]+.*/makestep 1 -1/' "$chrony_dest"
+    else
+        printf '\nmakestep 1 -1\n' >> "$chrony_dest"
+    fi
+
+    # Keep hardware RTC synchronized to system clock
+    if ! grep -qE '^[[:space:]]*rtcsync([[:space:]]|$)' "$chrony_dest"; then
+        printf 'rtcsync\n' >> "$chrony_dest"
+    fi
+
     chown root:root "$chrony_dest"
     chmod 644 "$chrony_dest"
-    log_info "Installed custom chrony.conf."
+    log_info "Installed and tuned chrony.conf (makestep 1 -1, rtcsync)."
 
     # 4. Enable Chrony service
     log_info "Enabling chrony service..."

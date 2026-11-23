@@ -3,6 +3,7 @@
 GTA VI OS (Vice OS) — Vice Mission Board.
 Persistent JSON-backed task and mission manager (~/.local/share/vice-os/missions.json)
 with GTA Wanted-Star priority (1-5 stars), status filters, and Markdown/JSON export.
+Styled via vice_theme (Noto Sans CJK fallback).
 """
 
 from datetime import datetime
@@ -14,15 +15,25 @@ import tempfile
 import uuid
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor, QFont, QIcon, QPixmap
 from PyQt5.QtWidgets import (
-    QAbstractItemView, QApplication, QComboBox, QFileDialog, QFrame,
-    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox,
-    QProgressBar, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
-    QWidget
+    QAbstractItemView, QApplication, QComboBox, QFileDialog, QHBoxLayout,
+    QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QProgressBar,
+    QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 )
 
-sys.path.insert(0, "/opt/vice-os/lib")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _p in ("/opt/vice-os", _HERE, "/opt/vice-os/lib"):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from vice_theme import (  # noqa: E402
+    apply_app_theme,
+    load_tool_icon,
+    make_button,
+    make_card,
+    make_header,
+    qcolor,
+)
 
 try:
     from python.vice_utils import log_error, log_info  # noqa: E402
@@ -34,125 +45,8 @@ except ImportError:
         print(f"[ERROR] {msg}", file=sys.stderr)
 
 
-CJK_FONTS = [
-    "Noto Sans",
-    "Noto Sans CJK JP",
-    "Noto Sans CJK SC",
-    "Noto Sans CJK TC",
-    "Noto Sans CJK KR",
-    "DejaVu Sans",
-]
-
 MISSIONS_PATH = os.path.expanduser("~/.local/share/vice-os/missions.json")
-CATEGORIES = ["System", "Dev", "Security", "Ops", "Personal"]
-
-STYLE = """
-QMainWindow, QWidget#RootWidget {
-    background-color: #120e1e;
-    color: #f4f1fa;
-    font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
-    font-size: 13px;
-}
-QFrame#Banner {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #201435, stop:0.55 #2c153c, stop:1 #16223a);
-    border: 1px solid #ff8a5b;
-    border-radius: 12px;
-}
-QProgressBar {
-    background-color: #161028;
-    border: 1px solid #43346b;
-    border-radius: 7px;
-    height: 14px;
-    text-align: center;
-    color: #ffffff;
-    font-weight: bold;
-}
-QProgressBar::chunk {
-    border-radius: 6px;
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #ffd166, stop:0.5 #ff8a5b, stop:1 #ff4da6);
-}
-QLineEdit, QComboBox {
-    background-color: #1b152e;
-    color: #f4f1fa;
-    border: 1px solid #3c2e5e;
-    border-radius: 8px;
-    padding: 7px 10px;
-}
-QLineEdit:focus {
-    border-color: #ffd166;
-}
-QPushButton {
-    background-color: #1f1836;
-    color: #ffd166;
-    border: 1px solid #ff8a5b;
-    border-radius: 8px;
-    padding: 7px 14px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #ff8a5b;
-    color: #120e1e;
-}
-QPushButton#FilterBtn {
-    color: #cfc6e6;
-    border-color: #3c2e5e;
-}
-QPushButton#FilterBtn:checked {
-    background-color: #3a1f47;
-    color: #ffd166;
-    border-color: #ff4da6;
-}
-QPushButton#DeleteBtn {
-    color: #ff6b8b;
-    border-color: #ff6b8b;
-}
-QPushButton#DeleteBtn:hover {
-    background-color: #ff6b8b;
-    color: #120e1e;
-}
-QTableWidget {
-    background-color: #151025;
-    color: #f4f1fa;
-    border: 1px solid #382b57;
-    border-radius: 10px;
-    gridline-color: #292042;
-}
-QTableWidget::item:selected {
-    background-color: #34214d;
-    color: #ffd166;
-}
-QHeaderView::section {
-    background-color: #1e1633;
-    color: #00e5ff;
-    border: none;
-    border-bottom: 1px solid #3c2e5e;
-    padding: 8px;
-    font-weight: bold;
-}
-"""
-
-
-def _configure_cjk_fonts(app: QApplication) -> None:
-    for fam in ("Noto Sans", "DejaVu Sans", "Sans", "sans-serif"):
-        QFont.insertSubstitutions(fam, CJK_FONTS)
-    font = QFont("Noto Sans", 10)
-    if hasattr(font, "setFamilies"):
-        font.setFamilies(CJK_FONTS)
-    app.setFont(font)
-
-
-def _load_app_icon() -> QIcon:
-    for path in (
-        "/usr/share/icons/hicolor/64x64/apps/vice-tool-missions.png",
-        "/usr/share/pixmaps/vice-tool-missions.png",
-    ):
-        if os.path.isfile(path):
-            pm = QPixmap(path)
-            if not pm.isNull():
-                return QIcon(pm)
-    return QIcon.fromTheme("view-pim-tasks")
+CATEGORIES = ["System", "Dev", "Security", "Office", "Ops", "Personal"]
 
 
 def _star_str(level: int) -> str:
@@ -165,10 +59,10 @@ class ViceMissionBoardApp(QMainWindow):
 
     def __init__(self, store_path: str = MISSIONS_PATH):
         super().__init__()
-        self.setWindowTitle("Vice Mission Board — Leonida Tasks")
-        self.resize(900, 620)
-        self.setMinimumSize(720, 480)
-        icon = _load_app_icon()
+        self.setWindowTitle("Vice Mission Board — Vice OS")
+        self.resize(920, 640)
+        self.setMinimumSize(740, 480)
+        icon = load_tool_icon("vice-tool-missions", "view-pim-tasks")
         if not icon.isNull():
             self.setWindowIcon(icon)
 
@@ -189,83 +83,78 @@ class ViceMissionBoardApp(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 14)
         layout.setSpacing(12)
 
-        # Header banner
-        banner = QFrame(root)
-        banner.setObjectName("Banner")
-        bv = QVBoxLayout(banner)
-        bv.setContentsMargins(16, 12, 16, 12)
-        bv.setSpacing(8)
+        self._header = make_header(
+            title="Vice Mission Board",
+            subtitle="Persistent task & wanted-priority objective tracker",
+            icon_name="vice-tool-missions",
+            badge_text="0 Active",
+            badge_variant="coral",
+            parent=root,
+        )
+        layout.addWidget(self._header)
 
-        bh = QHBoxLayout()
-        title = QLabel("VICE MISSION BOARD · WANTED PRIORITY TRACKER", banner)
-        title.setStyleSheet("color: #ffd166; font-size: 19px; font-weight: bold; background: transparent;")
-        bh.addWidget(title)
-        bh.addStretch(1)
-        self._stats_lbl = QLabel("0 Active · 0 Completed", banner)
-        self._stats_lbl.setStyleSheet("color: #00e5ff; font-weight: bold; background: transparent;")
-        bh.addWidget(self._stats_lbl)
-        bv.addLayout(bh)
-
-        self._progress = QProgressBar(banner)
+        self._progress = QProgressBar(root)
         self._progress.setRange(0, 100)
-        self._progress.setFormat("Mission Completion: %p%")
-        bv.addWidget(self._progress)
-        layout.addWidget(banner)
+        self._progress.setFormat("Completion: %p%")
+        layout.addWidget(self._progress)
 
-        # Add Mission Row
+        # Add Mission Card
+        add_card = make_card(parent=root, margins=(12, 10, 12, 10), spacing=8)
         add_row = QHBoxLayout()
         add_row.setSpacing(8)
-        self._title_edit = QLineEdit(root)
+        self._title_edit = QLineEdit(add_card)
         self._title_edit.setPlaceholderText("New mission objective...")
         self._title_edit.returnPressed.connect(self._add_mission)
         add_row.addWidget(self._title_edit, 2)
 
-        self._notes_edit = QLineEdit(root)
+        self._notes_edit = QLineEdit(add_card)
         self._notes_edit.setPlaceholderText("Notes / target / details (optional)")
         self._notes_edit.returnPressed.connect(self._add_mission)
         add_row.addWidget(self._notes_edit, 1)
 
-        self._cat_combo = QComboBox(root)
+        self._cat_combo = QComboBox(add_card)
         self._cat_combo.addItems(CATEGORIES)
         add_row.addWidget(self._cat_combo)
 
-        self._stars_combo = QComboBox(root)
+        self._stars_combo = QComboBox(add_card)
         for s in range(1, 6):
-            self._stars_combo.addItem(f"{s}★", s)
+            self._stars_combo.addItem(f"Wanted {s}", s)
         self._stars_combo.setCurrentIndex(2)
         add_row.addWidget(self._stars_combo)
 
-        add_btn = QPushButton("Add Mission", root)
+        add_btn = make_button("Add Mission", variant="primary", parent=add_card)
         add_btn.clicked.connect(self._add_mission)
         add_row.addWidget(add_btn)
-        layout.addLayout(add_row)
+        add_card.body_layout.addLayout(add_row)
+        layout.addWidget(add_card)
 
         # Filter + Search Row
         flt_row = QHBoxLayout()
         flt_row.setSpacing(8)
         for label in ("All", "Active", "Completed"):
             btn = QPushButton(label, root)
-            btn.setObjectName("FilterBtn")
+            btn.setObjectName("SegButton")
             btn.setCheckable(True)
+            btn.setFocusPolicy(Qt.NoFocus)
             btn.setChecked(label == "All")
             btn.clicked.connect(lambda _=False, f=label: self._set_filter(f))
             self._filter_btns[label] = btn
             flt_row.addWidget(btn)
 
         self._search_edit = QLineEdit(root)
-        self._search_edit.setPlaceholderText("Filter missions...")
+        self._search_edit.setPlaceholderText("Filter missions by title, category, or notes...")
         self._search_edit.setClearButtonEnabled(True)
         self._search_edit.textChanged.connect(self._render_table)
         flt_row.addWidget(self._search_edit, 1)
 
-        export_btn = QPushButton("Export...", root)
+        export_btn = make_button("Export...", variant="secondary", parent=root)
         export_btn.clicked.connect(self._export_missions)
         flt_row.addWidget(export_btn)
         layout.addLayout(flt_row)
 
         # Missions Table
         self._table = QTableWidget(0, 5, root)
-        self._table.setHorizontalHeaderLabels(["Status", "Wanted", "Category", "Mission", "Notes"])
+        self._table.setHorizontalHeaderLabels(["Status", "Priority", "Category", "Mission", "Notes"])
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SingleSelection)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -280,22 +169,25 @@ class ViceMissionBoardApp(QMainWindow):
         # Action Row
         act_row = QHBoxLayout()
         act_row.setSpacing(8)
-        toggle_btn = QPushButton("Toggle Complete", root)
+        toggle_btn = make_button("Toggle Complete", variant="primary", parent=root)
         toggle_btn.clicked.connect(self._toggle_selected)
         act_row.addWidget(toggle_btn)
 
-        bump_btn = QPushButton("Cycle Wanted ★", root)
+        bump_btn = make_button("Cycle Priority", variant="secondary", parent=root)
         bump_btn.clicked.connect(self._cycle_stars_selected)
         act_row.addWidget(bump_btn)
 
-        del_btn = QPushButton("Delete Selected", root)
-        del_btn.setObjectName("DeleteBtn")
+        del_btn = make_button("Delete Selected", variant="danger", parent=root)
         del_btn.clicked.connect(self._delete_selected)
         act_row.addWidget(del_btn)
 
         act_row.addStretch(1)
 
-        clear_btn = QPushButton("Clear Completed", root)
+        self._stats_lbl = QLabel("0 Total", root)
+        self._stats_lbl.setObjectName("MutedLabel")
+        act_row.addWidget(self._stats_lbl)
+
+        clear_btn = make_button("Clear Completed", variant="secondary", parent=root)
         clear_btn.clicked.connect(self._clear_completed)
         act_row.addWidget(clear_btn)
         layout.addLayout(act_row)
@@ -305,8 +197,8 @@ class ViceMissionBoardApp(QMainWindow):
         return [
             {
                 "id": str(uuid.uuid4()),
-                "title": "Explore Vice Tool Hub (100 / 500 Batch 1)",
-                "notes": "Browse GTA VI Originals and Debian power utilities",
+                "title": "Explore Vice Tool Hub (250 / 500 Batch 2)",
+                "notes": "Browse GTA VI Originals, Office Studio, and Security tools",
                 "category": "System",
                 "stars": 5,
                 "completed": False,
@@ -314,18 +206,18 @@ class ViceMissionBoardApp(QMainWindow):
             },
             {
                 "id": str(uuid.uuid4()),
-                "title": "Tune Leonida FM Radio & Verify Audio",
-                "notes": "Test PipeWire playback on Vice Sunset 104.5 FM",
-                "category": "Ops",
+                "title": "Check VPN, Tor & DNS in Vice Net Shield",
+                "notes": "Configure secure DNS or WireGuard/OpenVPN tunnel on demand",
+                "category": "Security",
                 "stars": 4,
                 "completed": False,
                 "created_at": now,
             },
             {
                 "id": str(uuid.uuid4()),
-                "title": "Encrypt Sensitive Keys with Vice Vault",
-                "notes": "AES-256-CBC PBKDF2 protection",
-                "category": "Security",
+                "title": "Sync Host Clock & Timezone",
+                "notes": "Verify VirtualBox host time and local IANA timezone in Clock Sync",
+                "category": "Ops",
                 "stars": 3,
                 "completed": False,
                 "created_at": now,
@@ -408,12 +300,12 @@ class ViceMissionBoardApp(QMainWindow):
                 QTableWidgetItem(str(m.get("notes", ""))),
             ]
             items[0].setData(Qt.UserRole, m.get("id"))
-            col = QColor("#8f84ad") if done else QColor("#f4f1fa")
+            col = qcolor("text_muted") if done else qcolor("text_primary")
             for idx, it in enumerate(items):
                 if idx == 1 and not done:
-                    it.setForeground(QColor("#ffd166"))
+                    it.setForeground(qcolor("accent_gold"))
                 elif idx == 0:
-                    it.setForeground(QColor("#64ffda" if done else "#ff4da6"))
+                    it.setForeground(qcolor("success") if done else qcolor("accent_coral"))
                 else:
                     it.setForeground(col)
                 self._table.setItem(row, idx, it)
@@ -423,6 +315,7 @@ class ViceMissionBoardApp(QMainWindow):
         active = total - completed
         pct = int(round((completed / total) * 100)) if total else 0
         self._progress.setValue(pct)
+        self._header.set_badge(f"{active} Active · {completed} Done", "coral" if active else "success")
         self._stats_lbl.setText(f"{active} Active · {completed} Completed · {total} Total")
 
     def _selected_mission_id(self):
@@ -522,8 +415,7 @@ class ViceMissionBoardApp(QMainWindow):
 def main() -> None:
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication(sys.argv)
-    _configure_cjk_fonts(app)
-    app.setStyleSheet(STYLE)
+    apply_app_theme(app)
     win = ViceMissionBoardApp()
     win.show()
     sys.exit(app.exec_())

@@ -4,6 +4,7 @@ GTA VI OS (Vice OS) — Vice Command Deck.
 Searchable interactive Linux and Vice OS command cheat-sheet covering Files,
 Networking, Git, Permissions, Systemd, Archives, Security, and Shortcuts
 with one-click Copy and Run-in-Terminal (xfce4-terminal).
+Styled via vice_theme (Noto Sans CJK fallback).
 """
 
 import os
@@ -12,14 +13,25 @@ import signal
 import sys
 
 from PyQt5.QtCore import Qt, QProcess
-from PyQt5.QtGui import QFont, QIcon, QPixmap
 from PyQt5.QtWidgets import (
-    QApplication, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
-    QVBoxLayout, QWidget
+    QApplication, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit,
+    QPushButton, QVBoxLayout, QWidget
 )
 
-sys.path.insert(0, "/opt/vice-os/lib")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _p in ("/opt/vice-os", _HERE, "/opt/vice-os/lib"):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    load_tool_icon,
+    make_button,
+    make_card,
+    make_header,
+)
 
 try:
     from python.vice_utils import log_info  # noqa: E402
@@ -27,15 +39,6 @@ except ImportError:
     def log_info(msg: str) -> None:
         print(f"[INFO] {msg}")
 
-
-CJK_FONTS = [
-    "Noto Sans",
-    "Noto Sans CJK JP",
-    "Noto Sans CJK SC",
-    "Noto Sans CJK TC",
-    "Noto Sans CJK KR",
-    "DejaVu Sans",
-]
 
 CATEGORIES = [
     "All",
@@ -59,13 +62,13 @@ CHEATSHEETS = [
     ("Files", "Find largest files in current dir", "du -ah . | sort -rh | head -n 20", "List top 20 largest files and directories sorted by size.", True),
     ("Files", "Live log tailing with follow", "tail -n 50 -f ~/.xsession-errors", "Stream the last 50 lines and follow updates of your X session log.", True),
 
-    ("Networking", "Show IP addresses concisely", "ip -br addr", "Compact color/brief summary of every network interface and assigned IP.", True),
-    ("Networking", "Inspect listening TCP/UDP sockets", "ss -tulnp", "Show listening TCP/UDP ports and bound process info.", True),
+    ("Networking", "Show IP addresses concisely", "ip -br addr", "Compact brief summary of every network interface and assigned IP.", True),
+    ("Networking", "Inspect listening & active sockets", "ss -tunap", "Show listening and established TCP/UDP sockets with process names.", True),
     ("Networking", "Show default gateway & routing table", "ip route", "Display kernel IP routing table and default gateway.", True),
     ("Networking", "Query DNS records with dig", "dig +short A debian.org", "Perform a concise DNS A-record lookup using dig.", True),
     ("Networking", "Scan local subnet ports (fast)", "nmap -sT -F 127.0.0.1", "TCP connect scan of top 100 common ports on localhost.", True),
     ("Networking", "Live traceroute with mtr report", "mtr -r -c 5 1.1.1.1", "Run 5-cycle ping+traceroute path quality report to 1.1.1.1.", True),
-    ("Networking", "Fetch HTTP response headers", "curl -ILs https://example.com | head -n 20", "Inspect HTTP status and response headers following redirects.", True),
+    ("Networking", "Inspect WireGuard tunnel status", "sudo wg show", "Display active WireGuard interfaces, endpoints, and handshakes.", True),
     ("Networking", "Check NetworkManager devices", "nmcli dev status", "Display status of Wi-Fi and Ethernet interfaces managed by NetworkManager.", True),
 
     ("Git", "Compact branch & commit graph", "git log --oneline --graph --decorate -n 20", "Show last 20 commits as a readable branch graph.", True),
@@ -75,7 +78,7 @@ CHEATSHEETS = [
     ("Git", "Undo last commit keeping changes staged", "git reset --soft HEAD~1", "Move branch pointer back one commit without losing indexed edits.", True),
     ("Git", "Show remote tracking URLs", "git remote -v", "List configured Git fetch and push remote URLs.", True),
 
-    ("Permissions", "Make script executable (user/group/other)", "chmod +x script.sh", "Add execute bit to a script or binary.", True),
+    ("Permissions", "Make script executable", "chmod +x script.sh", "Add execute bit to a script or binary.", True),
     ("Permissions", "Secure private SSH key permissions", "chmod 600 ~/.ssh/id_ed25519", "Restrict private key read/write solely to owner (required by OpenSSH).", True),
     ("Permissions", "Inspect file owner, mode, timestamps", "stat /etc/passwd", "Print detailed inode metadata, octal mode, UID/GID, and timestamps.", True),
     ("Permissions", "Check current user UID & groups", "id", "Display current user ID, primary group, and supplementary groups.", True),
@@ -83,7 +86,8 @@ CHEATSHEETS = [
     ("Permissions", "Verify sudoers syntax safely", "sudo visudo -c", "Check /etc/sudoers and /etc/sudoers.d/* for syntax errors.", True),
 
     ("Systemd", "List failed system services", "systemctl --failed", "Show any systemd units currently in failed state.", True),
-    ("Systemd", "Check PipeWire & WirePlumber user audio", "systemctl --user status pipewire pipewire-pulse wireplumber", "Inspect user audio daemon health on Vice OS.", True),
+    ("Systemd", "Check PipeWire & WirePlumber audio", "systemctl --user status pipewire pipewire-pulse wireplumber", "Inspect user audio daemon health on Vice OS.", True),
+    ("Systemd", "Sync host clock & timezone status", "vice-timesync --status", "Check VirtualBox host time sync, Chrony status, and active timezone.", True),
     ("Systemd", "Tail system errors from current boot", "journalctl -p err -b -n 40 --no-pager", "Read the latest 40 error-priority kernel/system logs from this boot.", True),
     ("Systemd", "Analyze boot time bottlenecks", "systemd-analyze blame | head -n 20", "List the slowest units during system boot.", True),
     ("Systemd", "Check active timers", "systemctl list-timers --all", "Display scheduled systemd timers and next run timestamps.", True),
@@ -96,124 +100,18 @@ CHEATSHEETS = [
 
     ("Security", "Check UFW firewall rules", "sudo ufw status verbose", "Display Uncomplicated Firewall status, default policy, and active rules.", True),
     ("Security", "Encrypt a file with OpenSSL AES-256", "openssl enc -aes-256-cbc -pbkdf2 -salt -in secret.txt -out secret.txt.enc", "Encrypt file using AES-256-CBC and PBKDF2 key derivation.", True),
-    ("Security", "Decrypt an OpenSSL AES-256 file", "openssl enc -d -aes-256-cbc -pbkdf2 -in secret.txt.enc -out secret.txt", "Decrypt an encrypted file created with Vice Vault or OpenSSL.", True),
+    ("Security", "Strip EXIF/GPS metadata from photo", "exiftool -all= photo.jpg", "Remove embedded EXIF, GPS, and camera metadata in place.", True),
     ("Security", "Compute SHA-256 checksum", "sha256sum file.iso", "Calculate SHA-256 digest of a file or ISO image.", True),
     ("Security", "Run Lynis quick system security audit", "sudo lynis audit system --quick", "Perform automated security hardening audit on Debian/Vice OS.", True),
     ("Security", "List GPG public & secret keys", "gpg --list-keys", "Show imported OpenPGP keys in your local keyring.", True),
 
     ("Shortcuts", "Open Vice OS Start Menu", "Super (Windows Key) / Alt+F1", "Instant Start Menu popup with categories, search, and Places.", False),
-    ("Shortcuts", "Launch Vice Tool Hub (X / 500)", "python3 /opt/vice-os/vice_tool_hub.py", "Open the Leonida Arsenal explorer for all 100+ tools.", True),
-    ("Shortcuts", "Launch interactive CLI tool wrapper", "vice-run-tool 'htop' htop", "Open any CLI/TUI tool with GTA VI banner and hold-open behavior.", True),
+    ("Shortcuts", "Launch Vice Tool Hub (250 / 500)", "python3 /opt/vice-os/vice_tool_hub.py", "Open the Vice Tool Hub explorer for all 250 curated tools.", True),
+    ("Shortcuts", "Launch interactive CLI tool wrapper", "vice-run-tool 'htop' htop", "Open any CLI/TUI tool with clean banner and hold-open prompt.", True),
     ("Shortcuts", "Close active window / Switch windows", "Alt+F4  |  Alt+Tab", "Openbox window close and switcher hotkeys.", False),
     ("Shortcuts", "Open Run Command / Terminal", "Alt+F2  |  Ctrl+Alt+T", "Quick launch Openbox run dialog or xfce4-terminal.", False),
     ("Shortcuts", "Check PipeWire audio status", "wpctl status", "Display WirePlumber sinks, sources, streams, and default volume.", True),
 ]
-
-STYLE = """
-QMainWindow, QWidget#RootWidget {
-    background-color: #120e1e;
-    color: #f4f1fa;
-    font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
-    font-size: 13px;
-}
-QFrame#Banner {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #1d1433, stop:0.6 #2e153d, stop:1 #16223a);
-    border: 1px solid #ff4da6;
-    border-radius: 12px;
-}
-QLineEdit {
-    background-color: #1b152e;
-    color: #f4f1fa;
-    border: 1px solid #3c2e5e;
-    border-radius: 8px;
-    padding: 8px 12px;
-}
-QLineEdit:focus {
-    border-color: #00e5ff;
-}
-QPushButton#CatBtn {
-    background-color: #1b152e;
-    color: #cfc6e6;
-    border: 1px solid #322650;
-    border-radius: 8px;
-    padding: 6px 10px;
-    font-size: 12px;
-    font-weight: bold;
-}
-QPushButton#CatBtn:checked {
-    background-color: #361f47;
-    color: #ffd166;
-    border-color: #ff4da6;
-}
-QListWidget {
-    background-color: #161126;
-    color: #f4f1fa;
-    border: 1px solid #382b57;
-    border-radius: 10px;
-    padding: 6px;
-}
-QListWidget::item {
-    padding: 8px 10px;
-    border-radius: 6px;
-}
-QListWidget::item:selected {
-    background-color: #311d46;
-    color: #ffd166;
-    border: 1px solid #ff4da6;
-}
-QPlainTextEdit {
-    background-color: #0d0a18;
-    color: #00e5ff;
-    border: 1px solid #382b57;
-    border-radius: 8px;
-    font-family: "Noto Sans Mono CJK JP", "Noto Sans Mono CJK SC", "DejaVu Sans Mono", monospace;
-    font-size: 13px;
-    padding: 10px;
-}
-QPushButton {
-    background-color: #1f1836;
-    color: #00e5ff;
-    border: 1px solid #00e5ff;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00e5ff;
-    color: #120e1e;
-}
-QPushButton#RunBtn {
-    color: #ffd166;
-    border-color: #ff8a5b;
-    background-color: #341b42;
-}
-QPushButton#RunBtn:hover {
-    background-color: #ff8a5b;
-    color: #120e1e;
-}
-"""
-
-
-def _configure_cjk_fonts(app: QApplication) -> None:
-    for fam in ("Noto Sans", "DejaVu Sans", "Sans", "sans-serif"):
-        QFont.insertSubstitutions(fam, CJK_FONTS)
-    font = QFont("Noto Sans", 10)
-    if hasattr(font, "setFamilies"):
-        font.setFamilies(CJK_FONTS)
-    app.setFont(font)
-
-
-def _load_app_icon() -> QIcon:
-    for path in (
-        "/usr/share/icons/hicolor/64x64/apps/vice-tool-cheatsheets.png",
-        "/usr/share/pixmaps/vice-tool-cheatsheets.png",
-    ):
-        if os.path.isfile(path):
-            pm = QPixmap(path)
-            if not pm.isNull():
-                return QIcon(pm)
-    return QIcon.fromTheme("utilities-terminal")
 
 
 class ViceCommandDeckApp(QMainWindow):
@@ -221,10 +119,10 @@ class ViceCommandDeckApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Vice Command Deck — Linux & Vice OS Cheatsheets")
-        self.resize(940, 620)
-        self.setMinimumSize(740, 500)
-        icon = _load_app_icon()
+        self.setWindowTitle("Vice Command Deck — Vice OS")
+        self.resize(960, 640)
+        self.setMinimumSize(760, 520)
+        icon = load_tool_icon("vice-tool-cheatsheets", "utilities-terminal")
         if not icon.isNull():
             self.setWindowIcon(icon)
 
@@ -243,20 +141,18 @@ class ViceCommandDeckApp(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 14)
         layout.setSpacing(12)
 
-        banner = QFrame(root)
-        banner.setObjectName("Banner")
-        bl = QVBoxLayout(banner)
-        bl.setContentsMargins(16, 12, 16, 12)
-        title = QLabel("VICE COMMAND DECK · INTERACTIVE CHEATSHEETS", banner)
-        title.setStyleSheet("color: #ffd166; font-size: 18px; font-weight: bold; background: transparent;")
-        bl.addWidget(title)
-        sub = QLabel("Searchable Linux & Vice OS reference — edit command args, Copy, or Run in xfce4-terminal", banner)
-        sub.setStyleSheet("color: #cfc6e6; font-size: 12px; background: transparent;")
-        bl.addWidget(sub)
-        layout.addWidget(banner)
+        header = make_header(
+            title="Vice Command Deck",
+            subtitle="Searchable Linux & Vice OS reference — edit flags, copy, or run in terminal",
+            icon_name="vice-tool-cheatsheets",
+            badge_text=f"{len(CHEATSHEETS)} RECIPES",
+            badge_variant="neutral",
+            parent=root,
+        )
+        layout.addWidget(header)
 
         self._search = QLineEdit(root)
-        self._search.setPlaceholderText("Search commands, flags, packages, or keywords (e.g. 'rg', 'docker', 'pipewire', 'tar')...")
+        self._search.setPlaceholderText("Search commands, flags, packages, or keywords (e.g. 'rg', 'ufw', 'pipewire', 'tar')...")
         self._search.setClearButtonEnabled(True)
         self._search.textChanged.connect(self._populate_list)
         layout.addWidget(self._search)
@@ -265,8 +161,9 @@ class ViceCommandDeckApp(QMainWindow):
         cat_row.setSpacing(6)
         for cat in CATEGORIES:
             btn = QPushButton(cat, root)
-            btn.setObjectName("CatBtn")
+            btn.setObjectName("CatTab")
             btn.setCheckable(True)
+            btn.setFocusPolicy(Qt.NoFocus)
             btn.setChecked(cat == "All")
             btn.clicked.connect(lambda _=False, c=cat: self._set_category(c))
             self._cat_buttons[cat] = btn
@@ -281,45 +178,45 @@ class ViceCommandDeckApp(QMainWindow):
         self._list.currentItemChanged.connect(self._on_item_changed)
         mid.addWidget(self._list, 3)
 
-        detail_col = QVBoxLayout()
-        detail_col.setSpacing(10)
-
-        self._detail_title = QLabel("Select a command", root)
-        self._detail_title.setStyleSheet("color: #ff8a5b; font-size: 16px; font-weight: bold;")
+        detail_card = make_card(title="Command Details", parent=root)
+        self._detail_title = QLabel("Select a command", detail_card)
+        self._detail_title.setStyleSheet(
+            f"color: {COLORS['accent_peach']}; font-size: 15px; font-weight: bold;"
+        )
         self._detail_title.setWordWrap(True)
-        detail_col.addWidget(self._detail_title)
+        detail_card.body_layout.addWidget(self._detail_title)
 
-        self._detail_desc = QLabel("", root)
+        self._detail_desc = QLabel("", detail_card)
         self._detail_desc.setWordWrap(True)
-        self._detail_desc.setStyleSheet("color: #d6cee8;")
-        detail_col.addWidget(self._detail_desc)
+        self._detail_desc.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        detail_card.body_layout.addWidget(self._detail_desc)
 
-        cmd_hdr = QLabel("Editable Command:", root)
-        cmd_hdr.setStyleSheet("color: #cfc6e6; font-weight: bold;")
-        detail_col.addWidget(cmd_hdr)
+        cmd_hdr = QLabel("Editable Command", detail_card)
+        cmd_hdr.setObjectName("SectionTitle")
+        detail_card.body_layout.addWidget(cmd_hdr)
 
-        self._cmd_edit = QPlainTextEdit(root)
+        self._cmd_edit = QPlainTextEdit(detail_card)
         self._cmd_edit.setMaximumHeight(110)
-        detail_col.addWidget(self._cmd_edit)
+        detail_card.body_layout.addWidget(self._cmd_edit)
 
         btn_row = QHBoxLayout()
-        copy_btn = QPushButton("Copy Command", root)
+        btn_row.setSpacing(8)
+        copy_btn = make_button("Copy Command", variant="secondary", parent=detail_card)
         copy_btn.clicked.connect(self._copy_command)
         btn_row.addWidget(copy_btn)
 
-        self._run_btn = QPushButton("Run in Terminal", root)
-        self._run_btn.setObjectName("RunBtn")
+        self._run_btn = make_button("Run in Terminal", variant="primary", parent=detail_card)
         self._run_btn.clicked.connect(self._run_in_terminal)
         btn_row.addWidget(self._run_btn)
-        detail_col.addLayout(btn_row)
+        detail_card.body_layout.addLayout(btn_row)
 
-        self._status_lbl = QLabel("Ready.", root)
-        self._status_lbl.setStyleSheet("color: #64ffda;")
+        self._status_lbl = QLabel("Ready.", detail_card)
+        self._status_lbl.setStyleSheet(f"color: {COLORS['accent_aqua']};")
         self._status_lbl.setWordWrap(True)
-        detail_col.addWidget(self._status_lbl)
-        detail_col.addStretch(1)
+        detail_card.body_layout.addWidget(self._status_lbl)
+        detail_card.body_layout.addStretch(1)
 
-        mid.addLayout(detail_col, 2)
+        mid.addWidget(detail_card, 2)
         layout.addLayout(mid, 1)
 
     def _set_category(self, cat: str) -> None:
@@ -358,7 +255,7 @@ class ViceCommandDeckApp(QMainWindow):
         self._cmd_edit.setPlainText(cmd)
         self._run_btn.setEnabled(bool(runnable))
         self._status_lbl.setText(
-            "Editable — customize paths/flags before clicking Copy or Run."
+            "Editable — customize paths or flags before clicking Copy or Run."
             if runnable else "Desktop hotkey shortcut — press keys directly."
         )
 
@@ -397,8 +294,7 @@ class ViceCommandDeckApp(QMainWindow):
 def main() -> None:
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication(sys.argv)
-    _configure_cjk_fonts(app)
-    app.setStyleSheet(STYLE)
+    apply_app_theme(app)
     win = ViceCommandDeckApp()
     win.show()
     sys.exit(app.exec_())

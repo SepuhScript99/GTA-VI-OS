@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-GTA VI OS (Vice OS) Asset Generator
-Generates authentic Leonida/Vice City sunset wallpapers and a custom GTA VI x Debian
-swirl emblem procedurally using Pillow.
+GTA VI OS (Vice OS) Asset Generator.
+Generates an authentic, atmospheric Leonida coastal dusk wallpaper and a clean
+modern GTA VI x Debian swirl emblem using Pillow (zero cheesy retro grid clutter).
 """
 
-import os
-import sys
-import math
 import argparse
-from PIL import Image, ImageDraw, ImageFilter
+import math
+import os
+import random
+import sys
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 
 def _lerp_color(c1: tuple, c2: tuple, t: float) -> tuple:
@@ -18,7 +19,7 @@ def _lerp_color(c1: tuple, c2: tuple, t: float) -> tuple:
 
 
 def _vertical_gradient(width: int, height: int, stops: list) -> Image.Image:
-    """Build a vertical RGBA/RGB gradient image across normalized stops [(pos, (r,g,b)), ...]."""
+    """Build a smooth vertical RGBA/RGB gradient image from normalized color stops."""
     mode = "RGBA" if len(stops[0][1]) == 4 else "RGB"
     strip = Image.new(mode, (1, height))
     pixels = strip.load()
@@ -30,121 +31,191 @@ def _vertical_gradient(width: int, height: int, stops: list) -> Image.Image:
             p1, c1 = stops[idx + 1]
             if p0 <= pos <= p1:
                 local_t = (pos - p0) / max(1e-6, p1 - p0)
+                local_t = local_t * local_t * (3.0 - 2.0 * local_t)
                 color = _lerp_color(c0, c1, local_t)
                 break
         pixels[0, y] = color
     return strip.resize((width, height), Image.BILINEAR)
 
 
-def _draw_palm_tree(draw: ImageDraw.ImageDraw, base_x: float, base_y: float,
-                    top_x: float, top_y: float, scale: float, color: tuple) -> None:
-    """Draw a silhouetted coastal coconut palm tree with curved trunk and arched fronds."""
-    # Curved trunk polygon
-    steps = 18
+def _horizontal_gradient(width: int, height: int, stops: list) -> Image.Image:
+    """Build a smooth horizontal RGBA/RGB gradient image from normalized color stops."""
+    mode = "RGBA" if len(stops[0][1]) == 4 else "RGB"
+    strip = Image.new(mode, (width, 1))
+    pixels = strip.load()
+    for x in range(width):
+        pos = x / max(1, width - 1)
+        color = stops[-1][1]
+        for idx in range(len(stops) - 1):
+            p0, c0 = stops[idx]
+            p1, c1 = stops[idx + 1]
+            if p0 <= pos <= p1:
+                local_t = (pos - p0) / max(1e-6, p1 - p0)
+                local_t = local_t * local_t * (3.0 - 2.0 * local_t)
+                color = _lerp_color(c0, c1, local_t)
+                break
+        pixels[x, 0] = color
+    return strip.resize((width, height), Image.BILINEAR)
+
+
+def _draw_palm_tree(
+    draw: ImageDraw.ImageDraw,
+    base_x: float,
+    base_y: float,
+    top_x: float,
+    top_y: float,
+    scale: float,
+    color: tuple,
+) -> None:
+    """Draw a fluid, natural coastal coconut palm silhouette with sweeping curved fronds."""
+    steps = 26
     left_pts = []
     right_pts = []
+    ctrl_x = (base_x + top_x) / 2.0 + (top_x - base_x) * 0.28
+    ctrl_y = (base_y + top_y) / 2.0 + 35 * scale
     for i in range(steps + 1):
         t = i / steps
-        # Quadratic bezier control point bows inward smoothly
-        ctrl_x = (base_x + top_x) / 2.0 + (top_x - base_x) * 0.22
-        ctrl_y = (base_y + top_y) / 2.0
         bx = (1 - t) ** 2 * base_x + 2 * (1 - t) * t * ctrl_x + t ** 2 * top_x
         by = (1 - t) ** 2 * base_y + 2 * (1 - t) * t * ctrl_y + t ** 2 * top_y
-        half_w = (15.0 * (1.0 - 0.65 * t)) * scale
+        half_w = (12.5 * (1.0 - 0.66 * t)) * scale
         left_pts.append((bx - half_w, by))
         right_pts.append((bx + half_w, by))
     draw.polygon(left_pts + list(reversed(right_pts)), fill=color)
 
-    # Fronds radiating from crown (top_x, top_y)
-    frond_angles = [-165, -135, -100, -58, -22, 14, 42, 160]
-    for idx, deg in enumerate(frond_angles):
+    # Crown frond arcs: (start_angle_deg, droop_px, length_px)
+    fronds = [
+        (-172, 92, 182),
+        (-146, 86, 174),
+        (-116, 70, 152),
+        (-82, 54, 134),
+        (-44, 62, 160),
+        (-12, 82, 176),
+        (16, 98, 165),
+        (158, 95, 146),
+    ]
+    for deg, droop, base_len in fronds:
         ang = math.radians(deg)
-        length = (165 if idx % 2 == 0 else 138) * scale
-        droop = (52 if abs(deg) > 110 else 44) * scale
+        length = base_len * scale
+        d_px = droop * scale
         end_x = top_x + math.cos(ang) * length
-        end_y = top_y + math.sin(ang) * length + droop
-        mid_x = top_x + math.cos(ang) * (length * 0.52)
-        mid_y = top_y + math.sin(ang) * (length * 0.45)
+        end_y = top_y + math.sin(ang) * length + d_px
+        mid_x = top_x + math.cos(ang) * (length * 0.50)
+        mid_y = top_y + math.sin(ang) * (length * 0.42) + d_px * 0.14
 
-        # Spine
-        draw.line([(top_x, top_y), (mid_x, mid_y), (end_x, end_y)], fill=color, width=max(2, int(4 * scale)))
-        # Leaflets hanging along the frond
-        for f in range(3, 18):
-            ft = f / 18.0
+        spine_pts = []
+        for k in range(25):
+            st = k / 24.0
+            sx = (1 - st) ** 2 * top_x + 2 * (1 - st) * st * mid_x + st ** 2 * end_x
+            sy = (1 - st) ** 2 * top_y + 2 * (1 - st) * st * mid_y + st ** 2 * end_y
+            spine_pts.append((sx, sy))
+        draw.line(spine_pts, fill=color, width=max(2, int(3.2 * scale)))
+
+        # Swept, tapering palm leaflets curving downward along the frond direction
+        dir_x = 1.0 if end_x >= top_x else -1.0
+        for f in range(3, 23):
+            ft = f / 24.0
             lx = (1 - ft) ** 2 * top_x + 2 * (1 - ft) * ft * mid_x + ft ** 2 * end_x
             ly = (1 - ft) ** 2 * top_y + 2 * (1 - ft) * ft * mid_y + ft ** 2 * end_y
-            leaf_len = math.sin(ft * math.pi) * 42.0 * scale
-            dx_dir = 1.0 if end_x >= top_x else -1.0
+            l_len = (math.sin(ft * math.pi) ** 0.78) * 38.0 * scale
+            tip_x = lx + dir_x * l_len * 0.52
+            tip_y = ly + l_len * 0.92
+            ctrl_lx = lx + dir_x * l_len * 0.36
+            ctrl_ly = ly + l_len * 0.34
+            w_base = max(1.5, 3.0 * scale * (1.0 - 0.55 * ft))
             draw.polygon([
-                (lx, ly),
-                (lx + dx_dir * leaf_len * 0.35, ly + leaf_len * 0.72),
-                (lx + dx_dir * leaf_len * 0.08, ly + leaf_len),
-                (lx - dx_dir * leaf_len * 0.12, ly + 4 * scale),
+                (lx - dir_x * w_base * 0.3, ly),
+                (ctrl_lx + dir_x * w_base, ctrl_ly),
+                (tip_x, tip_y),
+                (ctrl_lx - dir_x * w_base * 0.4, ctrl_ly + 2.0 * scale),
             ], fill=color)
 
 
 def create_gta6_debian_logo(size: int = 512, with_badge: bool = True) -> Image.Image:
     """
-    Generate the custom GTA VI x Debian Swirl emblem on a transparent canvas.
-    Combines the Debian spiral swirl in a Vice City sunset gradient with a bold 'VI' badge.
+    Generate the refined GTA VI x Debian Swirl emblem on a transparent canvas.
+    Combines a satin slate squircle-badge, coral-to-gold Debian swirl, and crisp 'VI' mark.
     """
     scale = 4
     s = size * scale
 
     badge = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     sunset_grad = _vertical_gradient(s, s, [
-        (0.0, (255, 194, 120, 255)),
-        (0.32, (255, 107, 139, 255)),
-        (0.65, (255, 46, 151, 255)),
-        (1.0, (140, 59, 255, 255)),
+        (0.0, (247, 200, 115, 255)),   # #F7C873 warm gold
+        (0.45, (255, 154, 98, 255)),   # #FF9A62 sunset peach
+        (1.0, (255, 94, 126, 255)),    # #FF5E7E coral-pink
     ])
+
     if with_badge:
-        badge_draw = ImageDraw.Draw(badge)
-        pad = int(s * 0.04)
-        badge_draw.ellipse([pad, pad, s - pad, s - pad], fill=(18, 12, 34, 238))
+        pad = int(s * 0.06)
+        rad = int(s * 0.24)
+        mask = Image.new("L", (s, s), 0)
+        ImageDraw.Draw(mask).rounded_rectangle(
+            [pad, pad, s - pad, s - pad], radius=rad, fill=255
+        )
+        satin_fill = _vertical_gradient(s, s, [
+            (0.0, (28, 32, 50, 248)),   # #1C2032 satin top
+            (0.5, (21, 24, 38, 248)),   # #151826 core slate
+            (1.0, (14, 16, 26, 248)),   # #0E101A deep base
+        ])
+        badge.paste(satin_fill, (0, 0), mask)
 
-        ring_mask = Image.new("L", (s, s), 0)
-        ring_draw = ImageDraw.Draw(ring_mask)
-        ring_w = max(4, int(s * 0.022))
-        ring_draw.ellipse([pad, pad, s - pad, s - pad], outline=230, width=ring_w)
-        badge.paste(sunset_grad, (0, 0), ring_mask)
+        # Clean structural hairline border
+        ring_w = max(4, int(s * 0.016))
+        rim_base = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+        ImageDraw.Draw(rim_base).rounded_rectangle(
+            [pad, pad, s - pad, s - pad],
+            radius=rad,
+            outline=(48, 54, 78, 225),
+            width=ring_w,
+        )
+        badge = Image.alpha_composite(badge, rim_base)
 
-    # Debian open spiral swirl mask (dense steps so tapered tail is razor-smooth)
+        # Crisp coral-peach-gold top rim sheen (pure sunset color without muddy blending)
+        top_sheen_mask = Image.new("L", (s, s), 0)
+        ImageDraw.Draw(top_sheen_mask).rounded_rectangle(
+            [pad, pad, s - pad, s - pad], radius=rad, outline=255, width=ring_w
+        )
+        fade = _vertical_gradient(s, s, [
+            (0.0, (235, 235, 235, 235)),
+            (0.32, (90, 90, 90, 90)),
+            (0.65, (0, 0, 0, 0)),
+            (1.0, (0, 0, 0, 0)),
+        ]).convert("L")
+        top_sheen_mask = ImageChops.multiply(top_sheen_mask, fade)
+        rim_grad = _horizontal_gradient(s, s, [
+            (0.0, (255, 94, 126, 255)),
+            (0.5, (255, 154, 98, 255)),
+            (1.0, (247, 200, 115, 255)),
+        ])
+        sheen_layer = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+        sheen_layer.paste(rim_grad, (0, 0), top_sheen_mask)
+        badge = Image.alpha_composite(badge, sheen_layer)
+
+    # Debian open spiral swirl mask centered cleanly
     swirl_mask = Image.new("L", (s, s), 0)
     swirl_draw = ImageDraw.Draw(swirl_mask)
-    cx, cy = s * 0.48, s * 0.47
+    cx, cy = s * 0.455, s * 0.455
     points = 960
     for i in range(points):
         t = i / (points - 1)
-        # Tight center curl opening outward counter-clockwise, ending lower-left
-        theta = 0.55 + t * (2.95 * math.pi)
-        r = s * (0.015 + 0.315 * (t ** 1.05))
+        theta = 0.55 + t * (2.92 * math.pi)
+        r = s * (0.014 + 0.285 * (t ** 1.05))
         px = cx + r * math.cos(theta)
         py = cy + r * math.sin(theta)
         if t < 0.72:
-            half_w = s * (0.010 + 0.036 * math.sin((t / 0.72) * (math.pi * 0.65)))
+            half_w = s * (0.011 + 0.035 * math.sin((t / 0.72) * (math.pi * 0.65)))
         else:
             tail_t = (t - 0.72) / 0.28
-            half_w = s * (0.041 * (1.0 - tail_t ** 0.85) + 0.004)
-        swirl_draw.ellipse([px - half_w, py - half_w, px + half_w, py + half_w], fill=255)
+            half_w = s * (0.040 * (1.0 - tail_t ** 0.85) + 0.004)
+        swirl_draw.ellipse(
+            [px - half_w, py - half_w, px + half_w, py + half_w], fill=255
+        )
 
-    # Outer Vice neon glow behind swirl
-    glow_layer = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    glow_fill = _vertical_gradient(s, s, [
-        (0.0, (255, 138, 91, 170)),
-        (0.5, (255, 46, 151, 190)),
-        (1.0, (140, 59, 255, 170)),
-    ])
-    glow_layer.paste(glow_fill, (0, 0), swirl_mask)
-    glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(radius=int(18 * scale)))
-    badge = Image.alpha_composite(badge, glow_layer)
-
-    # Crisp gradient-filled Debian swirl
     swirl_layer = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     swirl_layer.paste(sunset_grad, (0, 0), swirl_mask)
     badge = Image.alpha_composite(badge, swirl_layer)
 
-    # Bold geometric 'VI' Roman numeral tucked cleanly at bottom-right
+    # Editorial geometric 'VI' Roman numeral tucked cleanly at bottom-right
     vi_layer = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     vi_draw = ImageDraw.Draw(vi_layer)
 
@@ -152,32 +223,34 @@ def create_gta6_debian_logo(size: int = 512, with_badge: bool = True) -> Image.I
         return [(x * s, y * s) for (x, y) in pts]
 
     v_poly = _scaled([
-        (0.54, 0.56), (0.615, 0.56), (0.665, 0.745),
-        (0.715, 0.56), (0.79, 0.56), (0.70, 0.84), (0.63, 0.84),
+        (0.52, 0.55), (0.59, 0.55), (0.64, 0.72),
+        (0.69, 0.55), (0.76, 0.55), (0.675, 0.81), (0.605, 0.81),
     ])
     i_poly = _scaled([
-        (0.815, 0.56), (0.885, 0.56), (0.885, 0.84), (0.815, 0.84),
+        (0.785, 0.55), (0.85, 0.55), (0.85, 0.81), (0.785, 0.81),
     ])
 
-    # Dark violet silhouette border + subtle pink-peach glow around VI
-    stroke_w = max(4, int(s * 0.024))
+    halo_w = max(4, int(s * 0.026))
+    halo_col = (18, 20, 32, 255)
     for poly in (v_poly, i_poly):
-        vi_draw.polygon(poly, fill=(18, 12, 34, 255))
+        vi_draw.polygon(poly, fill=halo_col)
         for j in range(len(poly)):
             p1 = poly[j]
             p2 = poly[(j + 1) % len(poly)]
-            vi_draw.line([p1, p2], fill=(18, 12, 34, 255), width=stroke_w)
-            vi_draw.ellipse([p1[0] - stroke_w / 2, p1[1] - stroke_w / 2,
-                             p1[0] + stroke_w / 2, p1[1] + stroke_w / 2], fill=(18, 12, 34, 255))
+            vi_draw.line([p1, p2], fill=halo_col, width=halo_w)
+            vi_draw.ellipse(
+                [p1[0] - halo_w / 2, p1[1] - halo_w / 2,
+                 p1[0] + halo_w / 2, p1[1] + halo_w / 2],
+                fill=halo_col,
+            )
 
     vi_mask = Image.new("L", (s, s), 0)
     vi_mask_draw = ImageDraw.Draw(vi_mask)
     vi_mask_draw.polygon(v_poly, fill=255)
     vi_mask_draw.polygon(i_poly, fill=255)
     vi_fill = _vertical_gradient(s, s, [
-        (0.54, (255, 255, 255, 255)),
-        (0.72, (255, 224, 236, 255)),
-        (0.86, (255, 165, 195, 255)),
+        (0.55, (245, 246, 250, 255)),
+        (0.81, (226, 230, 242, 255)),
     ])
     vi_layer.paste(vi_fill, (0, 0), vi_mask)
     badge = Image.alpha_composite(badge, vi_layer)
@@ -185,119 +258,196 @@ def create_gta6_debian_logo(size: int = 512, with_badge: bool = True) -> Image.I
     return badge.resize((size, size), Image.LANCZOS)
 
 
-def create_wallpaper(output_dir: str = "/usr/share/backgrounds") -> None:
-    """Generate a 1080p GTA VI Vice City sunset + Debian emblem wallpaper."""
-    width, height = 1920, 1080
-    horizon_y = int(height * 0.64)
+def _draw_art_deco_tower(
+    draw: ImageDraw.ImageDraw,
+    x: int,
+    w: int,
+    h: int,
+    horizon_y: int,
+    color: tuple,
+    spire: bool = False,
+) -> None:
+    """Draw a stepped modern Miami / Art Deco tower silhouette."""
+    draw.rectangle([x, horizon_y - h, x + w, horizon_y], fill=color)
+    # Stepped crown
+    crown_w = int(w * 0.64)
+    crown_h = max(8, int(h * 0.16))
+    cx0 = x + (w - crown_w) // 2
+    draw.rectangle([cx0, horizon_y - h - crown_h, cx0 + crown_w, horizon_y - h], fill=color)
+    if spire:
+        mx = x + w // 2
+        draw.line(
+            [(mx, horizon_y - h - crown_h - 14), (mx, horizon_y - h - crown_h)],
+            fill=color,
+            width=2,
+        )
 
-    # 1. Leonida twilight-to-sunset sky gradient
+
+def create_wallpaper(output_dir: str = "/usr/share/backgrounds") -> None:
+    """Generate a cinematic 1080p GTA VI Leonida coastal dusk wallpaper."""
+    width, height = 1920, 1080
+    horizon_y = int(height * 0.65)
+
+    # 1. Atmospheric Leonida dusk sky
     sky = _vertical_gradient(width, horizon_y, [
-        (0.0, (17, 10, 36)),
-        (0.28, (54, 22, 92)),
-        (0.58, (148, 36, 114)),
-        (0.84, (235, 92, 130)),
-        (1.0, (255, 158, 96)),
+        (0.0, (11, 13, 22)),
+        (0.30, (23, 26, 46)),
+        (0.56, (58, 34, 62)),
+        (0.77, (136, 56, 82)),
+        (0.91, (216, 110, 92)),
+        (1.0, (245, 178, 122)),
     ])
-    img = Image.new("RGBA", (width, height), (14, 9, 28, 255))
+    img = Image.new("RGBA", (width, height), (11, 13, 22, 255))
     img.paste(sky, (0, 0))
 
-    # 2. Tropical sunset sun + horizon haze
-    sun_cx, sun_cy = width // 2, horizon_y - 36
-    sun_r = 215
-    sun_halo = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    halo_draw = ImageDraw.Draw(sun_halo)
-    halo_draw.ellipse(
-        [sun_cx - sun_r - 90, sun_cy - sun_r - 90, sun_cx + sun_r + 90, sun_cy + sun_r + 90],
-        fill=(255, 90, 145, 95)
+    # 2. Setting sun & diffused coastal humidity glow (right-of-center)
+    sun_cx = int(width * 0.57)
+    sun_cy = horizon_y - 24
+    sun_r = 126
+
+    sun_glow = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    glow_draw = ImageDraw.Draw(sun_glow)
+    glow_draw.ellipse(
+        [sun_cx - 460, sun_cy - 280, sun_cx + 460, sun_cy + 250],
+        fill=(242, 138, 104, 66),
     )
-    sun_halo = sun_halo.filter(ImageFilter.GaussianBlur(radius=55))
-    img = Image.alpha_composite(img, sun_halo)
+    glow_draw.ellipse(
+        [sun_cx - 240, sun_cy - 170, sun_cx + 240, sun_cy + 165],
+        fill=(255, 206, 138, 92),
+    )
+    sun_glow = sun_glow.filter(ImageFilter.GaussianBlur(radius=76))
+    img = Image.alpha_composite(img, sun_glow)
 
     sun_mask = Image.new("L", (width, height), 0)
     sun_draw = ImageDraw.Draw(sun_mask)
-    sun_draw.ellipse([sun_cx - sun_r, sun_cy - sun_r, sun_cx + sun_r, sun_cy + sun_r], fill=255)
-    # Retro horizon stripes through lower portion of the sun
-    for s_idx, bar_h in enumerate((4, 6, 8, 10)):
-        bar_y = sun_cy - 20 + s_idx * 24
-        sun_draw.rectangle([sun_cx - sun_r - 10, bar_y, sun_cx + sun_r + 10, bar_y + bar_h], fill=0)
-    # Clip sun at ocean horizon
+    sun_draw.ellipse(
+        [sun_cx - sun_r, sun_cy - sun_r, sun_cx + sun_r, sun_cy + sun_r],
+        fill=255,
+    )
     sun_draw.rectangle([0, horizon_y, width, height], fill=0)
+    sun_mask = sun_mask.filter(ImageFilter.GaussianBlur(radius=2.5))
 
     sun_grad = _vertical_gradient(width, height, [
-        (0.35, (255, 226, 130, 255)),
-        (0.52, (255, 118, 135, 255)),
-        (0.65, (224, 42, 132, 255)),
+        (0.46, (255, 240, 192, 255)),
+        (0.58, (255, 182, 122, 255)),
+        (0.66, (238, 108, 112, 255)),
     ])
     img.paste(sun_grad, (0, 0), sun_mask)
 
-    # 3. Miami skyline silhouettes flanking center
-    draw = ImageDraw.Draw(img)
-    skyline_color = (26, 13, 46, 255)
-    buildings = [
-        (360, 74), (420, 118), (475, 86), (520, 148), (575, 102),
-        (630, 132), (685, 76), (735, 95),
-        (1140, 88), (1195, 138), (1255, 106), (1310, 162), (1375, 114),
-        (1430, 90), (1490, 124), (1550, 78),
-    ]
-    for bx, bh in buildings:
-        draw.rectangle([bx, horizon_y - bh, bx + 48, horizon_y], fill=skyline_color)
-        # Subtle neon window glints
-        for wy in range(horizon_y - bh + 12, horizon_y - 14, 18):
-            if (bx + wy) % 3 == 0:
-                draw.rectangle([bx + 10, wy, bx + 16, wy + 5], fill=(255, 95, 165, 145))
-            if (bx + wy) % 5 == 0:
-                draw.rectangle([bx + 28, wy, bx + 34, wy + 5], fill=(0, 229, 195, 135))
+    # 3. Delicate high-altitude dusk cirrus ribbons (warm rose/amber mist)
+    cirrus = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    cd = ImageDraw.Draw(cirrus)
+    for x0, y0, x1, y1, col in [
+        (460, 420, 1420, 434, (226, 118, 112, 34)),
+        (780, 468, 1740, 484, (244, 152, 116, 40)),
+        (320, 526, 1220, 540, (246, 168, 120, 38)),
+        (920, 566, 1840, 582, (250, 192, 134, 42)),
+    ]:
+        cd.ellipse([x0, y0, x1, y1], fill=col)
+    cirrus = cirrus.filter(ImageFilter.GaussianBlur(radius=20))
+    img = Image.alpha_composite(img, cirrus)
 
-    # 4. Dark tropical ocean + sunset water shimmer
+    # 4. Distant Leonida barrier island & refined downtown skyline (tucked right of sun)
+    skyline = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(skyline)
+    sd.polygon([
+        (0, horizon_y), (420, horizon_y - 5), (960, horizon_y - 10),
+        (1420, horizon_y - 14), (1920, horizon_y - 6), (1920, horizon_y),
+    ], fill=(24, 24, 38, 220))
+
+    skyline_col = (24, 23, 39, 245)
+    towers = [
+        (1240, 36, 28, False), (1274, 58, 34, True), (1314, 44, 30, False),
+        (1350, 82, 40, True), (1396, 56, 32, False), (1434, 96, 44, True),
+        (1484, 68, 36, False), (1526, 46, 30, False), (1562, 74, 38, True),
+        (1606, 50, 32, False),
+    ]
+    rng = random.Random(305)
+    for tx, th, tw, has_spire in towers:
+        _draw_art_deco_tower(sd, tx, tw, th, horizon_y, skyline_col, spire=has_spire)
+        for wy in range(horizon_y - th + 10, horizon_y - 8, 12):
+            for wx in range(tx + 6, tx + tw - 6, 9):
+                if rng.random() < 0.20:
+                    col = (247, 200, 115, 78) if rng.random() < 0.76 else (54, 214, 195, 65)
+                    sd.rectangle([wx, wy, wx + 2, wy + 2], fill=col)
+
+    # Soft horizon haze blending base of distant skyline into dusk air
+    haze_band = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    ImageDraw.Draw(haze_band).rectangle(
+        [0, horizon_y - 26, width, horizon_y + 4],
+        fill=(218, 128, 102, 34),
+    )
+    haze_band = haze_band.filter(ImageFilter.GaussianBlur(radius=14))
+    img = Image.alpha_composite(img, skyline)
+    img = Image.alpha_composite(img, haze_band)
+
+    # 5. Deep coastal ocean + organic golden-coral sun reflection shimmer
     ocean = _vertical_gradient(width, height - horizon_y, [
-        (0.0, (44, 18, 72, 255)),
-        (0.35, (22, 12, 42, 255)),
-        (1.0, (11, 7, 22, 255)),
+        (0.0, (30, 27, 46, 255)),
+        (0.24, (19, 20, 34, 255)),
+        (0.62, (12, 14, 24, 255)),
+        (1.0, (8, 9, 16, 255)),
     ])
     img.paste(ocean, (0, horizon_y))
+
+    shimmer_glow = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    sh_d = ImageDraw.Draw(shimmer_glow)
+    sh_d.polygon([
+        (sun_cx - 105, horizon_y), (sun_cx + 105, horizon_y),
+        (sun_cx + 205, height), (sun_cx - 205, height),
+    ], fill=(240, 144, 112, 36))
+    shimmer_glow = shimmer_glow.filter(ImageFilter.GaussianBlur(radius=38))
+    img = Image.alpha_composite(img, shimmer_glow)
+
+    ripples = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    rd = ImageDraw.Draw(ripples)
+    for i in range(1, 52):
+        t = i / 52.0
+        ry = horizon_y + int((t ** 1.45) * (height - horizon_y - 54))
+        spread = 88 + 145 * t
+        segments = 2 + int(rng.random() * 3)
+        for _ in range(segments):
+            cx_seg = sun_cx + int((rng.random() - 0.5) * spread * 1.4)
+            seg_len = int((18 + rng.random() * 68) * (1.0 - 0.45 * t))
+            alpha = max(12, int((95 - i * 1.4) * (0.45 + 0.55 * rng.random())))
+            col = (248, 192, 132, alpha) if rng.random() < 0.62 else (238, 120, 124, alpha)
+            rd.line([(cx_seg - seg_len // 2, ry), (cx_seg + seg_len // 2, ry)], fill=col, width=2)
+    ripples = ripples.filter(ImageFilter.GaussianBlur(radius=2.4))
+    img = Image.alpha_composite(img, ripples)
+
     draw = ImageDraw.Draw(img)
-    draw.line([(0, horizon_y), (width, horizon_y)], fill=(255, 175, 115, 180), width=2)
+    draw.line([(0, horizon_y), (width, horizon_y)], fill=(245, 178, 122, 95), width=1)
 
-    for i in range(1, 22):
-        ry = horizon_y + int((i ** 1.35) * 6.8)
-        if ry >= height - 48:
-            break
-        half_span = max(32, int(230 * (1.0 - i / 25.0) + (i % 3) * 28))
-        alpha = max(35, 185 - i * 7)
-        col = (255, 140, 115, alpha) if i % 2 == 0 else (255, 62, 148, alpha)
-        draw.line([(sun_cx - half_span, ry), (sun_cx + half_span, ry)], fill=col, width=max(2, 5 - i // 5))
+    # 6. Graceful right-edge foreground coconut palms (left desktop icon zone stays 100% open)
+    palm_fg = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    pd = ImageDraw.Draw(palm_fg)
+    _draw_palm_tree(pd, width - 58, height, width - 188, int(height * 0.30), 1.55, (10, 11, 18, 255))
+    _draw_palm_tree(pd, width - 208, height, width - 310, int(height * 0.47), 1.12, (13, 14, 23, 246))
+    img = Image.alpha_composite(img, palm_fg)
 
-    # 5. Coastal palm silhouettes on edges (leaves top-left clear for desktop icons)
-    palm_color = (13, 8, 24, 255)
-    _draw_palm_tree(draw, 140, height, 235, int(height * 0.42), 1.35, palm_color)
-    _draw_palm_tree(draw, width - 90, height, width - 210, int(height * 0.34), 1.55, palm_color)
-    _draw_palm_tree(draw, width - 260, height, width - 335, int(height * 0.51), 1.05, palm_color)
-
-    # 6. Centered subtle GTA VI x Debian Swirl watermark (badge-less swirl floating cleanly in sky)
-    emblem = create_gta6_debian_logo(320, with_badge=False)
-    r_ch, g_ch, b_ch, a_ch = emblem.split()
-    a_ch = a_ch.point(lambda px: int(px * 0.88))
-    emblem = Image.merge("RGBA", (r_ch, g_ch, b_ch, a_ch))
-    emb_x = (width - emblem.width) // 2
-    emb_y = int(height * 0.25) - emblem.height // 2
-    img = Image.alpha_composite(img, _paste_rgba(width, height, emblem, emb_x, emb_y))
-
-    # 7. Seamless left + bottom vignette so Desktop icons and bottom taskbar text stay ultra readable
-    vig_canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    left_mask = Image.new("L", (420, 1))
+    # 7. Subtle left + bottom vignette so desktop icons and 44px taskbar read cleanly
+    vig = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    left_mask = Image.new("L", (460, 1))
     lm_pix = left_mask.load()
-    for x in range(420):
-        lm_pix[x, 0] = int(105 * (1.0 - x / 419.0) ** 1.8)
-    left_mask = left_mask.resize((420, height), Image.BILINEAR)
-    vig_fill = Image.new("RGBA", (420, height), (12, 8, 24, 255))
-    vig_canvas.paste(vig_fill, (0, 0), left_mask)
-    img = Image.alpha_composite(img, vig_canvas)
+    for x in range(460):
+        lm_pix[x, 0] = int(95 * (1.0 - x / 459.0) ** 1.9)
+    left_mask = left_mask.resize((460, height), Image.BILINEAR)
+    vig.paste(Image.new("RGBA", (460, height), (11, 13, 21, 255)), (0, 0), left_mask)
+
+    bot_mask = Image.new("L", (1, 110))
+    bm_pix = bot_mask.load()
+    for y in range(110):
+        bm_pix[0, y] = int(125 * (y / 109.0) ** 1.7)
+    bot_mask = bot_mask.resize((width, 110), Image.BILINEAR)
+    vig.paste(Image.new("RGBA", (width, 110), (10, 11, 18, 255)), (0, height - 110), bot_mask)
+    img = Image.alpha_composite(img, vig)
 
     try:
         os.makedirs(output_dir, exist_ok=True)
         img.convert("RGB").save(
             os.path.join(output_dir, "vice_neon.jpg"),
-            "JPEG", quality=92
+            "JPEG",
+            quality=94,
         )
         print("[*] Wallpaper generated successfully.")
     except OSError as e:
@@ -305,15 +455,9 @@ def create_wallpaper(output_dir: str = "/usr/share/backgrounds") -> None:
         raise
 
 
-def _paste_rgba(canvas_w: int, canvas_h: int, overlay: Image.Image, x: int, y: int) -> Image.Image:
-    layer = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
-    layer.paste(overlay, (x, y), overlay)
-    return layer
-
-
 def create_icon(output_dir: str = "/usr/share/pixmaps") -> None:
     """Generate the GTA VI x Debian Swirl logos in /usr/share/pixmaps."""
-    logo = create_gta6_debian_logo(512)
+    logo = create_gta6_debian_logo(512, with_badge=True)
     try:
         os.makedirs(output_dir, exist_ok=True)
         logo.save(os.path.join(output_dir, "vice-debian-gta6.png"), "PNG")
@@ -325,18 +469,18 @@ def create_icon(output_dir: str = "/usr/share/pixmaps") -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="GTA VI OS Asset Generator"
-    )
+    parser = argparse.ArgumentParser(description="GTA VI OS Asset Generator")
     parser.add_argument(
-        "--wallpaper-dir", type=str,
+        "--wallpaper-dir",
+        type=str,
         default="/usr/share/backgrounds",
-        help="Output directory for wallpaper"
+        help="Output directory for wallpaper",
     )
     parser.add_argument(
-        "--icon-dir", type=str,
+        "--icon-dir",
+        type=str,
         default="/usr/share/pixmaps",
-        help="Output directory for icon"
+        help="Output directory for icon",
     )
     args = parser.parse_args()
 

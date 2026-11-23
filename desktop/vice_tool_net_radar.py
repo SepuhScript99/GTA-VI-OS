@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 GTA VI OS (Vice OS) — Leonida Net Radar.
-Real LAN/host ping monitor, TCP port probe, DNS lookup (dig/socket),
-and local network interface & routing inspector (ip/ss) with a Leonida neon radar UI.
+Live LAN/host ping monitor, TCP port probe, DNS lookup (dig/socket),
+and local network interface & routing inspector (ip/ss) styled via
+vice_theme (Noto Sans CJK fallback).
 """
 
 import math
@@ -16,14 +17,27 @@ import sys
 import time
 
 from PyQt5.QtCore import Qt, QProcess, QThread, QTimer, pyqtSignal
-from PyQt5.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap
+from PyQt5.QtGui import QColor, QPainter, QPen
 from PyQt5.QtWidgets import (
-    QApplication, QComboBox, QFrame, QHBoxLayout, QHeaderView, QLabel,
-    QLineEdit, QMainWindow, QPlainTextEdit, QPushButton, QSpinBox,
+    QApplication, QComboBox, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit, QMainWindow, QPlainTextEdit, QSpinBox,
     QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget
 )
 
-sys.path.insert(0, "/opt/vice-os/lib")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _p in ("/opt/vice-os", _HERE, "/opt/vice-os/lib"):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    load_tool_icon,
+    make_button,
+    make_card,
+    make_header,
+    qcolor,
+)
 
 try:
     from python.vice_utils import log_info  # noqa: E402
@@ -32,123 +46,7 @@ except ImportError:
         print(f"[INFO] {msg}")
 
 
-CJK_FONTS = [
-    "Noto Sans",
-    "Noto Sans CJK JP",
-    "Noto Sans CJK SC",
-    "Noto Sans CJK TC",
-    "Noto Sans CJK KR",
-    "DejaVu Sans",
-]
-
-STYLE = """
-QMainWindow, QWidget#RootWidget {
-    background-color: #120e1e;
-    color: #f4f1fa;
-    font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
-    font-size: 13px;
-}
-QFrame#RadarBanner {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #15142d, stop:0.6 #221438, stop:1 #112438);
-    border: 1px solid #00e5ff;
-    border-radius: 12px;
-}
-QTabWidget::pane {
-    border: 1px solid #3c2e5e;
-    border-radius: 10px;
-    background-color: #161126;
-}
-QTabBar::tab {
-    background-color: #1b152e;
-    color: #cfc6e6;
-    border: 1px solid #322650;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-    padding: 8px 16px;
-    margin-right: 4px;
-    font-weight: bold;
-}
-QTabBar::tab:selected {
-    background-color: #2f1d45;
-    color: #00e5ff;
-    border-color: #ff4da6;
-}
-QLineEdit, QComboBox, QSpinBox {
-    background-color: #1b152e;
-    color: #f4f1fa;
-    border: 1px solid #3c2e5e;
-    border-radius: 8px;
-    padding: 7px 10px;
-}
-QLineEdit:focus {
-    border-color: #00e5ff;
-}
-QPushButton {
-    background-color: #1f1836;
-    color: #00e5ff;
-    border: 1px solid #00e5ff;
-    border-radius: 8px;
-    padding: 7px 14px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00e5ff;
-    color: #120e1e;
-}
-QPushButton#StopBtn {
-    color: #ff4da6;
-    border-color: #ff4da6;
-}
-QPushButton#StopBtn:hover {
-    background-color: #ff4da6;
-    color: #120e1e;
-}
-QPlainTextEdit {
-    background-color: #0d0a18;
-    color: #b8f5ff;
-    border: 1px solid #30244a;
-    border-radius: 8px;
-    font-family: "Noto Sans Mono CJK JP", "Noto Sans Mono CJK SC", "DejaVu Sans Mono", monospace;
-    font-size: 12px;
-    padding: 8px;
-}
-QTableWidget {
-    background-color: #0e0b19;
-    color: #f4f1fa;
-    border: 1px solid #30244a;
-    gridline-color: #2a2042;
-}
-QHeaderView::section {
-    background-color: #1e1633;
-    color: #ff8a5b;
-    border: none;
-    border-bottom: 1px solid #3c2e5e;
-    padding: 6px;
-    font-weight: bold;
-}
-"""
-
-
-def _configure_cjk_fonts(app: QApplication) -> None:
-    for fam in ("Noto Sans", "DejaVu Sans", "Sans", "sans-serif"):
-        QFont.insertSubstitutions(fam, CJK_FONTS)
-    font = QFont("Noto Sans", 10)
-    if hasattr(font, "setFamilies"):
-        font.setFamilies(CJK_FONTS)
-    app.setFont(font)
-
-
-def _load_app_icon() -> QIcon:
-    for path in (
-        "/usr/share/icons/hicolor/64x64/apps/vice-tool-net-radar.png",
-        "/usr/share/pixmaps/vice-tool-net-radar.png",
-    ):
-        if os.path.isfile(path):
-            pm = QPixmap(path)
-            if not pm.isNull():
-                return QIcon(pm)
-    return QIcon.fromTheme("network-wired")
+_HOST_RE = re.compile(r"^[A-Za-z0-9._:-]{1,253}$")
 
 
 def parse_port_spec(spec: str) -> list:
@@ -186,12 +84,17 @@ def parse_port_spec(spec: str) -> list:
     return ports
 
 
+def _valid_host(host: str) -> bool:
+    clean = host.strip()
+    return bool(clean and not clean.startswith("-") and _HOST_RE.match(clean))
+
+
 class RadarScopeWidget(QWidget):
-    """Custom Leonida neon radar scope widget."""
+    """Subtle slate telemetry radar scope widget."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(94, 94)
+        self.setFixedSize(82, 82)
         self._angle = 0.0
         self._active = False
         self._blips = []
@@ -222,13 +125,13 @@ class RadarScopeWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         cx, cy = self.width() / 2.0, self.height() / 2.0
-        max_r = min(cx, cy) - 6.0
+        max_r = min(cx, cy) - 5.0
 
-        painter.setBrush(QColor("#0d0919"))
-        painter.setPen(QPen(QColor("#00e5ff"), 1.5))
+        painter.setBrush(QColor(COLORS["bg_canvas"]))
+        painter.setPen(QPen(QColor(COLORS["border_strong"]), 1.4))
         painter.drawEllipse(int(cx - max_r), int(cy - max_r), int(max_r * 2), int(max_r * 2))
 
-        painter.setPen(QPen(QColor(0, 229, 255, 85), 1))
+        painter.setPen(QPen(QColor(COLORS["border"]), 1))
         for factor in (0.33, 0.66):
             r = max_r * factor
             painter.drawEllipse(int(cx - r), int(cy - r), int(r * 2), int(r * 2))
@@ -236,12 +139,12 @@ class RadarScopeWidget(QWidget):
         painter.drawLine(int(cx), int(cy - max_r), int(cx), int(cy + max_r))
 
         if self._active:
-            painter.setPen(QPen(QColor("#ff4da6"), 2.2))
+            painter.setPen(QPen(QColor(COLORS["accent_aqua"]), 2.0))
             ex = cx + math.cos(self._angle) * max_r
             ey = cy + math.sin(self._angle) * max_r
             painter.drawLine(int(cx), int(cy), int(ex), int(ey))
 
-        painter.setBrush(QColor("#ffd166"))
+        painter.setBrush(QColor(COLORS["accent_coral"]))
         painter.setPen(Qt.NoPen)
         for ang, dist in self._blips:
             bx = cx + math.cos(ang) * (max_r * dist)
@@ -400,9 +303,9 @@ class LeonidaNetRadarApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Leonida Net Radar — Vice OS")
-        self.resize(920, 640)
+        self.resize(940, 650)
         self.setMinimumSize(760, 520)
-        icon = _load_app_icon()
+        icon = load_tool_icon("vice-tool-net-radar", "network-wired")
         if not icon.isNull():
             self.setWindowIcon(icon)
 
@@ -421,44 +324,38 @@ class LeonidaNetRadarApp(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 14)
         layout.setSpacing(12)
 
-        # Header + Radar Scope
-        banner = QFrame(root)
-        banner.setObjectName("RadarBanner")
-        bh = QHBoxLayout(banner)
-        bh.setContentsMargins(16, 10, 16, 10)
-        bh.setSpacing(14)
+        self._header = make_header(
+            title="Leonida Net Radar",
+            subtitle="Ping telemetry, TCP port probe, DNS lookup, and routing inspector",
+            icon_name="vice-tool-net-radar",
+            badge_text="IDLE",
+            badge_variant="neutral",
+            parent=root,
+        )
+        self._radar = RadarScopeWidget(self._header)
+        self._header.right_layout.addWidget(self._radar)
+        layout.addWidget(self._header)
 
-        self._radar = RadarScopeWidget(banner)
-        bh.addWidget(self._radar)
-
-        title_col = QVBoxLayout()
-        title_lbl = QLabel("LEONIDA NET RADAR · TELEMETRY & PROBE", banner)
-        title_lbl.setStyleSheet("color: #ffd166; font-size: 19px; font-weight: bold; background: transparent;")
-        title_col.addWidget(title_lbl)
-
-        self._summary_lbl = QLabel("Standing by. Ready for Ping, TCP Port Probe, DNS, and Interface inspection.", banner)
-        self._summary_lbl.setStyleSheet("color: #cfc6e6; font-size: 12px; background: transparent;")
-        self._summary_lbl.setWordWrap(True)
-        title_col.addWidget(self._summary_lbl)
-        bh.addLayout(title_col, 1)
-
-        layout.addWidget(banner)
-
-        # Tabs
         tabs = QTabWidget(root)
         tabs.addTab(self._build_ping_tab(), "Ping Monitor")
         tabs.addTab(self._build_port_tab(), "TCP Port Probe")
         tabs.addTab(self._build_dns_tab(), "DNS Lookup")
-        tabs.addTab(self._build_iface_tab(), "Interfaces & Routing")
+        tabs.addTab(self._build_iface_tab(), "Interfaces && Routing")
         layout.addWidget(tabs, 1)
+
+        self._summary_lbl = QLabel("Standing by. Ready for Ping, TCP Port Probe, DNS, and Interface inspection.", root)
+        self._summary_lbl.setObjectName("MutedLabel")
+        self._summary_lbl.setWordWrap(True)
+        layout.addWidget(self._summary_lbl)
 
     def _build_ping_tab(self) -> QWidget:
         w = QWidget()
         v = QVBoxLayout(w)
-        v.setContentsMargins(12, 12, 12, 12)
+        v.setContentsMargins(14, 14, 14, 14)
         v.setSpacing(10)
 
         row = QHBoxLayout()
+        row.setSpacing(8)
         self._ping_host = QLineEdit("1.1.1.1")
         self._ping_host.setPlaceholderText("Hostname or IP (e.g. 1.1.1.1, 192.168.1.1)")
         self._ping_host.returnPressed.connect(self._start_ping)
@@ -470,21 +367,25 @@ class LeonidaNetRadarApp(QMainWindow):
         self._ping_count.setValue(4)
         row.addWidget(self._ping_count)
 
-        self._ping_btn = QPushButton("Ping")
+        self._ping_btn = make_button("Ping", variant="primary")
         self._ping_btn.clicked.connect(self._start_ping)
         row.addWidget(self._ping_btn)
 
-        self._ping_stop_btn = QPushButton("Stop")
-        self._ping_stop_btn.setObjectName("StopBtn")
+        self._ping_stop_btn = make_button("Stop", variant="danger")
         self._ping_stop_btn.setEnabled(False)
         self._ping_stop_btn.clicked.connect(self._stop_ping)
         row.addWidget(self._ping_stop_btn)
         v.addLayout(row)
 
         presets = QHBoxLayout()
-        for label, target in [("Cloudflare (1.1.1.1)", "1.1.1.1"), ("Google (8.8.8.8)", "8.8.8.8"),
-                              ("Gateway (192.168.1.1)", "192.168.1.1"), ("Loopback", "127.0.0.1")]:
-            b = QPushButton(label)
+        presets.setSpacing(6)
+        for label, target in (
+            ("Cloudflare 1.1.1.1", "1.1.1.1"),
+            ("Google 8.8.8.8", "8.8.8.8"),
+            ("Quad9 9.9.9.9", "9.9.9.9"),
+            ("Loopback 127.0.0.1", "127.0.0.1"),
+        ):
+            b = make_button(label, variant="secondary")
             b.clicked.connect(lambda _=False, t=target: self._ping_host.setText(t))
             presets.addWidget(b)
         presets.addStretch(1)
@@ -498,10 +399,11 @@ class LeonidaNetRadarApp(QMainWindow):
     def _build_port_tab(self) -> QWidget:
         w = QWidget()
         v = QVBoxLayout(w)
-        v.setContentsMargins(12, 12, 12, 12)
+        v.setContentsMargins(14, 14, 14, 14)
         v.setSpacing(10)
 
         row = QHBoxLayout()
+        row.setSpacing(8)
         self._port_host = QLineEdit("127.0.0.1")
         self._port_host.setPlaceholderText("Target host or IP")
         row.addWidget(self._port_host, 1)
@@ -510,7 +412,7 @@ class LeonidaNetRadarApp(QMainWindow):
         self._ports_edit.setPlaceholderText("Ports (e.g. 22,80,443,8000-8010)")
         row.addWidget(self._ports_edit, 1)
 
-        self._scan_btn = QPushButton("Probe Ports")
+        self._scan_btn = make_button("Probe Ports", variant="primary")
         self._scan_btn.clicked.connect(self._start_port_probe)
         row.addWidget(self._scan_btn)
         v.addLayout(row)
@@ -525,10 +427,11 @@ class LeonidaNetRadarApp(QMainWindow):
     def _build_dns_tab(self) -> QWidget:
         w = QWidget()
         v = QVBoxLayout(w)
-        v.setContentsMargins(12, 12, 12, 12)
+        v.setContentsMargins(14, 14, 14, 14)
         v.setSpacing(10)
 
         row = QHBoxLayout()
+        row.setSpacing(8)
         self._dns_domain = QLineEdit("debian.org")
         self._dns_domain.setPlaceholderText("Domain or IP for reverse lookup")
         self._dns_domain.returnPressed.connect(self._start_dns_lookup)
@@ -538,7 +441,7 @@ class LeonidaNetRadarApp(QMainWindow):
         self._dns_type.addItems(["A", "AAAA", "MX", "TXT", "NS", "CNAME", "PTR", "ANY"])
         row.addWidget(self._dns_type)
 
-        self._dns_btn = QPushButton("Lookup")
+        self._dns_btn = make_button("Lookup", variant="primary")
         self._dns_btn.clicked.connect(self._start_dns_lookup)
         row.addWidget(self._dns_btn)
         v.addLayout(row)
@@ -551,13 +454,15 @@ class LeonidaNetRadarApp(QMainWindow):
     def _build_iface_tab(self) -> QWidget:
         w = QWidget()
         v = QVBoxLayout(w)
-        v.setContentsMargins(12, 12, 12, 12)
+        v.setContentsMargins(14, 14, 14, 14)
         v.setSpacing(10)
 
         row = QHBoxLayout()
-        row.addWidget(QLabel("Live Network Interfaces, Routes, and Sockets (ip / ss):"))
+        hdr_lbl = QLabel("Live Network Interfaces, Routes, and Sockets (ip / ss)")
+        hdr_lbl.setObjectName("SectionTitle")
+        row.addWidget(hdr_lbl)
         row.addStretch(1)
-        ref_btn = QPushButton("Refresh")
+        ref_btn = make_button("Refresh", variant="secondary", icon_name="view-refresh")
         ref_btn.clicked.connect(self._refresh_interfaces)
         row.addWidget(ref_btn)
         v.addLayout(row)
@@ -569,7 +474,8 @@ class LeonidaNetRadarApp(QMainWindow):
 
     def _start_ping(self) -> None:
         target = self._ping_host.text().strip()
-        if not target:
+        if not _valid_host(target):
+            self._summary_lbl.setText("Enter a valid hostname or IP address.")
             return
         self._stop_ping()
         self._ping_out.clear()
@@ -590,6 +496,7 @@ class LeonidaNetRadarApp(QMainWindow):
         self._ping_btn.setEnabled(False)
         self._ping_stop_btn.setEnabled(True)
         self._radar.set_active(True)
+        self._header.set_badge("PINGING", "aqua")
         self._summary_lbl.setText(f"Pinging {target} ({count} packets)...")
         self._ping_proc.start(ping_bin, args)
 
@@ -605,6 +512,7 @@ class LeonidaNetRadarApp(QMainWindow):
         self._ping_btn.setEnabled(True)
         self._ping_stop_btn.setEnabled(False)
         self._radar.set_active(False)
+        self._header.set_badge("COMPLETE" if exit_code == 0 else "IDLE", "success" if exit_code == 0 else "neutral")
         text = self._ping_out.toPlainText()
         rtt_match = re.search(r"rtt [^=]+=\s*([\d./]+)\s*ms", text)
         loss_match = re.search(r"(\d+% packet loss)", text)
@@ -624,6 +532,7 @@ class LeonidaNetRadarApp(QMainWindow):
         self._ping_btn.setEnabled(True)
         self._ping_stop_btn.setEnabled(False)
         self._radar.set_active(False)
+        self._header.set_badge("IDLE", "neutral")
 
     def _track_worker(self, worker: QThread) -> None:
         self._workers = [w for w in self._workers if w.isRunning()]
@@ -632,13 +541,14 @@ class LeonidaNetRadarApp(QMainWindow):
     def _start_port_probe(self) -> None:
         host = self._port_host.text().strip()
         ports = parse_port_spec(self._ports_edit.text())
-        if not host or not ports:
+        if not _valid_host(host) or not ports:
             self._summary_lbl.setText("Enter a valid host and port list (e.g. 22,80,443).")
             return
         self._port_table.setRowCount(0)
         self._scan_btn.setEnabled(False)
         self._radar.set_active(True)
         self._radar.set_blips(0)
+        self._header.set_badge("SCANNING", "aqua")
         self._summary_lbl.setText(f"Probing {len(ports)} TCP ports on {host}...")
 
         worker = PortProbeWorker(host, ports, 0.7)
@@ -656,7 +566,7 @@ class LeonidaNetRadarApp(QMainWindow):
             QTableWidgetItem(state),
             QTableWidgetItem(latency),
         ]
-        color = QColor("#64ffda") if state == "OPEN" else QColor("#cfc6e6")
+        color = qcolor("success") if state == "OPEN" else qcolor("text_secondary")
         for col, item in enumerate(items):
             item.setForeground(color)
             self._port_table.setItem(row, col, item)
@@ -665,15 +575,18 @@ class LeonidaNetRadarApp(QMainWindow):
         self._scan_btn.setEnabled(True)
         self._radar.set_active(False)
         self._radar.set_blips(open_count)
+        self._header.set_badge(f"{open_count} OPEN", "coral" if open_count else "neutral")
         self._summary_lbl.setText(f"TCP Probe complete: {open_count} open out of {total} scanned.")
 
     def _start_dns_lookup(self) -> None:
         domain = self._dns_domain.text().strip()
-        if not domain:
+        if not _valid_host(domain):
+            self._summary_lbl.setText("Enter a valid domain name or IP address.")
             return
         rtype = self._dns_type.currentText()
         self._dns_btn.setEnabled(False)
         self._radar.set_active(True)
+        self._header.set_badge("RESOLVING", "aqua")
         self._dns_out.setPlainText(f"Resolving {domain} ({rtype})...")
 
         worker = DnsLookupWorker(domain, rtype)
@@ -684,6 +597,7 @@ class LeonidaNetRadarApp(QMainWindow):
     def _on_dns_done(self, text: str) -> None:
         self._dns_btn.setEnabled(True)
         self._radar.set_active(False)
+        self._header.set_badge("READY", "neutral")
         self._dns_out.setPlainText(text)
         self._summary_lbl.setText("DNS lookup complete.")
 
@@ -708,8 +622,7 @@ class LeonidaNetRadarApp(QMainWindow):
 def main() -> None:
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication(sys.argv)
-    _configure_cjk_fonts(app)
-    app.setStyleSheet(STYLE)
+    apply_app_theme(app)
     win = LeonidaNetRadarApp()
     win.show()
     sys.exit(app.exec_())

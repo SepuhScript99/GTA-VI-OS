@@ -1,33 +1,49 @@
-# Vice OS Tools Progress (`100 / 500`)
+# Vice OS Tools Progress (`250 / 500`)
 
-**Overall Progress:** **100 / 500 (20%)** — Batch 1 Complete
-**Theme:** GTA VI Leonida Neon (`config/tools_registry.json`)
-**Target Suite:** Debian 12 (Bookworm) + Native PyQt5 Vice OS Originals
+**Overall Progress:** **250 / 500 (50%)** — Batch 2 Complete
+**Theme:** GTA VI Leonida Sunset (`config/tools_registry.json` & `desktop/vice_theme.py`)
+**Target Suite:** Debian 12 (Bookworm `main`) + Native PyQt5 Vice OS Originals
 
 ```text
-Progress: [####................] 100 / 500 (20%)
+Progress: [##########..........] 250 / 500 (50%)
 Batch 1 : [####################] 100 / 100 (Complete)
+Batch 2 : [####################] 150 / 150 (Complete)
 ```
 
 ---
 
-## Category Breakdown (Batch 1)
+## Category Breakdown (Batch 2 Cumulative)
 
 | Category | Count | Native / Curated | Notes |
 | --- | ---: | --- | --- |
-| GTA VI Originals | 10 | 10 `vice-native` GUI apps | Bespoke Leonida Neon PyQt5 suite (`vice_tool_*.py`) |
-| System | 16 | 16 Debian Bookworm tools | Process, I/O, hardware, sensors, and cleanup tools |
-| Network | 16 | 16 Debian Bookworm tools | Scanners, packet capture, DNS, HTTP, and throughput tools |
-| Security | 12 | 12 Debian Bookworm tools | Crypto, rootkit/audit scanners, firewall, and password safes |
-| Developer | 15 | 15 Debian Bookworm tools | Editors, search, Git, debuggers, profilers, and linters |
-| Files & Disk | 13 | 13 Debian Bookworm tools | Disk usage, partitioning, S.M.A.R.T., recovery, and file managers |
-| Media | 10 | 10 Debian Bookworm tools | Audio/video transcoders, players, codecs, and EXIF tools |
-| Productivity | 8 | 8 Debian Bookworm tools | QR generator, editors, calculator, PDF, diff, and archivers |
-| **Total** | **100** | **10 Native + 90 Debian** | **All 100 receive custom 64x64 GTA VI icons** |
+| GTA VI Originals | 15 | 15 `vice-native` GUI apps | Bespoke Leonida Sunset PyQt5 suite (`vice_tool_*.py` on `vice_theme.py`) |
+| Office | 10 | 10 Debian Bookworm tools | LibreOffice Writer/Calc/Impress/Draw/Math (GTK3 themed), qpdfview, Evince, Simple Scan, Poppler, Hunspell |
+| System | 32 | 32 Debian Bookworm tools | Monitors, hardware probes, Printers (`system-config-printer`), Bluetooth (`blueman`/`bluez`), Timeshift, Chrony |
+| Network | 44 | 44 Debian Bookworm tools | Wireshark, Nmap, DNS recon/DoT (`stubby`/`unbound`), packet dissectors, SSH/Mosh, bandwidth monitors |
+| Security | 55 | 55 Debian Bookworm tools | OpenVPN, WireGuard, Tor/Privoxy/ProxyChains, UFW/GUFW/nftables, ClamAV, Firejail, pentest & forensics suites |
+| Developer | 32 | 32 Debian Bookworm tools | Compilers, reverse engineering (`gdb-multiarch`/`nasm`/`binutils`/`elfutils`), hex editors, linters, SQLite |
+| Files & Disk | 24 | 24 Debian Bookworm tools | GNOME Disks, NTFS/exFAT/FAT/Btrfs tools, LUKS `cryptsetup`, S.M.A.R.T., NVMe, recovery, and rsync GUIs |
+| Media | 20 | 20 Debian Bookworm tools | FFmpeg, mpv, Celluloid, PipeWire mixer, Flameshot, Gcolor3, EasyTAG, image optimizers, and EXIF tools |
+| Productivity | 18 | 18 Debian Bookworm tools | Firefox ESR, Zim, CherryTree, SpeedCrunch, Qalculate!, Galculator, Calcurse, Taskwarrior, tldr, archivers |
+| **Total** | **250** | **15 Native + 235 Debian** | **All 250 receive custom 64x64 GTA VI icons** |
 
 ---
 
-## Batch 1 Full Tool Catalog (`100 / 500`)
+## Batch 2 Highlights (ISO #10)
+
+- **5 New Native GTA VI PyQt5 Applications (`vice_theme.py` Design System)**:
+  - `vice-tool-net-shield`: OpenVPN / WireGuard / Tor / Privoxy / Secure DNS & UFW Shield Console.
+  - `vice-tool-cyber-deck`: Ethical recon & security workbench (`nmap`, `sslscan`, `dnsrecon`, `lynis`, `binwalk`, `yara`).
+  - `vice-tool-mac-cloak`: Interface MAC spoofer, active connection watchdog, and `exiftool`/`mat2` metadata scrubber.
+  - `vice-tool-office-hub`: Unified GTA VI Office Studio for LibreOffice apps, recent docs, and Dark/Light LibreOffice mode.
+  - `vice-tool-clock-sync`: Live host/internet timezone sync (`vice-timesync`), searchable IANA timezone picker, and Chrony telemetry.
+- **Debian LibreOffice Suite**: `libreoffice-writer`, `libreoffice-calc`, `libreoffice-impress`, `libreoffice-draw`, `libreoffice-math` + `libreoffice-gtk3` + `sifr`/`colibre` icon styles, themed with dark GTA VI chrome and crisp white paper sheets, plus GTA VI icon badges in `/usr/share/applications`.
+- **Safe Network Defaults**: `tor`, `privoxy`, `stubby`, `unbound`, `openvpn`, `clamav-daemon`, and `clamav-freshclam` remain **disabled by default at boot** so normal browsing works out of the box and users enable privacy tunnels on demand via `Vice Net Shield`.
+- **Standard Debian Desktop Essentials**: Printing (`cups`, `system-config-printer`), Bluetooth (`bluez`, `blueman`), Disks & Filesystems (`udisks2`, `gnome-disk-utility`, `ntfs-3g`, `exfatprogs`, `dosfstools`, `btrfs-progs`), Snapshots (`timeshift`), NTP (`chrony`), Screenshots & Color (`flameshot`, `gcolor3`, `redshift`), Portals & Shell (`xdg-desktop-portal-gtk`, `bash-completion`, `zram-tools`, `earlyoom`).
+
+---
+
+## Full Tool Catalog (`250 / 500`)
 
 | # | ID | Name | Category | Package | Exec | Mode | GTA VI Icon |
 | ---: | --- | --- | --- | --- | --- | --- | --- |
@@ -127,19 +143,168 @@ Batch 1 : [####################] 100 / 100 (Complete)
 | 94 | `geany` | Geany Lightweight IDE | Productivity | `geany` | `geany` | GUI | `vice-tool-geany` |
 | 95 | `mousepad` | Mousepad Text Editor | Productivity | `mousepad` | `mousepad` | GUI | `vice-tool-mousepad` |
 | 96 | `galculator` | Galculator Scientific Calc | Productivity | `galculator` | `galculator` | GUI | `vice-tool-galculator` |
-| 97 | `qpdfview` | qpdfview Document Viewer | Productivity | `qpdfview` | `qpdfview` | GUI | `vice-tool-qpdfview` |
+| 97 | `qpdfview` | qpdfview Document Viewer | Office | `qpdfview` | `qpdfview` | GUI | `vice-tool-qpdfview` |
 | 98 | `file-roller` | File Roller Archive GUI | Productivity | `file-roller` | `file-roller` | GUI | `vice-tool-file-roller` |
 | 99 | `p7zip-full` | 7-Zip CLI Archiver (7z) | Productivity | `p7zip-full` | `7z` | Terminal | `vice-tool-p7zip-full` |
 | 100 | `meld` | Meld Visual Diff & Merge | Productivity | `meld` | `meld` | GUI | `vice-tool-meld` |
+| 101 | `vice-tool-net-shield` | Vice Net Shield | GTA VI Originals | `vice-native` | `python3 /opt/vice-os/vice_tool_net_shield.py` | GUI | `vice-tool-net-shield` |
+| 102 | `vice-tool-cyber-deck` | Vice Cyber Audit Deck | GTA VI Originals | `vice-native` | `python3 /opt/vice-os/vice_tool_cyber_deck.py` | GUI | `vice-tool-cyber-deck` |
+| 103 | `vice-tool-mac-cloak` | Vice Privacy & Cloak | GTA VI Originals | `vice-native` | `python3 /opt/vice-os/vice_tool_mac_cloak.py` | GUI | `vice-tool-mac-cloak` |
+| 104 | `vice-tool-office-hub` | Vice Office Studio | GTA VI Originals | `vice-native` | `python3 /opt/vice-os/vice_tool_office_hub.py` | GUI | `vice-tool-office-hub` |
+| 105 | `vice-tool-clock-sync` | Vice World Clock & Sync | GTA VI Originals | `vice-native` | `python3 /opt/vice-os/vice_tool_clock_sync.py` | GUI | `vice-tool-clock-sync` |
+| 106 | `libreoffice-writer` | LibreOffice Writer | Office | `libreoffice-writer` | `libreoffice --writer` | GUI | `vice-tool-libreoffice-writer` |
+| 107 | `libreoffice-calc` | LibreOffice Calc | Office | `libreoffice-calc` | `libreoffice --calc` | GUI | `vice-tool-libreoffice-calc` |
+| 108 | `libreoffice-impress` | LibreOffice Impress | Office | `libreoffice-impress` | `libreoffice --impress` | GUI | `vice-tool-libreoffice-impress` |
+| 109 | `libreoffice-draw` | LibreOffice Draw | Office | `libreoffice-draw` | `libreoffice --draw` | GUI | `vice-tool-libreoffice-draw` |
+| 110 | `libreoffice-math` | LibreOffice Math | Office | `libreoffice-math` | `libreoffice --math` | GUI | `vice-tool-libreoffice-math` |
+| 111 | `evince` | Evince Document Viewer | Office | `evince` | `evince` | GUI | `vice-tool-evince` |
+| 112 | `simple-scan` | Document Scanner | Office | `simple-scan` | `simple-scan` | GUI | `vice-tool-simple-scan` |
+| 113 | `poppler-utils` | Poppler PDF Toolkit | Office | `poppler-utils` | `pdftotext` | Terminal | `vice-tool-poppler-utils` |
+| 114 | `hunspell` | Hunspell Spell Checker | Office | `hunspell` | `hunspell` | Terminal | `vice-tool-hunspell` |
+| 115 | `system-config-printer` | Printers Configuration | System | `system-config-printer` | `system-config-printer` | GUI | `vice-tool-system-config-printer` |
+| 116 | `blueman` | Bluetooth Manager | System | `blueman` | `blueman-manager` | GUI | `vice-tool-blueman` |
+| 117 | `bluez` | Bluetooth CLI (bluetoothctl) | System | `bluez` | `bluetoothctl` | Terminal | `vice-tool-bluez` |
+| 118 | `timeshift` | Timeshift System Snapshots | System | `timeshift` | `timeshift-gtk` | GUI | `vice-tool-timeshift` |
+| 119 | `chrony` | Chrony NTP Time Client | System | `chrony` | `chronyc tracking` | Terminal | `vice-tool-chrony` |
+| 120 | `arandr` | ARandR Display Layout | System | `arandr` | `arandr` | GUI | `vice-tool-arandr` |
+| 121 | `lxappearance` | LXAppearance Theme Switcher | System | `lxappearance` | `lxappearance` | GUI | `vice-tool-lxappearance` |
+| 122 | `synaptic` | Synaptic Package Manager | System | `synaptic` | `synaptic-pkexec` | GUI | `vice-tool-synaptic` |
+| 123 | `xfce4-terminal` | Xfce Terminal Emulator | System | `xfce4-terminal` | `xfce4-terminal` | GUI | `vice-tool-xfce4-terminal` |
+| 124 | `glances` | Glances System Monitor | System | `glances` | `glances` | Terminal | `vice-tool-glances` |
+| 125 | `nmon` | nmon Performance Monitor | System | `nmon` | `nmon` | Terminal | `vice-tool-nmon` |
+| 126 | `atop` | atop Resource Logger | System | `atop` | `atop` | Terminal | `vice-tool-atop` |
+| 127 | `hwinfo` | hwinfo Hardware Probe | System | `hwinfo` | `hwinfo --short` | Terminal | `vice-tool-hwinfo` |
+| 128 | `hardinfo` | HardInfo System Profiler | System | `hardinfo` | `hardinfo` | GUI | `vice-tool-hardinfo` |
+| 129 | `lnav` | lnav Log File Navigator | System | `lnav` | `lnav` | Terminal | `vice-tool-lnav` |
+| 130 | `multitail` | MultiTail Log Monitor | System | `multitail` | `multitail` | Terminal | `vice-tool-multitail` |
+| 131 | `wireshark` | Wireshark Packet Analyzer | Network | `wireshark` | `wireshark` | GUI | `vice-tool-wireshark` |
+| 132 | `arp-scan` | ARP-Scan LAN Discovery | Network | `arp-scan` | `arp-scan --localnet` | Terminal | `vice-tool-arp-scan` |
+| 133 | `netdiscover` | Netdiscover ARP Recon | Network | `netdiscover` | `netdiscover` | Terminal | `vice-tool-netdiscover` |
+| 134 | `hping3` | hping3 Packet Crafter | Network | `hping3` | `hping3` | Terminal | `vice-tool-hping3` |
+| 135 | `masscan` | Masscan Port Scanner | Network | `masscan` | `masscan` | Terminal | `vice-tool-masscan` |
+| 136 | `ncat` | Nmap Ncat Socket Tool | Network | `ncat` | `ncat` | Terminal | `vice-tool-ncat` |
+| 137 | `ndiff` | Ndiff Nmap Scan Differ | Network | `ndiff` | `ndiff` | Terminal | `vice-tool-ndiff` |
+| 138 | `dnsrecon` | DNSRecon Enumerator | Network | `dnsrecon` | `dnsrecon` | Terminal | `vice-tool-dnsrecon` |
+| 139 | `dnsenum` | DNSenum Domain Scanner | Network | `dnsenum` | `dnsenum` | Terminal | `vice-tool-dnsenum` |
+| 140 | `fierce` | Fierce DNS Reconnaissance | Network | `fierce` | `fierce` | Terminal | `vice-tool-fierce` |
+| 141 | `dmitry` | DMitry Host Gatherer | Network | `dmitry` | `dmitry` | Terminal | `vice-tool-dmitry` |
+| 142 | `stubby` | Stubby DNS-over-TLS | Network | `stubby` | `stubby` | Terminal | `vice-tool-stubby` |
+| 143 | `unbound` | Unbound Validating DNS | Network | `unbound` | `unbound-checkconf` | Terminal | `vice-tool-unbound` |
+| 144 | `tcpflow` | tcpflow Stream Recorder | Network | `tcpflow` | `tcpflow` | Terminal | `vice-tool-tcpflow` |
+| 145 | `ngrep` | ngrep Network Packet Grep | Network | `ngrep` | `ngrep` | Terminal | `vice-tool-ngrep` |
+| 146 | `ssldump` | ssldump TLS Analyzer | Network | `ssldump` | `ssldump` | Terminal | `vice-tool-ssldump` |
+| 147 | `tcpreplay` | tcpreplay Traffic Replayer | Network | `tcpreplay` | `tcpreplay` | Terminal | `vice-tool-tcpreplay` |
+| 148 | `nbtscan` | nbtscan NetBIOS Scanner | Network | `nbtscan` | `nbtscan` | Terminal | `vice-tool-nbtscan` |
+| 149 | `smbclient` | SMBClient Share CLI | Network | `smbclient` | `smbclient` | Terminal | `vice-tool-smbclient` |
+| 150 | `swaks` | Swaks SMTP Tester | Network | `swaks` | `swaks` | Terminal | `vice-tool-swaks` |
+| 151 | `autossh` | AutoSSH Tunnel Keeper | Network | `autossh` | `autossh` | Terminal | `vice-tool-autossh` |
+| 152 | `mosh` | Mosh Mobile Shell | Network | `mosh` | `mosh` | Terminal | `vice-tool-mosh` |
+| 153 | `openssh-client` | OpenSSH Client (ssh) | Network | `openssh-client` | `ssh` | Terminal | `vice-tool-openssh-client` |
+| 154 | `bmon` | bmon Bandwidth Monitor | Network | `bmon` | `bmon` | Terminal | `vice-tool-bmon` |
+| 155 | `vnstat` | vnStat Traffic Logger | Network | `vnstat` | `vnstat` | Terminal | `vice-tool-vnstat` |
+| 156 | `ethtool` | Ethtool NIC Diagnostics | Network | `ethtool` | `ethtool` | Terminal | `vice-tool-ethtool` |
+| 157 | `wavemon` | Wavemon Wi-Fi Monitor | Network | `wavemon` | `wavemon` | Terminal | `vice-tool-wavemon` |
+| 158 | `fping` | fping Parallel Pinger | Network | `fping` | `fping` | Terminal | `vice-tool-fping` |
+| 159 | `openvpn` | OpenVPN Tunnel Client | Security | `openvpn` | `openvpn` | Terminal | `vice-tool-openvpn` |
+| 160 | `wireguard-tools` | WireGuard VPN (wg) | Security | `wireguard-tools` | `wg` | Terminal | `vice-tool-wireguard-tools` |
+| 161 | `tor` | Tor Anonymity Router | Security | `tor` | `tor` | Terminal | `vice-tool-tor` |
+| 162 | `torsocks` | Torsocks Tor Wrapper | Security | `torsocks` | `torsocks` | Terminal | `vice-tool-torsocks` |
+| 163 | `privoxy` | Privoxy Privacy Proxy | Security | `privoxy` | `privoxy` | Terminal | `vice-tool-privoxy` |
+| 164 | `obfs4proxy` | Tor Obfs4 Bridge | Security | `obfs4proxy` | `obfs4proxy` | Terminal | `vice-tool-obfs4proxy` |
+| 165 | `stunnel4` | Stunnel4 TLS Wrapper | Security | `stunnel4` | `stunnel4` | Terminal | `vice-tool-stunnel4` |
+| 166 | `sshuttle` | sshuttle SSH VPN | Security | `sshuttle` | `sshuttle` | Terminal | `vice-tool-sshuttle` |
+| 167 | `gufw` | GUFW Firewall GUI | Security | `gufw` | `gufw` | GUI | `vice-tool-gufw` |
+| 168 | `nftables` | nftables Packet Filter | Security | `nftables` | `nft` | Terminal | `vice-tool-nftables` |
+| 169 | `iptables` | iptables Firewall CLI | Security | `iptables` | `iptables` | Terminal | `vice-tool-iptables` |
+| 170 | `firejail` | Firejail App Sandbox | Security | `firejail` | `firejail` | Terminal | `vice-tool-firejail` |
+| 171 | `fail2ban` | Fail2Ban Intrusion Guard | Security | `fail2ban` | `fail2ban-client` | Terminal | `vice-tool-fail2ban` |
+| 172 | `clamav` | ClamAV Malware Scanner | Security | `clamav` | `clamscan` | Terminal | `vice-tool-clamav` |
+| 173 | `aide` | AIDE Integrity Checker | Security | `aide` | `aide` | Terminal | `vice-tool-aide` |
+| 174 | `auditd` | Auditd Kernel Audit CLI | Security | `auditd` | `auditctl` | Terminal | `vice-tool-auditd` |
+| 175 | `apparmor-utils` | AppArmor Policy Utils | Security | `apparmor-utils` | `aa-status` | Terminal | `vice-tool-apparmor-utils` |
+| 176 | `mat2` | MAT2 Metadata Cleaner | Security | `mat2` | `mat2` | Terminal | `vice-tool-mat2` |
+| 177 | `sqlmap` | SQLMap Injection Auditor | Security | `sqlmap` | `sqlmap` | Terminal | `vice-tool-sqlmap` |
+| 178 | `gobuster` | Gobuster URI & DNS Buster | Security | `gobuster` | `gobuster` | Terminal | `vice-tool-gobuster` |
+| 179 | `dirb` | DIRB Web Content Scanner | Security | `dirb` | `dirb` | Terminal | `vice-tool-dirb` |
+| 180 | `whatweb` | WhatWeb Tech Fingerprinter | Security | `whatweb` | `whatweb` | Terminal | `vice-tool-whatweb` |
+| 181 | `wafw00f` | WAFW00F WAF Detector | Security | `wafw00f` | `wafw00f` | Terminal | `vice-tool-wafw00f` |
+| 182 | `sslscan` | SSLScan TLS Auditor | Security | `sslscan` | `sslscan` | Terminal | `vice-tool-sslscan` |
+| 183 | `testssl.sh` | testssl.sh TLS Auditor | Security | `testssl.sh` | `testssl` | Terminal | `vice-tool-testssl.sh` |
+| 184 | `hydra` | THC-Hydra Auth Auditor | Security | `hydra` | `hydra` | Terminal | `vice-tool-hydra` |
+| 185 | `medusa` | Medusa Auth Cracker | Security | `medusa` | `medusa` | Terminal | `vice-tool-medusa` |
+| 186 | `ncrack` | Ncrack Network Auth Tool | Security | `ncrack` | `ncrack` | Terminal | `vice-tool-ncrack` |
+| 187 | `john` | John the Ripper Cracker | Security | `john` | `john` | Terminal | `vice-tool-john` |
+| 188 | `crunch` | Crunch Wordlist Builder | Security | `crunch` | `crunch` | Terminal | `vice-tool-crunch` |
+| 189 | `cewl` | CeWL Wordlist Spider | Security | `cewl` | `cewl` | Terminal | `vice-tool-cewl` |
+| 190 | `fcrackzip` | fcrackzip ZIP Auditor | Security | `fcrackzip` | `fcrackzip` | Terminal | `vice-tool-fcrackzip` |
+| 191 | `pdfcrack` | pdfcrack PDF Auditor | Security | `pdfcrack` | `pdfcrack` | Terminal | `vice-tool-pdfcrack` |
+| 192 | `aircrack-ng` | Aircrack-ng Wi-Fi Suite | Security | `aircrack-ng` | `aircrack-ng` | Terminal | `vice-tool-aircrack-ng` |
+| 193 | `reaver` | Reaver WPS Auditor | Security | `reaver` | `reaver` | Terminal | `vice-tool-reaver` |
+| 194 | `wifite` | Wifite Wi-Fi Auditor | Security | `wifite` | `wifite` | Terminal | `vice-tool-wifite` |
+| 195 | `ettercap-text-only` | Ettercap Console MITM | Security | `ettercap-text-only` | `ettercap` | Terminal | `vice-tool-ettercap-text-only` |
+| 196 | `mitmproxy` | mitmproxy HTTPS Proxy | Security | `mitmproxy` | `mitmproxy` | Terminal | `vice-tool-mitmproxy` |
+| 197 | `binwalk` | Binwalk Firmware Analyzer | Security | `binwalk` | `binwalk` | Terminal | `vice-tool-binwalk` |
+| 198 | `foremost` | Foremost File Carver | Security | `foremost` | `foremost` | Terminal | `vice-tool-foremost` |
+| 199 | `steghide` | Steghide Steganography | Security | `steghide` | `steghide` | Terminal | `vice-tool-steghide` |
+| 200 | `sleuthkit` | Sleuth Kit Forensics (fls) | Security | `sleuthkit` | `fls` | Terminal | `vice-tool-sleuthkit` |
+| 201 | `yara` | YARA Malware Matcher | Security | `yara` | `yara` | Terminal | `vice-tool-yara` |
+| 202 | `gcc` | GCC C/C++ Compiler | Developer | `gcc` | `gcc` | Terminal | `vice-tool-gcc` |
+| 203 | `make` | GNU Make Build Tool | Developer | `make` | `make` | Terminal | `vice-tool-make` |
+| 204 | `cmake` | CMake Build System | Developer | `cmake` | `cmake` | Terminal | `vice-tool-cmake` |
+| 205 | `gdb-multiarch` | GDB Multi-Arch Debugger | Developer | `gdb-multiarch` | `gdb-multiarch` | Terminal | `vice-tool-gdb-multiarch` |
+| 206 | `nasm` | NASM x86/x64 Assembler | Developer | `nasm` | `nasm` | Terminal | `vice-tool-nasm` |
+| 207 | `binutils` | GNU Binutils (objdump) | Developer | `binutils` | `objdump` | Terminal | `vice-tool-binutils` |
+| 208 | `elfutils` | Elfutils ELF Inspector | Developer | `elfutils` | `eu-readelf` | Terminal | `vice-tool-elfutils` |
+| 209 | `patchelf` | PatchELF Binary Editor | Developer | `patchelf` | `patchelf` | Terminal | `vice-tool-patchelf` |
+| 210 | `hexedit` | Hexedit Terminal Hex | Developer | `hexedit` | `hexedit` | Terminal | `vice-tool-hexedit` |
+| 211 | `ghex` | GHex Graphical Hex Editor | Developer | `ghex` | `ghex` | GUI | `vice-tool-ghex` |
+| 212 | `xxd` | xxd Hex Dump Utility | Developer | `xxd` | `xxd` | Terminal | `vice-tool-xxd` |
+| 213 | `cloc` | cloc Code Line Counter | Developer | `cloc` | `cloc` | Terminal | `vice-tool-cloc` |
+| 214 | `hyperfine` | Hyperfine Benchmarker | Developer | `hyperfine` | `hyperfine` | Terminal | `vice-tool-hyperfine` |
+| 215 | `entr` | entr File-Change Runner | Developer | `entr` | `entr` | Terminal | `vice-tool-entr` |
+| 216 | `cppcheck` | Cppcheck Static Analyzer | Developer | `cppcheck` | `cppcheck` | Terminal | `vice-tool-cppcheck` |
+| 217 | `sqlitebrowser` | DB Browser for SQLite | Developer | `sqlitebrowser` | `sqlitebrowser` | GUI | `vice-tool-sqlitebrowser` |
+| 218 | `yq` | yq YAML & XML Processor | Developer | `yq` | `yq` | Terminal | `vice-tool-yq` |
+| 219 | `gnome-disk-utility` | GNOME Disks Utility | Files & Disk | `gnome-disk-utility` | `gnome-disks` | GUI | `vice-tool-gnome-disk-utility` |
+| 220 | `ntfs-3g` | NTFS-3G Windows FS Tools | Files & Disk | `ntfs-3g` | `ntfsfix` | Terminal | `vice-tool-ntfs-3g` |
+| 221 | `exfatprogs` | exFAT Filesystem Tools | Files & Disk | `exfatprogs` | `fsck.exfat` | Terminal | `vice-tool-exfatprogs` |
+| 222 | `dosfstools` | FAT/vFAT Filesystem Tools | Files & Disk | `dosfstools` | `fsck.fat` | Terminal | `vice-tool-dosfstools` |
+| 223 | `btrfs-progs` | Btrfs Filesystem Suite | Files & Disk | `btrfs-progs` | `btrfs` | Terminal | `vice-tool-btrfs-progs` |
+| 224 | `cryptsetup` | LUKS Disk Encryption CLI | Files & Disk | `cryptsetup` | `cryptsetup` | Terminal | `vice-tool-cryptsetup` |
+| 225 | `hdparm` | hdparm Drive Tuner | Files & Disk | `hdparm` | `hdparm` | Terminal | `vice-tool-hdparm` |
+| 226 | `lsscsi` | lsscsi Device Lister | Files & Disk | `lsscsi` | `lsscsi` | Terminal | `vice-tool-lsscsi` |
+| 227 | `nnn` | nnn Terminal File Manager | Files & Disk | `nnn` | `nnn` | Terminal | `vice-tool-nnn` |
+| 228 | `jdupes` | jdupes Duplicate Finder | Files & Disk | `jdupes` | `jdupes` | Terminal | `vice-tool-jdupes` |
+| 229 | `grsync` | Grsync Graphical Rsync | Files & Disk | `grsync` | `grsync` | GUI | `vice-tool-grsync` |
+| 230 | `pavucontrol` | PulseAudio/PipeWire Mixer | Media | `pavucontrol` | `pavucontrol` | GUI | `vice-tool-pavucontrol` |
+| 231 | `celluloid` | Celluloid Video Player | Media | `celluloid` | `celluloid` | GUI | `vice-tool-celluloid` |
+| 232 | `ristretto` | Ristretto Image Viewer | Media | `ristretto` | `ristretto` | GUI | `vice-tool-ristretto` |
+| 233 | `feh` | feh Fast Image Viewer | Media | `feh` | `feh` | GUI | `vice-tool-feh` |
+| 234 | `flameshot` | Flameshot Screenshot GUI | Media | `flameshot` | `flameshot` | GUI | `vice-tool-flameshot` |
+| 235 | `gnome-screenshot` | GNOME Screenshot Tool | Media | `gnome-screenshot` | `gnome-screenshot` | GUI | `vice-tool-gnome-screenshot` |
+| 236 | `gcolor3` | Gcolor3 Color Picker | Media | `gcolor3` | `gcolor3` | GUI | `vice-tool-gcolor3` |
+| 237 | `easytag` | EasyTAG Audio Tagger | Media | `easytag` | `easytag` | GUI | `vice-tool-easytag` |
+| 238 | `optipng` | OptiPNG Image Optimizer | Media | `optipng` | `optipng` | Terminal | `vice-tool-optipng` |
+| 239 | `jpegoptim` | JPEGoptim Optimizer | Media | `jpegoptim` | `jpegoptim` | Terminal | `vice-tool-jpegoptim` |
+| 240 | `firefox-esr` | Firefox ESR Browser | Productivity | `firefox-esr` | `firefox-esr` | GUI | `vice-tool-firefox-esr` |
+| 241 | `redshift` | Redshift Night Light | Productivity | `redshift` | `redshift` | Terminal | `vice-tool-redshift` |
+| 242 | `zim` | Zim Desktop Wiki | Productivity | `zim` | `zim` | GUI | `vice-tool-zim` |
+| 243 | `cherrytree` | CherryTree Notes | Productivity | `cherrytree` | `cherrytree` | GUI | `vice-tool-cherrytree` |
+| 244 | `calcurse` | Calcurse CLI Calendar | Productivity | `calcurse` | `calcurse` | Terminal | `vice-tool-calcurse` |
+| 245 | `taskwarrior` | Taskwarrior Task CLI | Productivity | `taskwarrior` | `task` | Terminal | `vice-tool-taskwarrior` |
+| 246 | `speedcrunch` | SpeedCrunch Calculator | Productivity | `speedcrunch` | `speedcrunch` | GUI | `vice-tool-speedcrunch` |
+| 247 | `qalculate-gtk` | Qalculate! Calculator | Productivity | `qalculate-gtk` | `qalculate-gtk` | GUI | `vice-tool-qalculate-gtk` |
+| 248 | `unzip` | UnZip Archive Extractor | Productivity | `unzip` | `unzip` | Terminal | `vice-tool-unzip` |
+| 249 | `zstd` | Zstandard Compressor | Productivity | `zstd` | `zstd` | Terminal | `vice-tool-zstd` |
+| 250 | `tealdeer` | tealdeer (tldr) Cheatsheets | Productivity | `tealdeer` | `tldr` | Terminal | `vice-tool-tealdeer` |
 
 ---
 
-## Batches 2–5 Roadmap (`200 / 500` -> `500 / 500`)
+## Batches 3–4 Roadmap (`375 / 500` -> `500 / 500`)
 
 | Batch | Cumulative Target | Planned Focus |
 | --- | --- | --- |
-| **Batch 1 (Current)** | **100 / 500 (20%)** | 10 GTA VI Leonida Neon Native Apps + 90 Core Debian Bookworm Power Tools (`vice-tool-hub`, `vice-run-tool`, custom 64x64 GTA VI icons) |
-| **Batch 2** | **200 / 500 (40%)** | +10 GTA VI Native Utilities (Wi-Fi/VPN Deck, Port Guard, Log Sentinel, Snapshot Vault, Disk Benchmark Pro) + 90 Networking, Forensics, Container & Observability CLI/GUI tools (`bmon`/`ethtool`/`arp-scan`/`fping`/`aria2`/`cloc`/`hyperfine`/`entr`/`pv`) |
-| **Batch 3** | **300 / 500 (60%)** | +10 GTA VI Native Dev/Media Apps (JSON/Regex Studio, Shader/Theme Forge, Audio Mixer Pro, Shortcut Deck) + 90 Compiler, Language Runtime, Database & Reverse-Engineering utilities |
-| **Batch 4** | **400 / 500 (80%)** | +10 GTA VI Native Cloud/Automation Apps + 90 Hardware Diagnostics, Filesystem Recovery, Encryption, Virtualization & Documentation tools |
-| **Batch 5** | **500 / 500 (100%)** | +10 GTA VI Finale Suite + 90 Productivity, Accessibility, Office/Publishing, and Creative Pipeline tools completing full 500/500 catalog |
+| **Batch 1 (Complete)** | **100 / 500 (20%)** | 10 GTA VI Native Apps + 90 Core Debian Bookworm Power Tools (`vice-tool-hub`, `vice-run-tool`, 64x64 GTA VI icons) |
+| **Batch 2 (Current)** | **250 / 500 (50%)** | +5 GTA VI Native Apps (Net Shield, Cyber Deck, Privacy Cloak, Office Studio, Clock Sync) + LibreOffice Suite + 140 Verified Bookworm Cybersecurity, VPN/Tor/DNS, and Standard Debian Tools |
+| **Batch 3 (Planned)** | **375 / 500 (75%)** | +5 GTA VI Native Dev/Media Apps (JSON/Regex Studio, Theme Forge, Audio Mixer Pro, Container Deck, Backup Scheduler) + 120 Compilers, Language Toolchains, Container/VM, Database & Creative CLI/GUI Utilities |
+| **Batch 4 (Planned)** | **500 / 500 (100%)** | +5 GTA VI Finale Suite Apps + 120 Hardware Diagnostics, Publishing, Accessibility, Science & Automation Tools completing full 500/500 catalog |

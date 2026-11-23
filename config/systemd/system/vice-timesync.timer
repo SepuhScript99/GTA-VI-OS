@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic Host Clock and Timezone Auto-Sync
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=1h
+AccuracySec=1min
+Unit=vice-timesync.service
+
+[Install]
+WantedBy=timers.target

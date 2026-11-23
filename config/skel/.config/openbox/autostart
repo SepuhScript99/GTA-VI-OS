@@ -55,6 +55,30 @@ if [ -x /opt/vice-os/vice_system_notifier.py ] && \
     /usr/bin/python3 /opt/vice-os/vice_system_notifier.py >/dev/null 2>&1 &
 fi
 
+# 2.8 Launch blueman-applet only if a tray (trayer/stalonetray) is present
+if command -v blueman-applet >/dev/null 2>&1 && \
+   ! pgrep -u "$(id -u)" -x blueman-applet >/dev/null 2>&1; then
+    if command -v stalonetray >/dev/null 2>&1 || command -v trayer >/dev/null 2>&1; then
+        (
+            w=0
+            while [ "$w" -lt 15 ]; do
+                if pgrep -u "$(id -u)" -x stalonetray >/dev/null 2>&1 || \
+                   pgrep -u "$(id -u)" -x trayer >/dev/null 2>&1; then
+                    blueman-applet >/dev/null 2>&1 &
+                    break
+                fi
+                sleep 0.5
+                w=$((w + 1))
+            done
+        ) &
+    fi
+fi
+
+# 2.9 Trigger background host clock/timezone refresh once session starts (non-interactive only)
+if [ -x /usr/local/bin/vice-timesync ] && command -v sudo >/dev/null 2>&1; then
+    sudo -n /usr/local/bin/vice-timesync --auto >/dev/null 2>&1 &
+fi
+
 # 3. Execute XDG Autostart entries (System-wide + User-specific)
 # We process user-specific entries first, then system-wide, ensuring
 # user overrides take precedence and avoiding duplicate executions.
@@ -78,10 +102,15 @@ process_autostart_dir() {
                     continue
                 fi
 
-                # Skip components started explicitly above (and nm-applet if no XEmbed tray is installed)
+                # Skip components started explicitly above (and nm-applet/blueman if no XEmbed tray is installed)
                 case "$app_name" in
-                    vice-os-compositor.desktop|vice-os-wallpaper.desktop|vice-os-shell.desktop|vice-os-notifications.desktop|polkit-gnome-authentication-agent-1.desktop)
+                    vice-os-compositor.desktop|vice-os-wallpaper.desktop|vice-os-shell.desktop|vice-os-notifications.desktop|polkit-gnome-authentication-agent-1.desktop|blueman.desktop|blueman-applet.desktop)
                         continue
+                        ;;
+                    pulseaudio.desktop)
+                        if command -v pipewire >/dev/null 2>&1; then
+                            continue
+                        fi
                         ;;
                     nm-applet.desktop)
                         if ! command -v stalonetray >/dev/null 2>&1; then

@@ -142,6 +142,15 @@ main() {
     install_fontconfig_defaults
     install_picom_config
 
+    # Ensure LibreOffice uses GTK3 VCL plugin across login shells too
+    mkdir -p /etc/profile.d
+    cat <<'LOENV' > /etc/profile.d/vice-libreoffice.sh
+# Use GTK3 VCL plugin so LibreOffice adopts the GTA VI GTK3 theme
+export SAL_USE_VCLPLUGIN=gtk3
+LOENV
+    chown root:root /etc/profile.d/vice-libreoffice.sh
+    chmod 644 /etc/profile.d/vice-libreoffice.sh
+
     # Pre-allow SSH if ufw is operational; first-boot initialization is completed by vp-firewall.service
     ufw allow ssh 2>/dev/null || true
     # Enable the UFW service so the firewall starts on boot

@@ -8,6 +8,7 @@ Taskbar window switcher, pinned quick-launch icons, system metrics, and Run Menu
 
 import sys
 import os
+import json
 import re
 import time
 import threading
@@ -35,6 +36,7 @@ sys.path.insert(0, '/opt/vice-os')
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from python.vice_utils import launch_command, get_cpu_usage, get_ram_usage, log_info, log_error  # noqa: E402
+from vice_theme import COLORS, configure_cjk_fonts, configure_icon_theme, resolve_icon  # noqa: E402
 
 STYLE_FILE = "/opt/vice-os/style.qss"
 
@@ -94,59 +96,22 @@ _COMMAND_FALLBACKS = {
 def _configure_cjk_fonts(app: QApplication):
     """Register Noto Sans CJK fallbacks so Japanese/CJK window titles render without tofu boxes."""
     cjk_list = list(_CJK_FONT_FAMILIES)
-    mono_list = list(_MONO_CJK_FAMILIES)
     for base in ("Noto Sans", "DejaVu Sans", "Sans", "sans-serif", "Arial"):
         QFont.insertSubstitutions(base, cjk_list)
-    for mono in ("monospace", "Monospace", "DejaVu Sans Mono"):
-        QFont.insertSubstitutions(mono, mono_list)
-    base_font = QFont("Noto Sans", 10)
-    if hasattr(base_font, "setFamilies"):
-        base_font.setFamilies(cjk_list)
-    app.setFont(base_font)
+    configure_cjk_fonts(app, size=10)
 
 
 def _configure_icon_theme():
     """Ensure PyQt5 resolves Freedesktop Papirus-Dark / Adwaita icons even without KDE."""
-    search_paths = [
-        "/usr/share/icons",
-        "/usr/local/share/icons",
-        os.path.expanduser("~/.local/share/icons"),
-    ]
-    QIcon.setThemeSearchPaths(search_paths)
-    for theme in ("Papirus-Dark", "Papirus", "Adwaita", "Tango", "hicolor"):
-        if os.path.isdir(os.path.join("/usr/share/icons", theme)):
-            QIcon.setThemeName(theme)
-            return theme
-    return ""
+    theme = configure_icon_theme()
+    if theme:
+        QIcon.setThemeName(theme)
+    return theme
 
 
 def _theme_icon(*names) -> QIcon:
     """Return the first valid Freedesktop theme, hicolor app icon, or pixmap QIcon from *names*."""
-    extra_dirs = (
-        "/usr/share/icons/hicolor/64x64/apps",
-        "/usr/share/icons/hicolor/48x48/apps",
-        "/usr/share/icons/hicolor/scalable/apps",
-        "/usr/share/pixmaps",
-        os.path.expanduser("~/.local/share/icons/hicolor/64x64/apps"),
-    )
-    for name in names:
-        if not name:
-            continue
-        if os.path.isfile(name):
-            icon = QIcon(name)
-            if not icon.isNull():
-                return icon
-        icon = QIcon.fromTheme(name)
-        if not icon.isNull():
-            return icon
-        for base_dir in extra_dirs:
-            for ext in (".png", ".svg", ".xpm", ""):
-                candidate = os.path.join(base_dir, f"{name}{ext}")
-                if os.path.isfile(candidate):
-                    ic = QIcon(candidate)
-                    if not ic.isNull():
-                        return ic
-    return QIcon()
+    return resolve_icon(*names)
 
 
 def _make_show_desktop_icon() -> QIcon:
@@ -155,10 +120,10 @@ def _make_show_desktop_icon() -> QIcon:
     pix.fill(Qt.transparent)
     p = QPainter(pix)
     p.setRenderHint(QPainter.Antialiasing, True)
-    p.setPen(QPen(QColor("#d6cee8"), 1.4))
+    p.setPen(QPen(QColor(COLORS["text_secondary"]), 1.4))
     p.drawRoundedRect(1, 2, 14, 11, 2.0, 2.0)
-    p.fillRect(2, 10, 12, 2, QColor("#00e5c3"))
-    p.fillRect(11, 4, 2, 5, QColor("#ff4da6"))
+    p.fillRect(2, 10, 12, 2, QColor(COLORS["accent_aqua"]))
+    p.fillRect(11, 4, 2, 5, QColor(COLORS["accent_coral"]))
     p.end()
     return QIcon(pix)
 
@@ -195,7 +160,14 @@ def _logo_icon() -> QIcon:
 
 
 def _runtime_dir() -> str:
-    return os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/vice-{os.getuid()}"
+    xdg = os.environ.get("XDG_RUNTIME_DIR")
+    if xdg and os.path.isdir(xdg):
+        return xdg
+    uid = os.getuid() if hasattr(os, "getuid") else 1000
+    run_dir = f"/run/user/{uid}"
+    if os.path.isdir(run_dir) and os.access(run_dir, os.W_OK):
+        return run_dir
+    return f"/tmp/vice-{uid}"
 
 
 def _toggle_trigger_path() -> str:
@@ -507,6 +479,17 @@ class TaskbarWidget(QWidget):
             (("vice qr",), ("vice-tool-qr-hash", "applications-development")),
             (("vice hardware",), ("vice-tool-sys-deck", "computer")),
             (("vice command",), ("vice-tool-cheatsheets", "utilities-terminal")),
+            (("vice net shield", "net shield"), ("vice-tool-net-shield", "network-vpn")),
+            (("vice cyber", "cyber deck"), ("vice-tool-cyber-deck", "security-high")),
+            (("vice privacy", "identity cloak", "mac cloak"), ("vice-tool-mac-cloak", "changes-prevent")),
+            (("vice office", "office studio"), ("vice-tool-office-hub", "x-office-document")),
+            (("vice world clock", "clock sync"), ("vice-tool-clock-sync", "preferences-system-time")),
+            (("libreoffice writer", "writer"), ("vice-tool-libreoffice-writer", "libreoffice-writer", "x-office-document")),
+            (("libreoffice calc", "calc"), ("vice-tool-libreoffice-calc", "libreoffice-calc", "x-office-spreadsheet")),
+            (("libreoffice impress", "impress"), ("vice-tool-libreoffice-impress", "libreoffice-impress", "x-office-presentation")),
+            (("libreoffice draw",), ("vice-tool-libreoffice-draw", "libreoffice-draw", "x-office-drawing")),
+            (("libreoffice math",), ("vice-tool-libreoffice-math", "libreoffice-math", "accessories-calculator")),
+            (("galculator", "calculator"), ("vice-tool-galculator", "galculator", "accessories-calculator")),
             (("vice os settings",), ("preferences-system", "settings")),
             (("firefox",), ("firefox-esr", "firefox", "web-browser")),
             (("thunar",), ("system-file-manager", "folder")),
@@ -530,8 +513,10 @@ class TaskbarWidget(QWidget):
         for wid, btn in self._buttons.items():
             title = self._window_titles.get(wid, btn.toolTip() or btn.text())
             btn.setMaximumWidth(per_btn_max)
-            text_budget = max(32, per_btn_max - 42)
-            label = QFontMetrics(btn.font()).elidedText(title, Qt.ElideRight, text_budget)
+            bold_font = QFont(btn.font())
+            bold_font.setBold(True)
+            text_budget = max(32, per_btn_max - 52)
+            label = QFontMetrics(bold_font).elidedText(title, Qt.ElideRight, text_budget)
             if btn.text() != label:
                 btn.setText(label)
 
@@ -626,16 +611,38 @@ class TaskbarWidget(QWidget):
         menu.exec_(btn.mapToGlobal(pos))
 
 
+def _read_registry_counts() -> tuple:
+    """Return (current_count, target_count) from tools_registry.json."""
+    candidates = (
+        "/opt/vice-os/tools_registry.json",
+        os.path.abspath(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config", "tools_registry.json")
+        ),
+    )
+    for path in candidates:
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as fp:
+                    data = json.load(fp)
+                cur = int(data.get("current_count") or len(data.get("tools", [])))
+                tgt = int(data.get("target_count") or 500)
+                return cur, tgt
+            except Exception:
+                pass
+    return 250, 500
+
+
 class StartMenuPopup(_StyledWidget):
     """Mint Cinnamon-style instant Start Menu anchored bottom-left above the taskbar."""
 
     _MENU_CATEGORIES = [
         ("All Applications", ("view-app-grid", "start-here", "applications-other")),
         ("Vice Tools", ("vice-tool-hub", "applications-utilities", "applications-other")),
+        ("Office", ("vice-tool-office-hub", "applications-office", "x-office-document")),
+        ("Security", ("vice-tool-cyber-deck", "security-high", "changes-prevent")),
         ("Accessories", ("applications-accessories", "accessories-text-editor")),
         ("Graphics", ("applications-graphics", "image-x-generic")),
         ("Internet", ("applications-internet", "internet-web-browser")),
-        ("Office", ("applications-office", "x-office-document")),
         ("Sound & Video", ("applications-multimedia", "multimedia-video-player")),
         ("Development", ("applications-development", "applications-engineering")),
         ("Administration", ("applications-system", "system-run")),
@@ -648,9 +655,9 @@ class StartMenuPopup(_StyledWidget):
         "Graphics": "Graphics",
         "Internet": "Internet",
         "Office": "Office",
+        "Security": "Security",
         "Development": "Development",
         "System": "Administration",
-        "Security": "Administration",
         "Settings": "Preferences",
         "Multimedia": "Sound & Video",
     }
@@ -673,6 +680,7 @@ class StartMenuPopup(_StyledWidget):
         self._power_cb = power_cb
         self._menu_open = False
         self.last_deactivated_at = 0.0
+        self._opened_at = 0.0
         self._last_launch_at = 0.0
         self._last_apps_mtime = None
         self._apps = []
@@ -698,12 +706,15 @@ class StartMenuPopup(_StyledWidget):
         rail_layout.setContentsMargins(8, 12, 8, 12)
         rail_layout.setSpacing(8)
 
+        cur_tools, tgt_tools = _read_registry_counts()
         pinned_rail = [
-            ("Vice Tool Hub (100/500)", ["python3 /opt/vice-os/vice_tool_hub.py"],
+            (f"Vice Tool Hub ({cur_tools}/{tgt_tools})", ["python3 /opt/vice-os/vice_tool_hub.py"],
              ("vice-tool-hub", "view-app-grid"), "RailHubButton"),
+            ("Vice Office Studio", ["python3 /opt/vice-os/vice_tool_office_hub.py"],
+             ("vice-tool-office-hub", "x-office-document"), "RailButton"),
+            ("Vice Net Shield", ["python3 /opt/vice-os/vice_tool_net_shield.py"],
+             ("vice-tool-net-shield", "network-vpn"), "RailButton"),
             ("Firefox", ["firefox-esr", "firefox"], ("firefox-esr", "firefox", "web-browser"), "RailButton"),
-            ("Software Center", ["python3 /opt/vice-os/vice_software_center.py", "synaptic"],
-             ("system-software-install", "synaptic"), "RailButton"),
             ("Settings Center", ["python3 /opt/vice-os/vice_settings.py"], ("preferences-system", "settings"), "RailButton"),
             ("Terminal", ["xfce4-terminal", "xterm"], ("utilities-terminal", "terminal"), "RailButton"),
             ("Files", ["thunar", "pcmanfm"], ("system-file-manager", "folder"), "RailButton"),
@@ -748,20 +759,20 @@ class StartMenuPopup(_StyledWidget):
 
         brand = QLabel("VICE OS · Leonida", main_area)
         brand.setFont(QFont("Noto Sans", 11, QFont.Bold))
-        brand.setStyleSheet("color: #ff8a5b;")
+        brand.setStyleSheet(f"color: {COLORS['text_primary']};")
         header_row.addWidget(brand)
         header_row.addStretch(1)
 
-        hub_pill = QPushButton("Tool Hub · 100/500", main_area)
-        hub_pill.setObjectName("StartHubPill")
-        hub_pill.setFocusPolicy(Qt.NoFocus)
-        hub_pill.setToolTip("Open Vice Tool Hub (GTA VI & Debian Power Tools)")
+        self._hub_pill = QPushButton(f"Tool Hub · {cur_tools}/{tgt_tools}", main_area)
+        self._hub_pill.setObjectName("StartHubPill")
+        self._hub_pill.setFocusPolicy(Qt.NoFocus)
+        self._hub_pill.setToolTip(f"Open Vice Tool Hub ({cur_tools}/{tgt_tools} GTA VI & Debian Tools)")
         hub_ic = _theme_icon("vice-tool-hub", "view-app-grid")
         if not hub_ic.isNull():
-            hub_pill.setIcon(hub_ic)
-            hub_pill.setIconSize(QSize(16, 16))
-        hub_pill.clicked.connect(lambda: self._run_and_hide(["python3 /opt/vice-os/vice_tool_hub.py"]))
-        header_row.addWidget(hub_pill)
+            self._hub_pill.setIcon(hub_ic)
+            self._hub_pill.setIconSize(QSize(16, 16))
+        self._hub_pill.clicked.connect(lambda: self._run_and_hide(["python3 /opt/vice-os/vice_tool_hub.py"]))
+        header_row.addWidget(self._hub_pill)
         main_layout.addLayout(header_row)
 
         self._search = QLineEdit(main_area)
@@ -824,6 +835,12 @@ class StartMenuPopup(_StyledWidget):
         label = str(app_entry.get("label", "")).lower()
         return app_id in ("vice-tool-hub.desktop", "vice_tool_hub.py") or label == "vice tool hub"
 
+    @staticmethod
+    def _is_office_hub(app_entry: dict) -> bool:
+        app_id = str(app_entry.get("id", "")).lower()
+        label = str(app_entry.get("label", "")).lower()
+        return app_id in ("vice-tool-office-hub.desktop", "vice_tool_office_hub.py") or label == "vice office studio"
+
     def _apps_dirs_mtime(self) -> float:
         dirs = getattr(_LAUNCHER_MODULE, "DESKTOP_APP_DIRS", ["/usr/share/applications"])
         latest = 0.0
@@ -856,15 +873,23 @@ class StartMenuPopup(_StyledWidget):
         icon_name = app.get("icon", "")
         if self._is_tool_hub(app) and not icon_name:
             icon_name = "vice-tool-hub"
+        elif self._is_office_hub(app) and not icon_name:
+            icon_name = "vice-tool-office-hub"
         icon = _theme_icon(icon_name, "application-x-executable", "applications-other")
         label = app.get("label", "")
         item = QListWidgetItem(icon, label)
         item.setData(Qt.UserRole, app)
         if self._is_tool_hub(app):
+            cur_tools, tgt_tools = _read_registry_counts()
             bold_font = QFont("Noto Sans", 10, QFont.Bold)
             item.setFont(bold_font)
-            item.setForeground(QColor("#00e5c3"))
-            item.setToolTip(f"Featured: {app.get('comment') or 'Vice Tool Hub (100/500 GTA VI Tools)'}")
+            item.setForeground(QColor(COLORS["accent_aqua"]))
+            item.setToolTip(f"Featured: {app.get('comment') or f'Vice Tool Hub ({cur_tools}/{tgt_tools} GTA VI Tools)'}")
+        elif self._is_office_hub(app):
+            bold_font = QFont("Noto Sans", 10, QFont.Bold)
+            item.setFont(bold_font)
+            item.setForeground(QColor(COLORS["accent_gold"]))
+            item.setToolTip(f"Featured: {app.get('comment') or 'Vice Office Studio (LibreOffice Suite)'}")
         else:
             item.setToolTip(app.get("comment") or label)
         return item
@@ -901,10 +926,12 @@ class StartMenuPopup(_StyledWidget):
             def _sort_key(entry: dict):
                 if self._is_tool_hub(entry):
                     return (0, "")
+                if self._is_office_hub(entry):
+                    return (1, "")
                 is_native = any("vice_tool_" in str(a) for a in entry.get("args", []))
                 if selected_cat == "Vice Tools":
-                    return (1 if is_native else 2, entry.get("label", "").lower())
-                return (1, entry.get("label", "").lower())
+                    return (2 if is_native else 3, entry.get("label", "").lower())
+                return (2, entry.get("label", "").lower())
             matched.sort(key=_sort_key)
 
         for app in matched:
@@ -981,14 +1008,18 @@ class StartMenuPopup(_StyledWidget):
             return
         geo = screen.geometry()
         pc = _pc()
-        w = min(680, geo.width() - 24)
-        h = min(510, geo.height() - pc.DOCK_HEIGHT - 24)
+        w = min(690, geo.width() - 24)
+        h = min(540, geo.height() - pc.DOCK_HEIGHT - 20)
         self.setGeometry(geo.x() + 10, geo.y() + geo.height() - pc.DOCK_HEIGHT - h - 8, w, h)
+        cur_tools, tgt_tools = _read_registry_counts()
+        self._hub_pill.setText(f"Tool Hub · {cur_tools}/{tgt_tools}")
+        self._hub_pill.setToolTip(f"Open Vice Tool Hub ({cur_tools}/{tgt_tools} GTA VI & Debian Tools)")
         if not self._apps or self._apps_dirs_mtime() != self._last_apps_mtime:
             self.reload_apps()
         self._search.clear()
         self._cat_list.setCurrentRow(0)
         self._populate_items()
+        self._opened_at = time.monotonic()
         self.show()
         self.raise_()
         self.activateWindow()
@@ -997,6 +1028,8 @@ class StartMenuPopup(_StyledWidget):
     def changeEvent(self, event):
         if event.type() == QEvent.ActivationChange and not self.isActiveWindow():
             if not self._menu_open and self.isVisible():
+                if time.monotonic() - self._opened_at < 0.30:
+                    return
                 self.last_deactivated_at = time.monotonic()
                 self.hide()
         super().changeEvent(event)
@@ -1060,7 +1093,9 @@ class RunMenu(_StyledWidget):
             self.show_error(f"Command not found: {shlex.split(cmd_str)[0]}")
 
     def show_error(self, message: str):
-        self.input_field.setStyleSheet("border: 1px solid #ff3b6b; color: #ff6b8b;")
+        self.input_field.setStyleSheet(
+            f"border: 1px solid {COLORS['danger']}; color: {COLORS['danger']};"
+        )
         self.input_field.setText(message)
 
     def focusOutEvent(self, event):
@@ -1231,11 +1266,11 @@ class VolumePopup(_StyledWidget):
 
         header = QHBoxLayout()
         title = QLabel("Audio Output", self)
-        title.setStyleSheet("color: #ff8a5b; font-weight: bold;")
+        title.setStyleSheet(f"color: {COLORS['text_primary']}; font-weight: bold;")
         header.addWidget(title)
         header.addStretch(1)
         self._pct_label = QLabel("85%", self)
-        self._pct_label.setStyleSheet("color: #00e5c3; font-weight: bold;")
+        self._pct_label.setStyleSheet(f"color: {COLORS['accent_aqua']}; font-weight: bold;")
         header.addWidget(self._pct_label)
         layout.addLayout(header)
 
@@ -1385,6 +1420,7 @@ class BottomTaskbar(_StyledWidget):
         self._last_clock_tip = ""
         self._last_sysinfo_text = ""
         self._last_bat_text = ""
+        self._last_tz_sig = self._localtime_sig()
         self._audio_updated.connect(self._apply_audio_indicator)
         self._net_updated.connect(self._apply_net_indicator)
         self._start_menu = StartMenuPopup(self.logout, self._run_power_action)
@@ -1428,10 +1464,11 @@ class BottomTaskbar(_StyledWidget):
 
         # 2. Pinned Quick-Launch Icons (Mint-style next to Start button)
         pinned_items = [
-            ("Files", ["thunar", "pcmanfm"], ("system-file-manager", "folder")),
+            ("Files", ["thunar", "pcmanfm"], ("folder", "system-file-manager")),
             ("Firefox", ["firefox-esr", "firefox"], ("firefox-esr", "firefox", "web-browser")),
             ("Terminal", ["xfce4-terminal", "xterm"], ("utilities-terminal", "terminal")),
-            ("Text Editor", ["mousepad", "geany"], ("accessories-text-editor", "text-editor")),
+            ("Vice Office Studio", ["python3 /opt/vice-os/vice_tool_office_hub.py", "libreoffice --writer"],
+             ("vice-tool-office-hub", "x-office-document")),
             ("Vice Tool Hub", ["python3 /opt/vice-os/vice_tool_hub.py"], ("vice-tool-hub", "view-app-grid")),
         ]
         for tip, cmds, icon_names in pinned_items:
@@ -1517,10 +1554,13 @@ class BottomTaskbar(_StyledWidget):
         self.clock = QPushButton("00:00", self)
         self.clock.setObjectName("Clock")
         self.clock.setFocusPolicy(Qt.NoFocus)
-        self.clock.setFixedHeight(36)
-        self.clock.setToolTip("Open Calendar")
+        self.clock.setFixedHeight(34)
+        self.clock.setToolTip("World Clock & Host Time Sync — Click to open")
         self.clock.clicked.connect(
-            lambda: launch_command("python3 /opt/vice-os/vice_calendar.py")
+            lambda: _launch_candidates([
+                "python3 /opt/vice-os/vice_tool_clock_sync.py",
+                "python3 /opt/vice-os/vice_calendar.py",
+            ])
         )
         layout.addWidget(self.clock)
 
@@ -1554,6 +1594,9 @@ class BottomTaskbar(_StyledWidget):
 
     def _show_net_menu(self, pos):
         menu = QMenu(self)
+        menu.addAction("Vice Net Shield (VPN / Tor / DNS)",
+                       lambda: launch_command("python3 /opt/vice-os/vice_tool_net_shield.py"))
+        menu.addSeparator()
         menu.addAction("Network Connections", lambda: _launch_candidates(["nm-connection-editor"]))
         menu.addAction("WiFi Connect", lambda: launch_command("python3 /opt/vice-os/vice_wifi_connect.py"))
         menu.addAction("Net Monitor", lambda: launch_command("python3 /opt/vice-os/vice_network_monitor.py"))
@@ -1707,12 +1750,35 @@ class BottomTaskbar(_StyledWidget):
         self.setFixedHeight(h)
         self.setGeometry(geo.x(), geo.y() + geo.height() - h, geo.width(), h)
 
+    @staticmethod
+    def _localtime_sig():
+        """Return (realpath, mtime_ns) of /etc/localtime to detect timezone changes."""
+        lt_path = "/etc/localtime"
+        try:
+            st = os.stat(lt_path)
+            return (os.path.realpath(lt_path), getattr(st, "st_mtime_ns", int(st.st_mtime)))
+        except OSError:
+            return ("", 0)
+
+    def _sync_timezone_if_changed(self):
+        """Reload C library timezone data via time.tzset() when /etc/localtime changes."""
+        sig = self._localtime_sig()
+        if sig != self._last_tz_sig:
+            self._last_tz_sig = sig
+            if hasattr(time, "tzset"):
+                try:
+                    time.tzset()
+                except Exception as e:
+                    log_error(f"time.tzset() failed: {e}")
+
     def update_info(self):
+        self._sync_timezone_if_changed()
         clock_text = time.strftime("%H:%M\n%a %d/%m")
         if clock_text != self._last_clock_text:
             self._last_clock_text = clock_text
             self.clock.setText(clock_text)
-        clock_tip = time.strftime("%A, %d %B %Y — Click for Calendar")
+        tz_name = time.tzname[time.daylight] if (time.daylight and len(time.tzname) > 1) else time.tzname[0]
+        clock_tip = time.strftime(f"%A, %d %B %Y ({tz_name}) — Click for World Clock & Sync")
         if clock_tip != self._last_clock_tip:
             self._last_clock_tip = clock_tip
             self.clock.setToolTip(clock_tip)

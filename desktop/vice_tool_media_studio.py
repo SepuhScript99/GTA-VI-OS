@@ -4,6 +4,7 @@ GTA VI OS (Vice OS) — Vice Media Studio.
 Real FFmpeg + ImageMagick (convert) GUI converter supporting Video -> MP4/WebM/GIF,
 audio extraction (MP3/WAV/FLAC), and Image convert/resize (PNG/JPG/WebP)
 using non-blocking QProcess execution with live log and progress tracking.
+Styled via vice_theme (Noto Sans CJK fallback).
 """
 
 import os
@@ -13,11 +14,11 @@ import signal
 import sys
 
 from PyQt5.QtCore import Qt, QProcess
-from PyQt5.QtGui import QFont, QIcon, QPixmap
+from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
+    QApplication, QComboBox, QFileDialog, QHBoxLayout, QLabel,
     QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar,
-    QPushButton, QSpinBox, QTabWidget, QVBoxLayout, QWidget
+    QSpinBox, QTabWidget, QVBoxLayout, QWidget
 )
 
 try:
@@ -25,7 +26,19 @@ try:
 except ImportError:
     Image = None
 
-sys.path.insert(0, "/opt/vice-os/lib")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _p in ("/opt/vice-os", _HERE, "/opt/vice-os/lib"):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    load_tool_icon,
+    make_button,
+    make_card,
+    make_header,
+)
 
 try:
     from python.vice_utils import log_info  # noqa: E402
@@ -33,15 +46,6 @@ except ImportError:
     def log_info(msg: str) -> None:
         print(f"[INFO] {msg}")
 
-
-CJK_FONTS = [
-    "Noto Sans",
-    "Noto Sans CJK JP",
-    "Noto Sans CJK SC",
-    "Noto Sans CJK TC",
-    "Noto Sans CJK KR",
-    "DejaVu Sans",
-]
 
 VIDEO_PRESETS = [
     ("Video -> MP4 (H.264 / AAC)", ".mp4", "video", ["-c:v", "libx264", "-preset", "fast", "-crf", "22", "-c:a", "aac", "-b:a", "192k"]),
@@ -51,112 +55,6 @@ VIDEO_PRESETS = [
     ("Extract Audio -> WAV (PCM)", ".wav", "audio", ["-vn", "-c:a", "pcm_s16le"]),
     ("Extract Audio -> FLAC (Lossless)", ".flac", "audio", ["-vn", "-c:a", "flac"]),
 ]
-
-STYLE = """
-QMainWindow, QWidget#RootWidget {
-    background-color: #120e1e;
-    color: #f4f1fa;
-    font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
-    font-size: 13px;
-}
-QFrame#Banner {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #231438, stop:0.6 #331338, stop:1 #16233a);
-    border: 1px solid #ff4da6;
-    border-radius: 12px;
-}
-QTabWidget::pane {
-    border: 1px solid #3c2e5e;
-    border-radius: 10px;
-    background-color: #161126;
-}
-QTabBar::tab {
-    background-color: #1b152e;
-    color: #cfc6e6;
-    border: 1px solid #322650;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-    padding: 8px 16px;
-    margin-right: 4px;
-    font-weight: bold;
-}
-QTabBar::tab:selected {
-    background-color: #321d46;
-    color: #ff8a5b;
-    border-color: #ff4da6;
-}
-QLineEdit, QComboBox, QSpinBox {
-    background-color: #1b152e;
-    color: #f4f1fa;
-    border: 1px solid #3c2e5e;
-    border-radius: 8px;
-    padding: 7px 10px;
-}
-QPushButton {
-    background-color: #1f1836;
-    color: #00e5ff;
-    border: 1px solid #00e5ff;
-    border-radius: 8px;
-    padding: 7px 14px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00e5ff;
-    color: #120e1e;
-}
-QPushButton#CancelBtn {
-    color: #ff6b8b;
-    border-color: #ff6b8b;
-}
-QPushButton#CancelBtn:hover {
-    background-color: #ff6b8b;
-    color: #120e1e;
-}
-QProgressBar {
-    background-color: #151026;
-    border: 1px solid #43346b;
-    border-radius: 7px;
-    height: 16px;
-    text-align: center;
-    color: #ffffff;
-    font-weight: bold;
-}
-QProgressBar::chunk {
-    border-radius: 6px;
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #ff4da6, stop:0.5 #ff8a5b, stop:1 #00e5ff);
-}
-QPlainTextEdit {
-    background-color: #0d0a18;
-    color: #d6cee8;
-    border: 1px solid #30244a;
-    border-radius: 8px;
-    font-family: "Noto Sans Mono CJK JP", "Noto Sans Mono CJK SC", "DejaVu Sans Mono", monospace;
-    font-size: 11px;
-    padding: 8px;
-}
-"""
-
-
-def _configure_cjk_fonts(app: QApplication) -> None:
-    for fam in ("Noto Sans", "DejaVu Sans", "Sans", "sans-serif"):
-        QFont.insertSubstitutions(fam, CJK_FONTS)
-    font = QFont("Noto Sans", 10)
-    if hasattr(font, "setFamilies"):
-        font.setFamilies(CJK_FONTS)
-    app.setFont(font)
-
-
-def _load_app_icon() -> QIcon:
-    for path in (
-        "/usr/share/icons/hicolor/64x64/apps/vice-tool-media-studio.png",
-        "/usr/share/pixmaps/vice-tool-media-studio.png",
-    ):
-        if os.path.isfile(path):
-            pm = QPixmap(path)
-            if not pm.isNull():
-                return QIcon(pm)
-    return QIcon.fromTheme("applications-multimedia")
 
 
 def _parse_hms(ts: str) -> float:
@@ -174,10 +72,10 @@ class ViceMediaStudioApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Vice Media Studio — FFmpeg & ImageMagick")
-        self.resize(900, 650)
+        self.setWindowTitle("Vice Media Studio — Vice OS")
+        self.resize(900, 660)
         self.setMinimumSize(720, 520)
-        icon = _load_app_icon()
+        icon = load_tool_icon("vice-tool-media-studio", "applications-multimedia")
         if not icon.isNull():
             self.setWindowIcon(icon)
 
@@ -194,20 +92,18 @@ class ViceMediaStudioApp(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 14)
         layout.setSpacing(12)
 
-        banner = QFrame(root)
-        banner.setObjectName("Banner")
-        bl = QVBoxLayout(banner)
-        bl.setContentsMargins(16, 12, 16, 12)
-        title = QLabel("VICE MEDIA STUDIO · FFMPEG & IMAGEMAGICK LAB", banner)
-        title.setStyleSheet("color: #ffd166; font-size: 18px; font-weight: bold; background: transparent;")
-        bl.addWidget(title)
-        sub = QLabel("Transcode MP4/WebM/GIF, extract MP3/WAV/FLAC audio, and resize/convert PNG/JPG/WebP", banner)
-        sub.setStyleSheet("color: #cfc6e6; font-size: 12px; background: transparent;")
-        bl.addWidget(sub)
-        layout.addWidget(banner)
+        self._header = make_header(
+            title="Vice Media Studio",
+            subtitle="Transcode MP4/WebM/GIF, extract audio, and convert/resize images",
+            icon_name="vice-tool-media-studio",
+            badge_text="READY",
+            badge_variant="neutral",
+            parent=root,
+        )
+        layout.addWidget(self._header)
 
         tabs = QTabWidget(root)
-        tabs.addTab(self._build_av_tab(), "Video & Audio (FFmpeg)")
+        tabs.addTab(self._build_av_tab(), "Video && Audio (FFmpeg)")
         tabs.addTab(self._build_img_tab(), "Image Studio (convert)")
         layout.addWidget(tabs, 1)
 
@@ -227,16 +123,19 @@ class ViceMediaStudioApp(QMainWindow):
         v.setContentsMargins(14, 14, 14, 14)
         v.setSpacing(10)
 
+        card = make_card(title="FFmpeg Media Pipeline", parent=w)
         in_row = QHBoxLayout()
+        in_row.setSpacing(8)
         self._av_in = QLineEdit()
         self._av_in.setPlaceholderText("Input video or audio file...")
         in_row.addWidget(self._av_in, 1)
-        in_btn = QPushButton("Browse Media...")
+        in_btn = make_button("Browse Media...", variant="secondary")
         in_btn.clicked.connect(self._browse_av_input)
         in_row.addWidget(in_btn)
-        v.addLayout(in_row)
+        card.body_layout.addLayout(in_row)
 
         opt_row = QHBoxLayout()
+        opt_row.setSpacing(8)
         opt_row.addWidget(QLabel("Preset:"))
         self._preset_combo = QComboBox()
         for label, _ext, _kind, _flags in VIDEO_PRESETS:
@@ -248,29 +147,32 @@ class ViceMediaStudioApp(QMainWindow):
         self._scale_combo = QComboBox()
         self._scale_combo.addItems(["Original", "1920x1080", "1280x720", "854x480"])
         opt_row.addWidget(self._scale_combo)
-        v.addLayout(opt_row)
+        card.body_layout.addLayout(opt_row)
 
         out_row = QHBoxLayout()
+        out_row.setSpacing(8)
         self._av_out = QLineEdit()
         self._av_out.setPlaceholderText("Output media path...")
         out_row.addWidget(self._av_out, 1)
-        out_btn = QPushButton("Save As...")
+        out_btn = make_button("Save As...", variant="secondary")
         out_btn.clicked.connect(self._browse_av_out)
         out_row.addWidget(out_btn)
-        v.addLayout(out_row)
+        card.body_layout.addLayout(out_row)
 
         act_row = QHBoxLayout()
-        self._av_run_btn = QPushButton("Start FFmpeg Conversion")
+        act_row.setSpacing(8)
+        self._av_run_btn = make_button("Start Conversion", variant="primary")
         self._av_run_btn.clicked.connect(self._run_ffmpeg)
         act_row.addWidget(self._av_run_btn)
 
-        self._av_cancel_btn = QPushButton("Cancel")
-        self._av_cancel_btn.setObjectName("CancelBtn")
+        self._av_cancel_btn = make_button("Cancel", variant="danger")
         self._av_cancel_btn.setEnabled(False)
         self._av_cancel_btn.clicked.connect(self._cancel_process)
         act_row.addWidget(self._av_cancel_btn)
         act_row.addStretch(1)
-        v.addLayout(act_row)
+        card.body_layout.addLayout(act_row)
+
+        v.addWidget(card)
         v.addStretch(1)
         return w
 
@@ -281,15 +183,17 @@ class ViceMediaStudioApp(QMainWindow):
         v.setSpacing(10)
 
         in_row = QHBoxLayout()
+        in_row.setSpacing(8)
         self._img_in = QLineEdit()
         self._img_in.setPlaceholderText("Input image file (PNG, JPG, WebP, BMP, TIFF)...")
         in_row.addWidget(self._img_in, 1)
-        in_btn = QPushButton("Browse Image...")
+        in_btn = make_button("Browse Image...", variant="secondary")
         in_btn.clicked.connect(self._browse_img_input)
         in_row.addWidget(in_btn)
         v.addLayout(in_row)
 
         opt_row = QHBoxLayout()
+        opt_row.setSpacing(8)
         opt_row.addWidget(QLabel("Format:"))
         self._img_fmt = QComboBox()
         self._img_fmt.addItems(["png", "jpg", "webp"])
@@ -321,26 +225,33 @@ class ViceMediaStudioApp(QMainWindow):
         v.addLayout(opt_row)
 
         out_row = QHBoxLayout()
+        out_row.setSpacing(8)
         self._img_out = QLineEdit()
         self._img_out.setPlaceholderText("Output image path...")
         out_row.addWidget(self._img_out, 1)
-        out_btn = QPushButton("Save As...")
+        out_btn = make_button("Save As...", variant="secondary")
         out_btn.clicked.connect(self._browse_img_out)
         out_row.addWidget(out_btn)
         v.addLayout(out_row)
 
         mid_row = QHBoxLayout()
+        mid_row.setSpacing(12)
         self._img_preview = QLabel("No image loaded")
         self._img_preview.setFixedSize(220, 140)
         self._img_preview.setAlignment(Qt.AlignCenter)
-        self._img_preview.setStyleSheet("border: 1px solid #382b57; border-radius: 8px; background: #0e0b19; color: #a99ec9;")
+        self._img_preview.setStyleSheet(
+            f"border: 1px solid {COLORS['border']}; border-radius: 8px; "
+            f"background: {COLORS['bg_canvas']}; color: {COLORS['text_muted']};"
+        )
         mid_row.addWidget(self._img_preview)
 
         col_btns = QVBoxLayout()
-        self._img_run_btn = QPushButton("Convert / Resize Image")
+        col_btns.setSpacing(8)
+        self._img_run_btn = make_button("Convert / Resize Image", variant="primary")
         self._img_run_btn.clicked.connect(self._run_image_convert)
         col_btns.addWidget(self._img_run_btn)
-        self._img_meta = QLabel("Uses ImageMagick 'convert' (or Pillow fallback).")
+        self._img_meta = QLabel("Uses ImageMagick 'convert' with Pillow fallback.")
+        self._img_meta.setObjectName("MutedLabel")
         self._img_meta.setWordWrap(True)
         col_btns.addWidget(self._img_meta)
         col_btns.addStretch(1)
@@ -364,8 +275,7 @@ class ViceMediaStudioApp(QMainWindow):
         idx = self._preset_combo.currentIndex()
         ext = VIDEO_PRESETS[idx][1]
         base, _old = os.path.splitext(src)
-        candidate = f"{base}_vice{ext}"
-        self._av_out.setText(candidate)
+        self._av_out.setText(f"{base}_vice{ext}")
 
     def _browse_av_out(self) -> None:
         path, _ = QFileDialog.getSaveFileName(self, "Save Media As", self._av_out.text() or os.path.expanduser("~"))
@@ -409,6 +319,7 @@ class ViceMediaStudioApp(QMainWindow):
         self._av_run_btn.setEnabled(not busy)
         self._img_run_btn.setEnabled(not busy)
         self._av_cancel_btn.setEnabled(busy)
+        self._header.set_badge("RUNNING" if busy else "READY", "aqua" if busy else "neutral")
 
     def _run_ffmpeg(self) -> None:
         if self._is_busy():
@@ -504,6 +415,7 @@ class ViceMediaStudioApp(QMainWindow):
                 self._progress.setRange(0, 100)
                 self._progress.setValue(100)
                 self._append_log(f"[Pillow fallback] Converted image -> {dst}\n")
+                self._header.set_badge("DONE", "success")
                 return
             except Exception as exc:
                 QMessageBox.critical(self, "Convert Error", str(exc))
@@ -533,8 +445,10 @@ class ViceMediaStudioApp(QMainWindow):
         self._progress.setRange(0, 100)
         if exit_code == 0:
             self._progress.setValue(100)
+            self._header.set_badge("DONE", "success")
             self._append_log("\n[SUCCESS] Conversion completed cleanly.\n")
         else:
+            self._header.set_badge("ERROR", "danger")
             self._append_log(f"\n[ERROR] Process exited with code {exit_code}.\n")
 
     def _cancel_process(self) -> None:
@@ -555,8 +469,7 @@ class ViceMediaStudioApp(QMainWindow):
 def main() -> None:
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication(sys.argv)
-    _configure_cjk_fonts(app)
-    app.setStyleSheet(STYLE)
+    apply_app_theme(app)
     win = ViceMediaStudioApp()
     win.show()
     sys.exit(app.exec_())

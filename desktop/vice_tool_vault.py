@@ -3,7 +3,8 @@
 GTA VI OS (Vice OS) — Vice Vault.
 Real OpenSSL AES-256-CBC (-pbkdf2) file encryptor/decryptor combined with a
 cryptographically secure (secrets) password and passphrase generator with
-combinatorial entropy meter and clipboard copy.
+combinatorial entropy meter and clipboard auto-clear.
+Styled via vice_theme (Noto Sans CJK fallback).
 """
 
 import math
@@ -16,14 +17,26 @@ import subprocess
 import sys
 
 from PyQt5.QtCore import QThread, QTimer, pyqtSignal
-from PyQt5.QtGui import QFont, QIcon, QPixmap
 from PyQt5.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout,
-    QLabel, QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton,
+    QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout,
+    QLabel, QLineEdit, QMainWindow, QMessageBox, QProgressBar,
     QRadioButton, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 )
 
-sys.path.insert(0, "/opt/vice-os/lib")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _p in ("/opt/vice-os", _HERE, "/opt/vice-os/lib"):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from vice_theme import (  # noqa: E402
+    COLORS,
+    MONO_STACK,
+    apply_app_theme,
+    load_tool_icon,
+    make_button,
+    make_card,
+    make_header,
+)
 
 try:
     from python.vice_utils import log_error, log_info  # noqa: E402
@@ -34,15 +47,6 @@ except ImportError:
     def log_error(msg: str) -> None:
         print(f"[ERROR] {msg}", file=sys.stderr)
 
-
-CJK_FONTS = [
-    "Noto Sans",
-    "Noto Sans CJK JP",
-    "Noto Sans CJK SC",
-    "Noto Sans CJK TC",
-    "Noto Sans CJK KR",
-    "DejaVu Sans",
-]
 
 WORDLIST = (
     "anchor", "atlas", "aurora", "badge", "bayfront", "beacon", "breeze", "bridge",
@@ -64,106 +68,6 @@ WORDLIST = (
     "surge", "synth", "tango", "tempest", "thunder", "tiger", "titan", "torque",
     "tropic", "turbo", "ultra", "vapor", "vector", "velvet", "vertex", "vortex",
 )
-
-STYLE = """
-QMainWindow, QWidget#RootWidget {
-    background-color: #120e1e;
-    color: #f4f1fa;
-    font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
-    font-size: 13px;
-}
-QFrame#Banner {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #221338, stop:0.6 #331338, stop:1 #152138);
-    border: 1px solid #ffd166;
-    border-radius: 12px;
-}
-QTabWidget::pane {
-    border: 1px solid #3c2e5e;
-    border-radius: 10px;
-    background-color: #161126;
-}
-QTabBar::tab {
-    background-color: #1b152e;
-    color: #cfc6e6;
-    border: 1px solid #322650;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-    padding: 8px 16px;
-    margin-right: 4px;
-    font-weight: bold;
-}
-QTabBar::tab:selected {
-    background-color: #321d46;
-    color: #ffd166;
-    border-color: #ff4da6;
-}
-QLineEdit, QComboBox, QSpinBox {
-    background-color: #1b152e;
-    color: #f4f1fa;
-    border: 1px solid #3c2e5e;
-    border-radius: 8px;
-    padding: 8px 10px;
-}
-QLineEdit:focus {
-    border-color: #ffd166;
-}
-QPushButton {
-    background-color: #1f1836;
-    color: #ffd166;
-    border: 1px solid #ff8a5b;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #ff8a5b;
-    color: #120e1e;
-}
-QPushButton#PrimaryBtn {
-    color: #00e5ff;
-    border-color: #00e5ff;
-}
-QPushButton#PrimaryBtn:hover {
-    background-color: #00e5ff;
-    color: #120e1e;
-}
-QProgressBar {
-    background-color: #161028;
-    border: 1px solid #43346b;
-    border-radius: 7px;
-    height: 16px;
-    text-align: center;
-    color: #ffffff;
-    font-weight: bold;
-}
-QProgressBar::chunk {
-    border-radius: 6px;
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #ff4da6, stop:0.5 #ffd166, stop:1 #64ffda);
-}
-"""
-
-
-def _configure_cjk_fonts(app: QApplication) -> None:
-    for fam in ("Noto Sans", "DejaVu Sans", "Sans", "sans-serif"):
-        QFont.insertSubstitutions(fam, CJK_FONTS)
-    font = QFont("Noto Sans", 10)
-    if hasattr(font, "setFamilies"):
-        font.setFamilies(CJK_FONTS)
-    app.setFont(font)
-
-
-def _load_app_icon() -> QIcon:
-    for path in (
-        "/usr/share/icons/hicolor/64x64/apps/vice-tool-vault.png",
-        "/usr/share/pixmaps/vice-tool-vault.png",
-    ):
-        if os.path.isfile(path):
-            pm = QPixmap(path)
-            if not pm.isNull():
-                return QIcon(pm)
-    return QIcon.fromTheme("security-high")
 
 
 class VaultCryptoWorker(QThread):
@@ -246,14 +150,16 @@ class ViceVaultApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Vice Vault — AES-256 & Secrets Generator")
-        self.resize(820, 560)
+        self.setWindowTitle("Vice Vault — Vice OS")
+        self.resize(840, 580)
         self.setMinimumSize(680, 480)
-        icon = _load_app_icon()
+        icon = load_tool_icon("vice-tool-vault", "security-high")
         if not icon.isNull():
             self.setWindowIcon(icon)
 
         self._worker = None
+        self._pw_len_cache = 20
+        self._phrase_words_cache = 6
         self._clip_timer = QTimer(self)
         self._clip_timer.setSingleShot(True)
         self._clip_timer.timeout.connect(self._clear_clipboard)
@@ -270,29 +176,28 @@ class ViceVaultApp(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 14)
         layout.setSpacing(12)
 
-        banner = QFrame(root)
-        banner.setObjectName("Banner")
-        bl = QVBoxLayout(banner)
-        bl.setContentsMargins(16, 12, 16, 12)
-        title = QLabel("VICE VAULT · AES-256-CBC PBKDF2 & SECRETS LAB", banner)
-        title.setStyleSheet("color: #ffd166; font-size: 18px; font-weight: bold; background: transparent;")
-        bl.addWidget(title)
-        sub = QLabel("OpenSSL file encryption (env-passed key, zero CLI leak) + CSPRNG credential forge", banner)
-        sub.setStyleSheet("color: #cfc6e6; font-size: 12px; background: transparent;")
-        bl.addWidget(sub)
-        layout.addWidget(banner)
+        header = make_header(
+            title="Vice Vault",
+            subtitle="OpenSSL AES-256-CBC PBKDF2 file encryption & CSPRNG secrets generator",
+            icon_name="vice-tool-vault",
+            badge_text="AES-256-CBC",
+            badge_variant="gold",
+            parent=root,
+        )
+        layout.addWidget(header)
 
         tabs = QTabWidget(root)
         tabs.addTab(self._build_crypto_tab(), "File Encrypt / Decrypt")
-        tabs.addTab(self._build_gen_tab(), "Password & Passphrase Lab")
+        tabs.addTab(self._build_gen_tab(), "Password && Passphrase Lab")
         layout.addWidget(tabs, 1)
 
     def _build_crypto_tab(self) -> QWidget:
         w = QWidget()
         v = QVBoxLayout(w)
-        v.setContentsMargins(16, 16, 16, 16)
+        v.setContentsMargins(14, 14, 14, 14)
         v.setSpacing(12)
 
+        mode_card = make_card(title="Operation Mode", parent=w)
         mode_row = QHBoxLayout()
         self._enc_radio = QRadioButton("Encrypt File (AES-256-CBC + PBKDF2)")
         self._enc_radio.setChecked(True)
@@ -301,27 +206,32 @@ class ViceVaultApp(QMainWindow):
         mode_row.addWidget(self._enc_radio)
         mode_row.addWidget(self._dec_radio)
         mode_row.addStretch(1)
-        v.addLayout(mode_row)
+        mode_card.body_layout.addLayout(mode_row)
+        v.addWidget(mode_card)
 
+        files_card = make_card(title="Files & Passphrase", parent=w)
         in_row = QHBoxLayout()
+        in_row.setSpacing(8)
         self._in_edit = QLineEdit()
         self._in_edit.setPlaceholderText("Select input file...")
         in_row.addWidget(self._in_edit, 1)
-        in_btn = QPushButton("Browse Input...")
+        in_btn = make_button("Browse Input...", variant="secondary")
         in_btn.clicked.connect(self._browse_input)
         in_row.addWidget(in_btn)
-        v.addLayout(in_row)
+        files_card.body_layout.addLayout(in_row)
 
         out_row = QHBoxLayout()
+        out_row.setSpacing(8)
         self._out_edit = QLineEdit()
         self._out_edit.setPlaceholderText("Output file path...")
         out_row.addWidget(self._out_edit, 1)
-        out_btn = QPushButton("Save As...")
+        out_btn = make_button("Save As...", variant="secondary")
         out_btn.clicked.connect(self._browse_output)
         out_row.addWidget(out_btn)
-        v.addLayout(out_row)
+        files_card.body_layout.addLayout(out_row)
 
         pw_row = QHBoxLayout()
+        pw_row.setSpacing(8)
         self._pass_edit = QLineEdit()
         self._pass_edit.setEchoMode(QLineEdit.Password)
         self._pass_edit.setPlaceholderText("Vault passphrase...")
@@ -335,19 +245,19 @@ class ViceVaultApp(QMainWindow):
         self._show_pw_chk = QCheckBox("Show")
         self._show_pw_chk.toggled.connect(self._toggle_pw_visibility)
         pw_row.addWidget(self._show_pw_chk)
-        v.addLayout(pw_row)
+        files_card.body_layout.addLayout(pw_row)
+        v.addWidget(files_card)
 
         act_row = QHBoxLayout()
-        self._run_crypto_btn = QPushButton("Encrypt File Now")
-        self._run_crypto_btn.setObjectName("PrimaryBtn")
+        self._run_crypto_btn = make_button("Encrypt File Now", variant="primary")
         self._run_crypto_btn.clicked.connect(self._run_crypto)
         act_row.addWidget(self._run_crypto_btn)
         act_row.addStretch(1)
         v.addLayout(act_row)
 
-        self._crypto_status = QLabel("Ready. Passphrases are never passed on command-line arguments.")
+        self._crypto_status = QLabel("Ready. Passphrases are passed via environment variable, never CLI args.")
         self._crypto_status.setWordWrap(True)
-        self._crypto_status.setStyleSheet("color: #cfc6e6;")
+        self._crypto_status.setObjectName("MutedLabel")
         v.addWidget(self._crypto_status)
         v.addStretch(1)
         return w
@@ -355,25 +265,28 @@ class ViceVaultApp(QMainWindow):
     def _build_gen_tab(self) -> QWidget:
         w = QWidget()
         v = QVBoxLayout(w)
-        v.setContentsMargins(16, 16, 16, 16)
+        v.setContentsMargins(14, 14, 14, 14)
         v.setSpacing(12)
 
+        opts_card = make_card(title="Generator Options", parent=w)
         mode_row = QHBoxLayout()
         self._pw_mode = QRadioButton("Random Password")
         self._pw_mode.setChecked(True)
         self._phrase_mode = QRadioButton("Diceware Passphrase")
-        self._pw_mode.toggled.connect(self._generate_secret)
+        self._pw_mode.toggled.connect(self._on_gen_mode_toggled)
         mode_row.addWidget(self._pw_mode)
         mode_row.addWidget(self._phrase_mode)
         mode_row.addStretch(1)
-        v.addLayout(mode_row)
+        opts_card.body_layout.addLayout(mode_row)
 
         opts_row = QHBoxLayout()
-        opts_row.addWidget(QLabel("Length / Words:"))
+        opts_row.setSpacing(8)
+        self._len_title = QLabel("Length:")
+        opts_row.addWidget(self._len_title)
         self._len_spin = QSpinBox()
-        self._len_spin.setRange(4, 64)
-        self._len_spin.setValue(20)
-        self._len_spin.valueChanged.connect(self._generate_secret)
+        self._len_spin.setRange(8, 64)
+        self._len_spin.setValue(self._pw_len_cache)
+        self._len_spin.valueChanged.connect(self._on_spin_changed)
         opts_row.addWidget(self._len_spin)
 
         self._chk_upper = QCheckBox("A-Z")
@@ -390,43 +303,75 @@ class ViceVaultApp(QMainWindow):
             chk.toggled.connect(self._generate_secret)
             opts_row.addWidget(chk)
 
+        self._sep_lbl = QLabel("Sep:")
         self._sep_combo = QComboBox()
         self._sep_combo.addItems(["-", "_", ".", " "])
         self._sep_combo.currentIndexChanged.connect(self._generate_secret)
-        opts_row.addWidget(QLabel("Sep:"))
+        self._sep_lbl.setVisible(False)
+        self._sep_combo.setVisible(False)
+        opts_row.addWidget(self._sep_lbl)
         opts_row.addWidget(self._sep_combo)
         opts_row.addStretch(1)
-        v.addLayout(opts_row)
+        opts_card.body_layout.addLayout(opts_row)
+        v.addWidget(opts_card)
 
+        out_card = make_card(title="Generated Credential", parent=w)
         out_row = QHBoxLayout()
+        out_row.setSpacing(8)
         self._gen_output = QLineEdit()
         self._gen_output.setReadOnly(True)
         self._gen_output.setStyleSheet(
-            "font-family: 'Noto Sans Mono CJK JP', 'DejaVu Sans Mono', monospace; "
-            "font-size: 15px; color: #00e5ff; font-weight: bold; padding: 10px;"
+            f"font-family: {MONO_STACK}; font-size: 15px; color: {COLORS['accent_aqua']}; "
+            f"font-weight: bold; padding: 10px;"
         )
         out_row.addWidget(self._gen_output, 1)
 
-        regen_btn = QPushButton("Regenerate")
+        regen_btn = make_button("Regenerate", variant="secondary")
         regen_btn.clicked.connect(self._generate_secret)
         out_row.addWidget(regen_btn)
 
-        copy_btn = QPushButton("Copy (30s Clear)")
-        copy_btn.setObjectName("PrimaryBtn")
+        copy_btn = make_button("Copy (30s Clear)", variant="primary")
         copy_btn.clicked.connect(self._copy_generated)
         out_row.addWidget(copy_btn)
-        v.addLayout(out_row)
+        out_card.body_layout.addLayout(out_row)
 
         self._entropy_bar = QProgressBar()
         self._entropy_bar.setRange(0, 160)
         self._entropy_bar.setFormat("Entropy: %v bits")
-        v.addWidget(self._entropy_bar)
+        out_card.body_layout.addWidget(self._entropy_bar)
 
         self._entropy_lbl = QLabel("")
-        self._entropy_lbl.setStyleSheet("color: #ffd166; font-weight: bold;")
-        v.addWidget(self._entropy_lbl)
+        self._entropy_lbl.setStyleSheet(f"color: {COLORS['accent_gold']}; font-weight: bold;")
+        out_card.body_layout.addWidget(self._entropy_lbl)
+        v.addWidget(out_card)
         v.addStretch(1)
         return w
+
+    def _on_gen_mode_toggled(self) -> None:
+        is_phrase = self._phrase_mode.isChecked()
+        for chk in (self._chk_upper, self._chk_lower, self._chk_digits, self._chk_symbols, self._chk_no_ambig):
+            chk.setVisible(not is_phrase)
+        self._sep_lbl.setVisible(is_phrase)
+        self._sep_combo.setVisible(is_phrase)
+
+        self._len_spin.blockSignals(True)
+        if is_phrase:
+            self._len_title.setText("Words:")
+            self._len_spin.setRange(3, 12)
+            self._len_spin.setValue(self._phrase_words_cache)
+        else:
+            self._len_title.setText("Length:")
+            self._len_spin.setRange(8, 64)
+            self._len_spin.setValue(self._pw_len_cache)
+        self._len_spin.blockSignals(False)
+        self._generate_secret()
+
+    def _on_spin_changed(self, value: int) -> None:
+        if self._phrase_mode.isChecked():
+            self._phrase_words_cache = value
+        else:
+            self._pw_len_cache = value
+        self._generate_secret()
 
     def _on_mode_changed(self) -> None:
         enc = self._enc_radio.isChecked()
@@ -488,6 +433,7 @@ class ViceVaultApp(QMainWindow):
             return
 
         self._run_crypto_btn.setEnabled(False)
+        self._crypto_status.setStyleSheet(f"color: {COLORS['text_secondary']};")
         self._crypto_status.setText("Processing with OpenSSL AES-256-CBC (-pbkdf2)...")
         self._worker = VaultCryptoWorker(encrypt, in_path, out_path, pw)
         self._worker.finished_ok.connect(self._on_crypto_done)
@@ -495,7 +441,7 @@ class ViceVaultApp(QMainWindow):
 
     def _on_crypto_done(self, ok: bool, msg: str) -> None:
         self._run_crypto_btn.setEnabled(True)
-        color = "#64ffda" if ok else "#ff6b8b"
+        color = COLORS["success"] if ok else COLORS["danger"]
         self._crypto_status.setStyleSheet(f"color: {color}; font-weight: bold;")
         self._crypto_status.setText(msg)
         if ok:
@@ -506,11 +452,6 @@ class ViceVaultApp(QMainWindow):
     def _generate_secret(self) -> None:
         if self._phrase_mode.isChecked():
             words_n = max(3, min(12, self._len_spin.value()))
-            if self._len_spin.value() > 12:
-                self._len_spin.blockSignals(True)
-                self._len_spin.setValue(6)
-                self._len_spin.blockSignals(False)
-                words_n = 6
             sep = self._sep_combo.currentText()
             chosen = [secrets.choice(WORDLIST).capitalize() for _ in range(words_n)]
             num = str(secrets.randbelow(90) + 10)
@@ -518,12 +459,6 @@ class ViceVaultApp(QMainWindow):
             bits = words_n * math.log2(len(WORDLIST)) + math.log2(90)
         else:
             length = max(8, self._len_spin.value())
-            if self._len_spin.value() < 8:
-                self._len_spin.blockSignals(True)
-                self._len_spin.setValue(16)
-                self._len_spin.blockSignals(False)
-                length = 16
-
             ambig = set("0O1lI") if self._chk_no_ambig.isChecked() else set()
             groups = []
             if self._chk_upper.isChecked():
@@ -550,14 +485,14 @@ class ViceVaultApp(QMainWindow):
         self._gen_output.setText(secret_val)
         self._entropy_bar.setValue(min(160, bits_int))
         if bits_int >= 110:
-            tier = "Leonida Fort Knox"
+            tier = "Fortress"
         elif bits_int >= 75:
             tier = "Strong"
         elif bits_int >= 50:
             tier = "Moderate"
         else:
             tier = "Weak"
-        self._entropy_lbl.setText(f"Estimated Entropy: {bits_int} bits — Rating: {tier}")
+        self._entropy_lbl.setText(f"Estimated Entropy: {bits_int} bits · Rating: {tier}")
 
     def _copy_generated(self) -> None:
         text = self._gen_output.text()
@@ -565,7 +500,8 @@ class ViceVaultApp(QMainWindow):
             return
         QApplication.clipboard().setText(text)
         self._clip_timer.start(30000)
-        self._entropy_lbl.setText(self._entropy_lbl.text().split(" (Copied")[0] + " (Copied — auto-clears in 30s)")
+        base = self._entropy_lbl.text().split(" (Copied")[0]
+        self._entropy_lbl.setText(base + " (Copied — clears in 30s)")
 
     def _clear_clipboard(self) -> None:
         cb = QApplication.clipboard()
@@ -584,8 +520,7 @@ class ViceVaultApp(QMainWindow):
 def main() -> None:
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication(sys.argv)
-    _configure_cjk_fonts(app)
-    app.setStyleSheet(STYLE)
+    apply_app_theme(app)
     win = ViceVaultApp()
     win.show()
     sys.exit(app.exec_())

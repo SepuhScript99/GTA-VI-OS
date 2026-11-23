@@ -1,112 +1,109 @@
 #!/usr/bin/env python3
 """
-GTA VI OS (Vice OS) Settings Center
-Unified system configuration center providing 29 configuration pages for desktop, system, and hardware.
+GTA VI OS (Vice OS) Settings Center.
+Unified system configuration center providing 29 configuration pages for desktop,
+system, security, and hardware, styled with the Leonida Coastal Dusk design system.
 """
 
-import sys
 import os
 import subprocess
+import sys
 
+from PyQt5.QtCore import QProcess, QThread, Qt, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor, QIcon
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QListWidget, QListWidgetItem, QStackedWidget, QSlider, QGroupBox,
-    QMessageBox, QLineEdit, QComboBox, QCheckBox, QSpinBox, QTableWidget,
-    QTableWidgetItem, QHeaderView, QTextEdit, QProgressBar, QTabWidget,
-    QSplitter
+    QApplication,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QSplitter,
+    QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, QProcess, pyqtSignal
-from PyQt5.QtGui import QFont, QIcon, QColor, QBrush
 
-sys.path.insert(0, '/opt/vice-os/lib')
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from python.vice_utils import log_info, log_error  # noqa: E402
+from python.vice_utils import log_error, log_info  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    build_app_qss,
+    configure_cjk_fonts,
+    configure_icon_theme,
+    make_badge,
+    resolve_icon,
+)
 
-STYLE_FILE = '/opt/vice-os/style.qss'
-SETTINGS_WIDTH = 900
-SETTINGS_HEIGHT = 600
+STYLE_FILE = "/opt/vice-os/style.qss"
+SETTINGS_WIDTH = 940
+SETTINGS_HEIGHT = 640
 
 PAGE_NAMES = [
-    'Display', 'Sound', 'Network', 'Users', 'Power', 'About',
-    'Firewall', 'Printers', 'Date & Time', 'Accessibility',
-    'Storage', 'Updates', 'Bluetooth', 'Security', 'Theme',
-    'Keyboard', 'Mouse', 'Wallpaper', 'Startup', 'Cleanup',
-    'Kernel', 'VPN', 'SSH', 'Network Shares', 'Cron', 'Backup',
-    'USB', 'Diagnostics', 'Drivers'
+    "Display", "Sound", "Network", "Users", "Power", "About",
+    "Firewall", "Printers", "Date & Time", "Accessibility",
+    "Storage", "Updates", "Bluetooth", "Security", "Theme",
+    "Keyboard", "Mouse", "Wallpaper", "Startup", "Cleanup",
+    "Kernel", "VPN", "SSH", "Network Shares", "Cron", "Backup",
+    "USB", "Diagnostics", "Drivers",
 ]
 
-
-STYLE = """
-QWidget { background-color: #120e1e; color: #f4f1fa; font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif; font-size: 13px; }
-QPushButton { background: #1d1733; color: #f4f1fa; border: 1px solid #382b57; border-radius: 8px; padding: 7px 16px; font-weight: bold; }
-QPushButton:hover { background: #362247; color: #ff8a5b; border-color: #ff4da6; }
-QPushButton:disabled { color: #8c82a8; border-color: #261e3d; background: #161124; }
-QListWidget { background: #171226; color: #d6cee8; border: 1px solid #30244a; border-radius: 10px; padding: 6px; outline: none; }
-QListWidget::item { padding: 8px 10px; border-radius: 6px; margin: 1px 0; }
-QListWidget::item:hover { background: #241c3d; color: #ffffff; }
-QListWidget::item:selected { background: #362247; color: #ff8a5b; border: 1px solid #ff4da6; font-weight: bold; }
-QStackedWidget { background: #171226; border: 1px solid #30244a; border-radius: 10px; padding: 8px; }
-QTextEdit { background: #151024; color: #f4f1fa; border: 1px solid #30244a; border-radius: 8px; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; font-size: 12px; padding: 6px; }
-QTableWidget { background: #151024; color: #f4f1fa; gridline-color: #2e2348; border: 1px solid #30244a; border-radius: 8px; }
-QHeaderView::section { background: #211a36; color: #ff8a5b; padding: 6px; border: 1px solid #2e2348; font-weight: bold; }
-QTableWidget::item:selected { background: #362247; color: #ff8a5b; }
-QProgressBar { border: 1px solid #352852; background: #1b152e; text-align: center; color: #f4f1fa; border-radius: 6px; }
-QProgressBar::chunk { background: #ff4da6; border-radius: 5px; }
-QGroupBox { background: #1b152e; border: 1px solid #30244a; border-radius: 10px; margin-top: 12px; padding: 12px; font-weight: bold; }
-QGroupBox::title { color: #ff8a5b; subcontrol-origin: margin; left: 10px; padding: 0 6px; }
-QLabel { color: #f4f1fa; background: transparent; }
-QSplitter::handle { background: #2e2348; width: 2px; }
-QScrollBar:vertical { border: none; background: transparent; width: 8px; margin: 2px; }
-QScrollBar::handle:vertical { background: #3a2c59; min-height: 24px; border-radius: 4px; }
-QScrollBar::handle:vertical:hover { background: #ff4da6; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { border: none; background: transparent; height: 0; }
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
-QScrollBar:horizontal { border: none; background: transparent; height: 8px; margin: 2px; }
-QScrollBar::handle:horizontal { background: #3a2c59; min-width: 24px; border-radius: 4px; }
-QScrollBar::handle:horizontal:hover { background: #ff4da6; }
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { border: none; background: transparent; width: 0; }
-QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
+_c = COLORS
+STYLE = build_app_qss(
+    f"""
+QListWidget#SettingsNav {{
+    background-color: {_c['bg_surface']};
+    border: 1px solid {_c['border']};
+    border-radius: 10px;
+    padding: 6px;
+}}
+QListWidget#SettingsNav::item {{
+    padding: 6px 10px;
+    border-radius: 6px;
+    color: {_c['text_secondary']};
+}}
+QListWidget#SettingsNav::item:hover {{
+    background-color: {_c['bg_elevated']};
+    color: {_c['text_primary']};
+}}
+QListWidget#SettingsNav::item:selected {{
+    background-color: {_c['bg_active']};
+    color: {_c['accent_peach']};
+    border-left: 3px solid {_c['accent_coral']};
+    font-weight: bold;
+}}
+QStackedWidget#SettingsStack {{
+    background-color: {_c['bg_surface']};
+    border: 1px solid {_c['border']};
+    border-radius: 10px;
+    padding: 10px;
+}}
+QScrollBar:vertical {{
+    width: 8px;
+}}
 """
+)
 
 
 def _configure_icon_theme():
     """Ensure PyQt5 resolves Papirus-Dark / Adwaita icons properly."""
-    QIcon.setThemeSearchPaths([
-        "/usr/share/icons",
-        "/usr/local/share/icons",
-        os.path.expanduser("~/.local/share/icons"),
-    ])
-    for theme in ("Papirus-Dark", "Papirus", "Adwaita", "Tango", "hicolor"):
-        if os.path.isdir(os.path.join("/usr/share/icons", theme)):
-            QIcon.setThemeName(theme)
-            return
+    configure_icon_theme()
 
 
 def _theme_icon(*names) -> QIcon:
     """Return the first valid Freedesktop theme or pixmap icon from *names*."""
-    extra_dirs = (
-        "/usr/share/icons/hicolor/64x64/apps",
-        "/usr/share/icons/hicolor/48x48/apps",
-        "/usr/share/pixmaps",
-    )
-    for name in names:
-        if not name:
-            continue
-        if os.path.isfile(name):
-            ic = QIcon(name)
-            if not ic.isNull():
-                return ic
-        ic = QIcon.fromTheme(name)
-        if not ic.isNull():
-            return ic
-        for base_dir in extra_dirs:
-            for ext in (".png", ".svg", ""):
-                cand = os.path.join(base_dir, f"{name}{ext}")
-                if os.path.isfile(cand):
-                    fc = QIcon(cand)
-                    if not fc.isNull():
-                        return fc
-    return QIcon()
+    return resolve_icon(*names)
 
 
 def run_cmd(cmd, timeout=6):
@@ -116,10 +113,6 @@ def run_cmd(cmd, timeout=6):
     except Exception:
         return "N/A"
 
-
-# ---------------------------------------------------------------------------
-# Diagnostics page (embedded from vice_diagnostics.py logic)
-# ---------------------------------------------------------------------------
 
 DIAG_TESTS = [
     ("Network Ping", "ping -c 4 8.8.8.8 2>&1"),
@@ -146,8 +139,10 @@ class _DiagWorker(QThread):
 
     def run(self):
         try:
-            proc = subprocess.Popen(self.cmd, shell=True,
-                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            proc = subprocess.Popen(
+                self.cmd, shell=True,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            )
             for line in proc.stdout:
                 self.line_out.emit(line.rstrip())
             proc.wait()
@@ -160,30 +155,33 @@ class _DiagWorker(QThread):
 class DiagnosticsPage(QWidget):
     def __init__(self):
         super().__init__()
+        c = COLORS
         self._worker = None
         self._queue = []
 
         root = QVBoxLayout(self)
+        root.setSpacing(10)
         title = QLabel("Network & System Diagnostics")
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin-bottom: 6px;")
+        title.setStyleSheet(f"color: {c['text_primary']}; font-size: 16px; font-weight: bold;")
         root.addWidget(title)
 
         splitter = QSplitter(Qt.Horizontal)
-        root.addWidget(splitter)
+        root.addWidget(splitter, 1)
 
         left = QWidget()
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 0, 0)
+        ll.setSpacing(8)
         self._list = QListWidget()
         for name, _ in DIAG_TESTS:
             item = QListWidgetItem(name)
             if name == "Run All":
-                item.setForeground(QColor("#ff00ff"))
+                item.setForeground(QColor(c["accent_peach"]))
             self._list.addItem(item)
         ll.addWidget(self._list)
 
         self._run_btn = QPushButton("Run Selected")
+        self._run_btn.setObjectName("PrimaryButton")
         self._run_btn.clicked.connect(self._run_selected)
         ll.addWidget(self._run_btn)
         splitter.addWidget(left)
@@ -203,8 +201,9 @@ class DiagnosticsPage(QWidget):
         self._progress.setVisible(False)
         bottom.addWidget(self._progress)
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #b7aed1;")
+        self._status.setStyleSheet(f"color: {c['text_secondary']};")
         bottom.addWidget(self._status)
+        bottom.addStretch()
         clear_btn = QPushButton("Clear")
         clear_btn.clicked.connect(self._output.clear)
         bottom.addWidget(clear_btn)
@@ -216,11 +215,11 @@ class DiagnosticsPage(QWidget):
             return
         name = item.text()
         if name == "Run All":
-            self._queue = [(n, c) for n, c in DIAG_TESTS if c]
+            self._queue = [(n, cmd) for n, cmd in DIAG_TESTS if cmd]
             self._output.clear()
             self._next()
             return
-        cmd = next((c for n, c in DIAG_TESTS if n == name), None)
+        cmd = next((cmd for n, cmd in DIAG_TESTS if n == name), None)
         if cmd:
             self._execute(name, cmd)
 
@@ -231,7 +230,7 @@ class DiagnosticsPage(QWidget):
             self._run_btn.setEnabled(True)
             return
         name, cmd = self._queue.pop(0)
-        self._output.append(f"\n{'=' * 45}\n>>> {name}\n{'=' * 45}")
+        self._output.append(f"\n--- {name} ---")
         self._execute(name, cmd, chain=True)
 
     def _execute(self, name, cmd, chain=False):
@@ -244,7 +243,7 @@ class DiagnosticsPage(QWidget):
         self._worker.start()
 
     def _finished(self, ok, name, chain):
-        c = "#00ff88" if ok else "#ff4444"
+        c = COLORS["success"] if ok else COLORS["danger"]
         self._output.append(f'<span style="color:{c};">[{"PASS" if ok else "FAIL"}] {name}</span>')
         if chain:
             self._next()
@@ -253,10 +252,6 @@ class DiagnosticsPage(QWidget):
             self._status.setText(f"Done: {name}")
             self._run_btn.setEnabled(True)
 
-
-# ---------------------------------------------------------------------------
-# Drivers page (embedded from vice_driver_manager.py logic)
-# ---------------------------------------------------------------------------
 
 class _DetectWorker(QThread):
     found = pyqtSignal(dict)
@@ -291,13 +286,17 @@ class _DetectWorker(QThread):
             wifi_out = run_cmd("lsusb 2>/dev/null | grep -i 'wireless\\|wifi'")
         if wifi_out:
             for line in wifi_out.splitlines():
-                vendor = ("Broadcom" if "broadcom" in line.lower() else
-                          "Realtek" if "realtek" in line.lower() else
-                          "Intel" if "intel" in line.lower() else "Generic")
-                pkg_map = {"Broadcom": "broadcom-sta-dkms",
-                           "Realtek": "firmware-realtek",
-                           "Intel": "firmware-iwlwifi",
-                           "Generic": "firmware-linux-nonfree"}
+                vendor = (
+                    "Broadcom" if "broadcom" in line.lower() else
+                    "Realtek" if "realtek" in line.lower() else
+                    "Intel" if "intel" in line.lower() else "Generic"
+                )
+                pkg_map = {
+                    "Broadcom": "broadcom-sta-dkms",
+                    "Realtek": "firmware-realtek",
+                    "Intel": "firmware-iwlwifi",
+                    "Generic": "firmware-linux-nonfree",
+                }
                 pkg = pkg_map[vendor]
                 inst = run_cmd(f"dpkg -l {pkg} 2>/dev/null | grep '^ii' | head -1")
                 installed = inst.split()[1] if inst and inst != "N/A" else ""
@@ -325,8 +324,10 @@ class _InstallWorker(QThread):
         cmd = f"sudo DEBIAN_FRONTEND=noninteractive apt-get {op} {self.pkg}"
         self.line_out.emit(f"$ {cmd}")
         try:
-            proc = subprocess.Popen(cmd, shell=True,
-                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            proc = subprocess.Popen(
+                cmd, shell=True,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            )
             for line in proc.stdout:
                 self.line_out.emit(line.rstrip())
             proc.wait()
@@ -339,17 +340,18 @@ class _InstallWorker(QThread):
 class DriversPage(QWidget):
     def __init__(self):
         super().__init__()
+        c = COLORS
         self._drivers = []
         self._workers = []
 
         root = QVBoxLayout(self)
+        root.setSpacing(10)
         title = QLabel("Driver Manager")
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin-bottom: 6px;")
+        title.setStyleSheet(f"color: {c['text_primary']}; font-size: 16px; font-weight: bold;")
         root.addWidget(title)
 
         splitter = QSplitter(Qt.Vertical)
-        root.addWidget(splitter)
+        root.addWidget(splitter, 1)
 
         top = QWidget()
         tl = QVBoxLayout(top)
@@ -365,12 +367,14 @@ class DriversPage(QWidget):
 
         btns = QHBoxLayout()
         self._scan_btn = QPushButton("Scan")
+        self._scan_btn.setObjectName("PrimaryButton")
         self._scan_btn.clicked.connect(self._scan)
         btns.addWidget(self._scan_btn)
         self._inst_btn = QPushButton("Install")
         self._inst_btn.clicked.connect(self._install)
         btns.addWidget(self._inst_btn)
         self._rem_btn = QPushButton("Remove")
+        self._rem_btn.setObjectName("DangerButton")
         self._rem_btn.clicked.connect(self._remove)
         btns.addWidget(self._rem_btn)
         btns.addStretch()
@@ -384,7 +388,7 @@ class DriversPage(QWidget):
         self._log.setReadOnly(True)
         bl.addWidget(self._log)
         splitter.addWidget(bot)
-        splitter.setSizes([380, 180])
+        splitter.setSizes([360, 180])
 
         status_row = QHBoxLayout()
         self._progress = QProgressBar()
@@ -392,8 +396,9 @@ class DriversPage(QWidget):
         self._progress.setVisible(False)
         status_row.addWidget(self._progress)
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #b7aed1;")
+        self._status.setStyleSheet(f"color: {c['text_secondary']};")
         status_row.addWidget(self._status)
+        status_row.addStretch()
         root.addLayout(status_row)
 
         self._scan()
@@ -417,7 +422,8 @@ class DriversPage(QWidget):
         for col, key in enumerate(["type", "vendor", "device", "installed", "recommended", "status"]):
             item = QTableWidgetItem(info[key])
             if key == "status":
-                item.setForeground(QBrush(QColor("#00ff88" if info[key] == "Installed" else "#ff4444")))
+                col_hex = COLORS["success"] if info[key] == "Installed" else COLORS["danger"]
+                item.setForeground(QBrush(QColor(col_hex)))
             self._table.setItem(row, col, item)
 
     def _scan_done(self):
@@ -437,8 +443,9 @@ class DriversPage(QWidget):
         if not info:
             return
         pkg = info["recommended"]
-        if QMessageBox.question(self, "Install", f"Install: {pkg}?",
-                                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+        if QMessageBox.question(
+            self, "Install", f"Install: {pkg}?", QMessageBox.Yes | QMessageBox.No
+        ) != QMessageBox.Yes:
             return
         self._run_op(pkg, False)
 
@@ -450,8 +457,9 @@ class DriversPage(QWidget):
         if pkg == "None":
             QMessageBox.information(self, "Not Installed", "No driver installed for this device.")
             return
-        if QMessageBox.question(self, "Remove", f"Remove: {pkg}?",
-                                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+        if QMessageBox.question(
+            self, "Remove", f"Remove: {pkg}?", QMessageBox.Yes | QMessageBox.No
+        ) != QMessageBox.Yes:
             return
         self._run_op(pkg, True)
 
@@ -470,134 +478,193 @@ class DriversPage(QWidget):
         self._inst_btn.setEnabled(True)
         self._rem_btn.setEnabled(True)
         op = "Remove" if remove else "Install"
-        c = "#00ff88" if ok else "#ff4444"
+        c = COLORS["success"] if ok else COLORS["danger"]
         self._log.append(f'<span style="color:{c};">[{op} {"OK" if ok else "FAILED"}] {pkg}</span>')
         self._status.setText(f"{op} {'succeeded' if ok else 'failed'}: {pkg}")
         if ok:
             self._scan()
 
 
-# ---------------------------------------------------------------------------
-# Main Settings window
-# ---------------------------------------------------------------------------
-
-# Each non-embedded settings page launches its dedicated Vice OS app.
 PAGE_APPS = {
-    'Display': 'vice_display_manager.py',
-    'Sound': 'vice_audio_manager.py',
-    'Network': 'vice_wifi_connect.py',
-    'Users': 'vice_user_manager.py',
-    'Power': 'vice_power_manager.py',
-    'Firewall': 'vice_firewall_manager.py',
-    'Printers': 'vice_printer_manager.py',
-    'Date & Time': 'vice_calendar.py',
-    'Accessibility': 'vice_accessibility.py',
-    'Storage': 'vice_disk_manager.py',
-    'Updates': 'vice_update_manager.py',
-    'Bluetooth': 'vice_bluetooth_manager.py',
-    'Security': 'vice_firewall_manager.py',
-    'Theme': 'vice_theme_manager.py',
-    'Keyboard': 'vice_keyboard_shortcuts.py',
-    'Mouse': 'vice_mouse_settings.py',
-    'Cleanup': 'vice_cleanup.py',
-    'Kernel': 'vice_kernel_manager.py',
-    'Startup': 'vice_startup_apps.py',
-    'VPN': 'vice_vpn_manager.py',
-    'SSH': 'vice_ssh_manager.py',
-    'Wallpaper': 'vice_wallpaper_picker.py',
-    'Network Shares': 'vice_network_shares.py',
-    'Cron': 'vice_cron_manager.py',
-    'Backup': 'vice_backup_scheduler.py',
-    'USB': 'vice_usb_manager.py',
+    "Display": "vice_display_manager.py",
+    "Sound": "vice_audio_manager.py",
+    "Network": "vice_wifi_connect.py",
+    "Users": "vice_user_manager.py",
+    "Power": "vice_power_manager.py",
+    "Firewall": "vice_firewall_manager.py",
+    "Printers": "vice_printer_manager.py",
+    "Date & Time": "vice_tool_clock_sync.py",
+    "Accessibility": "vice_accessibility.py",
+    "Storage": "vice_disk_manager.py",
+    "Updates": "vice_update_manager.py",
+    "Bluetooth": "vice_bluetooth_manager.py",
+    "Security": "vice_tool_cyber_deck.py",
+    "Theme": "vice_theme_manager.py",
+    "Keyboard": "vice_keyboard_shortcuts.py",
+    "Mouse": "vice_mouse_settings.py",
+    "Cleanup": "vice_cleanup.py",
+    "Kernel": "vice_kernel_manager.py",
+    "Startup": "vice_startup_apps.py",
+    "VPN": "vice_tool_net_shield.py",
+    "SSH": "vice_ssh_manager.py",
+    "Wallpaper": "vice_wallpaper_picker.py",
+    "Network Shares": "vice_network_shares.py",
+    "Cron": "vice_cron_manager.py",
+    "Backup": "vice_backup_scheduler.py",
+    "USB": "vice_usb_manager.py",
 }
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
-
 _PAGE_ICONS = {
-    'Display': ('preferences-desktop-display', 'video-display'),
-    'Sound': ('audio-volume-high', 'multimedia-volume-control'),
-    'Network': ('network-wireless', 'network-wired'),
-    'Users': ('system-users', 'user-info'),
-    'Power': ('battery', 'battery-full'),
-    'Firewall': ('security-high', 'network-firewall'),
-    'Printers': ('printer', 'preferences-desktop-printer'),
-    'Date & Time': ('x-office-calendar', 'preferences-system-time'),
-    'Accessibility': ('preferences-desktop-accessibility', 'accessibility'),
-    'Storage': ('drive-harddisk', 'gparted'),
-    'Updates': ('system-software-update', 'software-update-available'),
-    'Bluetooth': ('bluetooth', 'preferences-system-bluetooth'),
-    'Security': ('security-high', 'changes-prevent'),
-    'Theme': ('preferences-desktop-theme', 'applications-graphics'),
-    'Keyboard': ('input-keyboard', 'preferences-desktop-keyboard'),
-    'Mouse': ('input-mouse', 'preferences-desktop-mouse'),
-    'Cleanup': ('edit-clear', 'user-trash'),
-    'Kernel': ('applications-system', 'utilities-system-monitor'),
-    'Startup': ('preferences-system', 'system-run'),
-    'VPN': ('network-vpn', 'network-server'),
-    'SSH': ('network-server', 'utilities-terminal'),
-    'Wallpaper': ('preferences-desktop-wallpaper', 'image-x-generic'),
-    'Network Shares': ('folder-remote', 'network-workgroup'),
-    'Cron': ('appointment-new', 'x-office-calendar'),
-    'Backup': ('document-save', 'drive-harddisk'),
-    'USB': ('drive-removable-media', 'media-removable'),
+    "Display": ("preferences-desktop-display", "video-display"),
+    "Sound": ("audio-volume-high", "multimedia-volume-control"),
+    "Network": ("network-wireless", "network-wired"),
+    "Users": ("system-users", "user-info"),
+    "Power": ("battery", "battery-full"),
+    "Firewall": ("security-high", "network-firewall"),
+    "Printers": ("printer", "preferences-desktop-printer"),
+    "Date & Time": ("vice-tool-clock-sync", "preferences-system-time", "x-office-calendar"),
+    "Accessibility": ("preferences-desktop-accessibility", "accessibility"),
+    "Storage": ("drive-harddisk", "gparted"),
+    "Updates": ("system-software-update", "software-update-available"),
+    "Bluetooth": ("bluetooth", "preferences-system-bluetooth"),
+    "Security": ("vice-tool-cyber-deck", "security-high", "changes-prevent"),
+    "Theme": ("preferences-desktop-theme", "applications-graphics"),
+    "Keyboard": ("input-keyboard", "preferences-desktop-keyboard"),
+    "Mouse": ("input-mouse", "preferences-desktop-mouse"),
+    "Cleanup": ("edit-clear", "user-trash"),
+    "Kernel": ("applications-system", "utilities-system-monitor"),
+    "Startup": ("preferences-system", "system-run"),
+    "VPN": ("vice-tool-net-shield", "network-vpn", "network-server"),
+    "SSH": ("network-server", "utilities-terminal"),
+    "Wallpaper": ("preferences-desktop-wallpaper", "image-x-generic"),
+    "Network Shares": ("folder-remote", "network-workgroup"),
+    "Cron": ("appointment-new", "x-office-calendar"),
+    "Backup": ("document-save", "drive-harddisk"),
+    "USB": ("drive-removable-media", "media-removable"),
+}
+
+
+_PAGE_SUMMARIES = {
+    "Display": ("Monitors, resolution, scaling & refresh rate", ["Multi-head layout & DPI adjustment", "Live xrandr preview and persistence"]),
+    "Sound": ("PipeWire output devices, sink levels & mixer", ["Adjust volume & default playback devices", "Inspect AC97/PipeWire audio streams"]),
+    "Network": ("Wi-Fi profiles, Ethernet & wireless scan", ["Connect to secured wireless networks", "Inspect link state and DNS settings"]),
+    "Users": ("Local user accounts, groups & passwords", ["Manage sudo privileges and accounts", "Configure session user profiles"]),
+    "Power": ("Battery telemetry, suspend & power profile", ["Inspect AC/battery charge status", "Configure sleep and lock policies"]),
+    "Firewall": ("UFW / nftables packet rules & ports", ["Enable/disable host firewall safely", "Allow or deny incoming service ports"]),
+    "Printers": ("CUPS print queues & local printer setup", ["Discover USB and network printers", "Manage active print jobs"]),
+    "Date & Time": ("World clock, IANA timezone & host sync", ["Sync clock with host & geolocation timezone", "Inspect Chrony NTP synchronization"]),
+    "Accessibility": ("Visual contrast, font scaling & assist tools", ["Configure screen readability preferences", "Adjust keyboard & pointer accessibility"]),
+    "Storage": ("Disk partitions, SMART health & mounts", ["Inspect drives, partitions and filesystems", "Mount and check removable storage"]),
+    "Updates": ("Debian Bookworm APT updates & security fixes", ["Check available system package updates", "Apply security patches cleanly"]),
+    "Bluetooth": ("Bluetooth adapter power & device pairing", ["Scan and pair nearby audio/HID devices", "Manage trusted Bluetooth peripherals"]),
+    "Security": ("Vice Cyber Audit Deck & system hardening", ["Run ethical security & port audits", "Inspect listening services and file integrity"]),
+    "Theme": ("Leonida Dusk visual profile & icon theme", ["Preview GTK3, Qt5 and Openbox styles", "Customize desktop theme presets"]),
+    "Keyboard": ("Keymap layouts, shortcuts & repeat rate", ["Switch international keyboard layouts", "Review desktop & Openbox bindings"]),
+    "Mouse": ("Pointer speed, acceleration & touchpad", ["Tune cursor sensitivity and scrolling", "Configure left/right button layout"]),
+    "Cleanup": ("APT cache, temp files & disk reclaim", ["Safely clear package caches and logs", "Reclaim free workspace storage"]),
+    "Kernel": ("Linux kernel modules, sysctl & parameters", ["Inspect loaded modules and kernel version", "Review live sysctl tuning"]),
+    "Startup": ("Session autostart apps & background services", ["Control applications launched at login", "Keep boot fast and uncluttered"]),
+    "VPN": ("OpenVPN, WireGuard, Tor & Secure DNS", ["Import .ovpn / .conf profiles safely", "Toggle Tor, Privoxy & encrypted DNS"]),
+    "SSH": ("OpenSSH client/server keys & connections", ["Manage SSH keys and known hosts", "Toggle and audit SSH service access"]),
+    "Wallpaper": ("Leonida coastal dusk backgrounds", ["Select or preview desktop wallpapers", "Sync wallpaper across PCManFM & nitrogen"]),
+    "Network Shares": ("SMB/CIFS & SSHFS remote mounts", ["Browse and mount shared folders", "Manage persistent remote shares"]),
+    "Cron": ("Scheduled user & system cron jobs", ["Inspect and edit recurring timers", "Review Vice TimeSync & maintenance jobs"]),
+    "Backup": ("Timeshift snapshots & archive jobs", ["Create and schedule system backups", "Protect key user config directories"]),
+    "USB": ("Attached USB devices & auto-mount rules", ["Inspect connected USB hubs and drives", "Configure safe removable media mounting"]),
 }
 
 
 class AppLauncherPage(QWidget):
-    """A settings page that offers to launch the dedicated app for this area."""
+    """A settings page presenting a structured card to launch its dedicated tool."""
 
     def __init__(self, page_name, app_file):
         super().__init__()
+        c = COLORS
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
-        layout.setSpacing(10)
+        layout.setContentsMargins(28, 24, 28, 24)
 
-        icon_badge = QLabel()
+        card = QFrame(self)
+        card.setObjectName("Card")
+        card.setMaximumWidth(540)
+        card.setMinimumWidth(440)
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(28, 26, 28, 26)
+        cl.setSpacing(14)
+
+        top_row = QHBoxLayout()
+        top_row.setSpacing(14)
+
+        icon_badge = QLabel(card)
         icon_badge.setAlignment(Qt.AlignCenter)
-        icon_badge.setFixedSize(76, 76)
+        icon_badge.setFixedSize(64, 64)
         icon_badge.setStyleSheet(
-            "background: #211a36; border: 1px solid #3c2e63; border-radius: 18px;"
+            f"background: {c['bg_elevated']}; border: 1px solid {c['border']}; border-radius: 14px;"
         )
-        icon_names = _PAGE_ICONS.get(page_name, ('preferences-system', 'applications-other'))
-        ic = _theme_icon(*icon_names, 'preferences-system')
+        icon_names = _PAGE_ICONS.get(page_name, ("preferences-system", "applications-other"))
+        ic = _theme_icon(*icon_names, "preferences-system")
         if not ic.isNull():
-            icon_badge.setPixmap(ic.pixmap(48, 48))
+            icon_badge.setPixmap(ic.pixmap(42, 42))
         else:
             icon_badge.setText(page_name[:2].upper())
-        layout.addWidget(icon_badge, alignment=Qt.AlignCenter)
+        top_row.addWidget(icon_badge)
 
-        label = QLabel(f"{page_name} is managed by")
-        label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet("color: #cfc6e6; font-size: 13px; border: none; background: transparent;")
-        layout.addWidget(label)
+        title_col = QVBoxLayout()
+        title_col.setSpacing(4)
+        pretty = app_file.replace("vice_tool_", "").replace("vice_", "").replace(".py", "").replace("_", " ").title()
+        app_name = QLabel(f"Vice {pretty}", card)
+        app_name.setStyleSheet(f"color: {c['text_primary']}; font-size: 18px; font-weight: bold;")
+        title_col.addWidget(app_name)
 
-        app_name = QLabel(f"Vice {app_file.replace('vice_', '').replace('.py', '').replace('_', ' ').title()}")
-        app_name.setAlignment(Qt.AlignCenter)
-        app_name.setStyleSheet("color: #00e5c3; font-size: 18px; font-weight: bold; border: none; background: transparent;")
-        layout.addWidget(app_name)
-
-        layout.addSpacing(10)
-
-        open_btn = QPushButton(f"Open {page_name} Settings")
-        open_btn.setStyleSheet(
-            "QPushButton { background: #211938; color: #00e5c3; border: 1px solid #00e5c3; border-radius: 8px; padding: 9px 22px; font-size: 13px; font-weight: bold; }"
-            "QPushButton:hover { background: #362247; color: #ff8a5b; border-color: #ff4da6; }"
+        summary_text, bullets = _PAGE_SUMMARIES.get(
+            page_name,
+            (f"Configure {page_name.lower()} preferences", [f"Dedicated {page_name} configuration module"]),
         )
-        open_btn.clicked.connect(lambda: self._launch(app_file))
-        layout.addWidget(open_btn, alignment=Qt.AlignCenter)
+        sub_lbl = QLabel(summary_text, card)
+        sub_lbl.setStyleSheet(f"color: {c['text_secondary']}; font-size: 12px;")
+        sub_lbl.setWordWrap(True)
+        title_col.addWidget(sub_lbl)
+        top_row.addLayout(title_col, 1)
 
-        hint = QLabel("Opens in its own dedicated Vice OS configuration window.")
-        hint.setAlignment(Qt.AlignCenter)
-        hint.setStyleSheet("color: #b7aed1; font-size: 12px; border: none; background: transparent;")
-        layout.addWidget(hint)
+        badge = make_badge(page_name.upper(), "coral", card)
+        top_row.addWidget(badge, alignment=Qt.AlignTop)
+        cl.addLayout(top_row)
+
+        sep = QFrame(card)
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(f"background-color: {c['border']}; border: none;")
+        cl.addWidget(sep)
+
+        for bullet in bullets:
+            b_lbl = QLabel(f"•  {bullet}", card)
+            b_lbl.setStyleSheet(f"color: {c['text_secondary']}; font-size: 12px;")
+            b_lbl.setWordWrap(True)
+            cl.addWidget(b_lbl)
+
+        cl.addSpacing(4)
+        btn_row = QHBoxLayout()
+        open_btn = QPushButton(f"Open {page_name} Settings", card)
+        open_btn.setObjectName("PrimaryButton")
+        open_btn.clicked.connect(lambda: self._launch(app_file))
+        btn_row.addWidget(open_btn)
+        btn_row.addStretch(1)
+        hint = QLabel(f"Module: {app_file}", card)
+        hint.setStyleSheet(f"color: {c['text_muted']}; font-size: 11px;")
+        btn_row.addWidget(hint)
+        cl.addLayout(btn_row)
+
+        layout.addWidget(card, alignment=Qt.AlignCenter)
 
     @staticmethod
     def _launch(app_file):
         path = os.path.join(APP_DIR, app_file)
+        if not os.path.exists(path) and app_file == "vice_tool_clock_sync.py":
+            path = os.path.join(APP_DIR, "vice_calendar.py")
         if os.path.exists(path):
             QProcess.startDetached(sys.executable, [path])
-            log_info(f"Settings launched: {app_file}")
+            log_info(f"Settings launched: {os.path.basename(path)}")
         else:
             log_error(f"Settings app missing: {path}")
 
@@ -607,27 +674,29 @@ class AboutPage(QWidget):
 
     def __init__(self):
         super().__init__()
+        c = COLORS
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(12)
 
         logo = QLabel("VICE OS")
         logo.setAlignment(Qt.AlignCenter)
         logo.setStyleSheet(
-            "color: #ff4da6; font-size: 42px; font-weight: bold; letter-spacing: 8px;"
-            "border: none; background: transparent;"
+            f"color: {c['text_primary']}; font-size: 36px; font-weight: bold; letter-spacing: 8px;"
         )
         layout.addWidget(logo)
 
         tagline = QLabel("GTA VI Leonida Edition — Debian 12 Bookworm")
         tagline.setAlignment(Qt.AlignCenter)
-        tagline.setStyleSheet("color: #cfc6e6; font-size: 13px; border: none; background: transparent;")
+        tagline.setStyleSheet(f"color: {c['accent_peach']}; font-size: 13px; font-weight: 600;")
         layout.addWidget(tagline)
 
-        layout.addSpacing(18)
+        layout.addSpacing(10)
 
         info = QGroupBox("System Information")
         info.setMinimumWidth(520)
         il = QVBoxLayout(info)
+        il.setSpacing(6)
 
         rows = [
             ("OS", "cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'\"' -f2"),
@@ -647,19 +716,19 @@ class AboutPage(QWidget):
             row = QHBoxLayout()
             name_lbl = QLabel(f"{label}:")
             name_lbl.setFixedWidth(110)
-            name_lbl.setStyleSheet("color: #ff8a5b; border: none; background: transparent;")
+            name_lbl.setStyleSheet(f"color: {c['text_secondary']}; font-weight: 600;")
             row.addWidget(name_lbl)
             val_lbl = QLabel(value)
-            val_lbl.setStyleSheet("color: #00e5c3; border: none; background: transparent;")
+            val_lbl.setStyleSheet(f"color: {c['accent_aqua']};")
             val_lbl.setWordWrap(True)
             row.addWidget(val_lbl, 1)
             il.addLayout(row)
 
         layout.addWidget(info, alignment=Qt.AlignCenter)
 
-        license_lbl = QLabel("Debian Bookworm Base • PipeWire Audio • PyQt5 Suite")
+        license_lbl = QLabel("Debian Bookworm Base  •  PipeWire Audio  •  PyQt5 Suite")
         license_lbl.setAlignment(Qt.AlignCenter)
-        license_lbl.setStyleSheet("color: #b7aed1; font-size: 11px; border: none; background: transparent;")
+        license_lbl.setStyleSheet(f"color: {c['text_muted']}; font-size: 11px;")
         layout.addWidget(license_lbl)
 
 
@@ -676,23 +745,27 @@ class SettingsWindow(QWidget):
 
     def _init_ui(self):
         root = QHBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
 
         self._nav = QListWidget()
-        self._nav.setFixedWidth(180)
+        self._nav.setObjectName("SettingsNav")
+        self._nav.setFixedWidth(186)
         for name in PAGE_NAMES:
             self._nav.addItem(name)
         self._nav.currentRowChanged.connect(self._switch_page)
         root.addWidget(self._nav)
 
         self._stack = QStackedWidget()
-        root.addWidget(self._stack)
+        self._stack.setObjectName("SettingsStack")
+        root.addWidget(self._stack, 1)
 
         for name in PAGE_NAMES:
-            if name == 'Diagnostics':
+            if name == "Diagnostics":
                 self._stack.addWidget(DiagnosticsPage())
-            elif name == 'Drivers':
+            elif name == "Drivers":
                 self._stack.addWidget(DriversPage())
-            elif name == 'About':
+            elif name == "About":
                 self._stack.addWidget(AboutPage())
             elif name in PAGE_APPS:
                 self._stack.addWidget(AppLauncherPage(name, PAGE_APPS[name]))
@@ -701,7 +774,7 @@ class SettingsWindow(QWidget):
                 pl = QVBoxLayout(placeholder)
                 lbl = QLabel(f"{name} settings coming soon.")
                 lbl.setAlignment(Qt.AlignCenter)
-                lbl.setStyleSheet("color: #b7aed1; font-size: 14px;")
+                lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 14px;")
                 pl.addWidget(lbl)
                 self._stack.addWidget(placeholder)
 
@@ -724,10 +797,8 @@ class SettingsWindow(QWidget):
 
 def main():
     app = QApplication(sys.argv)
-    _configure_icon_theme()
-    cjk_list = ["Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans"]
-    for base in ("Noto Sans", "DejaVu Sans", "Sans", "sans-serif", "monospace"):
-        QFont.insertSubstitutions(base, cjk_list)
+    configure_icon_theme()
+    configure_cjk_fonts(app)
     win = SettingsWindow()
     win.show()
     sys.exit(app.exec_())

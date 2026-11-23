@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """
-GTA VI OS (Vice OS) Panel Configuration
-Single source of truth for all desktop panel dimensions, positions, colors,
-dock applications, and hotkey bindings.
-
-All panel components (TopBar, Dock, RunMenu, Systray) should read their
-geometry from this module rather than hardcoding values.
+GTA VI OS (Vice OS) Panel Configuration.
+Single source of truth for all desktop panel dimensions, positions, Leonida dark
+slate palette tokens, dock applications, and hotkey bindings.
 """
 
 # ──────────────────────────────────────────────
@@ -74,38 +71,38 @@ Each entry is checked against $PATH at runtime; missing binaries are skipped.
 """
 
 # ──────────────────────────────────────────────
-# GTA VI Leonida / Vice City Color Palette
+# GTA VI Leonida Coastal Dusk Color Palette
 # ──────────────────────────────────────────────
 
-COLOR_BG_DARK = "#120e1e"
-"""Default widget background (deep twilight violet)."""
+COLOR_BG_DARK = "#0D0E15"
+"""Default canvas background (deep slate midnight)."""
 
-COLOR_BG_PANEL = "rgba(18, 14, 30, 236)"
-"""Semi-transparent panel background."""
+COLOR_BG_PANEL = "rgba(20, 22, 33, 242)"
+"""Elevated translucent panel background."""
 
-COLOR_BG_INPUT = "#1a142d"
+COLOR_BG_INPUT = "#1B1E2D"
 """Input field background."""
 
-COLOR_BG_INPUT_FOCUS = "#241c3d"
+COLOR_BG_INPUT_FOCUS = "#23273A"
 """Input field background when focused."""
 
-COLOR_CYAN = "#00e5c3"
-"""Palm teal accent."""
+COLOR_CYAN = "#36D6C3"
+"""Leonida coastal aqua accent for live status indicators."""
 
-COLOR_MAGENTA = "#ff4da6"
-"""Vice City hot sunset pink accent."""
+COLOR_MAGENTA = "#FF5E7E"
+"""Leonida sunset coral-pink accent."""
 
-COLOR_WHITE = "#f4f1fa"
-"""Text color."""
+COLOR_WHITE = "#F5F6FA"
+"""Primary alabaster text color."""
 
-COLOR_RED = "#ff3b6b"
-"""Error / danger."""
+COLOR_RED = "#F25C6E"
+"""Error / destructive action color."""
 
-COLOR_BORDER = "#ff4da6"
-"""Default border — sunset pink."""
+COLOR_BORDER = "#262A3D"
+"""Default subtle structural hairline border."""
 
-COLOR_BORDER_FOCUS = "#ff8a5b"
-"""Focused border — sunset coral."""
+COLOR_BORDER_FOCUS = "#FF9A62"
+"""Focused border — warm sunset peach."""
 
 # ──────────────────────────────────────────────
 # Stalonetray Configuration
@@ -123,7 +120,7 @@ STALONETRAY_ARGS = [
     "--vertical",
     "--sticky",
     "--kludges", f"force_icons_size={SYSTRAY_ICON_SIZE}",
-    "--background", "#050505",
+    "--background", "#0D0E15",
 ]
 """
 Command-line arguments passed to stalonetray on startup.

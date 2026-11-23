@@ -139,6 +139,9 @@ main() {
     # Enable native Wayland for Firefox
     export MOZ_ENABLE_WAYLAND=1
 
+    # Use GTK3 VCL plugin so LibreOffice adopts the GTA VI GTK3 theme
+    export SAL_USE_VCLPLUGIN=gtk3
+
     # 5. Push environment variables to DBus activation environment
     log_info "Updating DBus activation environment..."
     if command -v dbus-update-activation-environment > /dev/null 2>&1; then
@@ -151,7 +154,7 @@ main() {
             XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS \
             XDG_SESSION_TYPE XDG_CURRENT_DESKTOP WAYLAND_DISPLAY \
             QT_QPA_PLATFORM QT_QPA_PLATFORMTHEME QT_AUTO_SCREEN_SCALE_FACTOR \
-            MOZ_ENABLE_WAYLAND 2>/dev/null || true
+            MOZ_ENABLE_WAYLAND SAL_USE_VCLPLUGIN 2>/dev/null || true
     fi
 
     # 6. Start PipeWire/WirePlumber/pipewire-pulse and set default 85% unmuted levels

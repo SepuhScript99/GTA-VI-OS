@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Vice Office Studio
+Comment=Launch LibreOffice Writer, Calc, Impress, Draw, Math & PDF Viewer
+Exec=python3 /opt/vice-os/vice_tool_office_hub.py
+Icon=vice-tool-office-hub
+Terminal=false
+Categories=Office;Utility;
+StartupNotify=true

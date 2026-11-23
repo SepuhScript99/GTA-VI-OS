@@ -16,9 +16,11 @@ source /vice_payload/lib/common.sh
 # Prevent interactive prompts during package installation
 export DEBIAN_FRONTEND=noninteractive
 
-# Pre-seed timezone configuration before packages install
+# Pre-seed timezone and non-interactive package defaults before packages install
 echo "tzdata tzdata/Areas select Etc" | debconf-set-selections
 echo "tzdata tzdata/Zones/Etc select UTC" | debconf-set-selections
+echo "macchanger macchanger/automatically_run boolean false" | debconf-set-selections
+echo "wireshark-common wireshark-common/install-setuid boolean false" | debconf-set-selections
 
 # Define safe apt options for retries and lock timeouts
 APT_OPTS=(

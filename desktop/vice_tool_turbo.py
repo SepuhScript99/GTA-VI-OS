@@ -2,8 +2,9 @@
 """
 GTA VI OS (Vice OS) — Vice Turbo Mode & HUD.
 Real system booster and live telemetry HUD: CPU, RAM, Disk, Load, Temperature,
-picom compositor pause/resume toggle for YouTube/VM smoothness, top-process
-renice helper, and swappiness/memory tuning.
+picom compositor pause/resume toggle for VM smoothness, top-process renice,
+and swappiness/memory tuning via non-blocking QThread/pkexec.
+Styled via vice_theme (Noto Sans CJK fallback).
 """
 
 import glob
@@ -14,10 +15,9 @@ import subprocess
 import sys
 
 from PyQt5.QtCore import QProcess, QThread, QTimer, pyqtSignal
-from PyQt5.QtGui import QFont, QIcon, QPixmap
 from PyQt5.QtWidgets import (
-    QAbstractItemView, QApplication, QFrame, QGridLayout, QHBoxLayout,
-    QHeaderView, QLabel, QMainWindow, QMessageBox, QProgressBar, QPushButton,
+    QAbstractItemView, QApplication, QGridLayout, QHBoxLayout,
+    QHeaderView, QLabel, QMainWindow, QMessageBox, QProgressBar,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 )
 
@@ -26,126 +26,25 @@ try:
 except ImportError:
     psutil = None
 
-sys.path.insert(0, "/opt/vice-os/lib")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _p in ("/opt/vice-os", _HERE, "/opt/vice-os/lib"):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    load_tool_icon,
+    make_button,
+    make_card,
+    make_header,
+)
 
 try:
     from python.vice_utils import log_info  # noqa: E402
 except ImportError:
     def log_info(msg: str) -> None:
         print(f"[INFO] {msg}")
-
-
-CJK_FONTS = [
-    "Noto Sans",
-    "Noto Sans CJK JP",
-    "Noto Sans CJK SC",
-    "Noto Sans CJK TC",
-    "Noto Sans CJK KR",
-    "DejaVu Sans",
-]
-
-STYLE = """
-QMainWindow, QWidget#RootWidget {
-    background-color: #120e1e;
-    color: #f4f1fa;
-    font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
-    font-size: 13px;
-}
-QFrame#Banner {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #1d1433, stop:0.6 #33133b, stop:1 #16223d);
-    border: 1px solid #ff4da6;
-    border-radius: 12px;
-}
-QFrame#StatCard {
-    background-color: #181229;
-    border: 1px solid #382b57;
-    border-radius: 10px;
-}
-QProgressBar {
-    background-color: #151026;
-    border: 1px solid #43346b;
-    border-radius: 6px;
-    height: 14px;
-    text-align: center;
-    color: #ffffff;
-    font-weight: bold;
-}
-QProgressBar::chunk {
-    border-radius: 5px;
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #00e5ff, stop:0.55 #ff4da6, stop:1 #ffd166);
-}
-QPushButton {
-    background-color: #1f1836;
-    color: #00e5ff;
-    border: 1px solid #00e5ff;
-    border-radius: 8px;
-    padding: 7px 12px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00e5ff;
-    color: #120e1e;
-}
-QPushButton#TurboBtn {
-    color: #ffd166;
-    border-color: #ff4da6;
-    background-color: #341b42;
-}
-QPushButton#TurboBtn:hover {
-    background-color: #ff4da6;
-    color: #120e1e;
-}
-QPushButton#WarnBtn {
-    color: #ff6b8b;
-    border-color: #ff6b8b;
-}
-QPushButton#WarnBtn:hover {
-    background-color: #ff6b8b;
-    color: #120e1e;
-}
-QTableWidget {
-    background-color: #141024;
-    color: #f4f1fa;
-    border: 1px solid #382b57;
-    border-radius: 10px;
-    gridline-color: #292042;
-}
-QTableWidget::item:selected {
-    background-color: #34214d;
-    color: #ffd166;
-}
-QHeaderView::section {
-    background-color: #1e1633;
-    color: #ff8a5b;
-    border: none;
-    border-bottom: 1px solid #3c2e5e;
-    padding: 6px;
-    font-weight: bold;
-}
-"""
-
-
-def _configure_cjk_fonts(app: QApplication) -> None:
-    for fam in ("Noto Sans", "DejaVu Sans", "Sans", "sans-serif"):
-        QFont.insertSubstitutions(fam, CJK_FONTS)
-    font = QFont("Noto Sans", 10)
-    if hasattr(font, "setFamilies"):
-        font.setFamilies(CJK_FONTS)
-    app.setFont(font)
-
-
-def _load_app_icon() -> QIcon:
-    for path in (
-        "/usr/share/icons/hicolor/64x64/apps/vice-tool-turbo.png",
-        "/usr/share/pixmaps/vice-tool-turbo.png",
-    ):
-        if os.path.isfile(path):
-            pm = QPixmap(path)
-            if not pm.isNull():
-                return QIcon(pm)
-    return QIcon.fromTheme("utilities-system-monitor")
 
 
 def _read_proc_meminfo() -> tuple:
@@ -325,19 +224,41 @@ class TelemetryWorker(QThread):
             self.snapshot_ready.emit(snap)
 
 
+class PrivActionWorker(QThread):
+    """Executes one-off privileged actions off the UI thread."""
+    finished_msg = pyqtSignal(bool, str)
+
+    def __init__(self, cmd: list, ok_msg: str):
+        super().__init__()
+        self._cmd = cmd
+        self._ok_msg = ok_msg
+
+    def run(self) -> None:
+        try:
+            res = subprocess.run(self._cmd, capture_output=True, text=True, timeout=30)
+            if res.returncode == 0:
+                self.finished_msg.emit(True, self._ok_msg)
+            else:
+                err = res.stderr.strip() or res.stdout.strip() or f"Exit {res.returncode}"
+                self.finished_msg.emit(False, err)
+        except Exception as exc:
+            self.finished_msg.emit(False, str(exc))
+
+
 class ViceTurboApp(QMainWindow):
     """Main window for Vice Turbo Mode & Telemetry HUD."""
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Vice Turbo Mode & HUD — Leonida Booster")
+        self.setWindowTitle("Vice Turbo Mode & HUD — Vice OS")
         self.resize(940, 650)
         self.setMinimumSize(760, 520)
-        icon = _load_app_icon()
+        icon = load_tool_icon("vice-tool-turbo", "utilities-system-monitor")
         if not icon.isNull():
             self.setWindowIcon(icon)
 
         self._worker = None
+        self._priv_worker = None
         self._init_ui()
 
         self._timer = QTimer(self)
@@ -355,52 +276,36 @@ class ViceTurboApp(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 14)
         layout.setSpacing(12)
 
-        # Banner + Compositor Turbo Controls
-        banner = QFrame(root)
-        banner.setObjectName("Banner")
-        bh = QHBoxLayout(banner)
-        bh.setContentsMargins(16, 12, 16, 12)
-        bh.setSpacing(12)
-
-        tcol = QVBoxLayout()
-        title = QLabel("VICE TURBO MODE & TELEMETRY HUD", banner)
-        title.setStyleSheet("color: #ffd166; font-size: 19px; font-weight: bold; background: transparent;")
-        tcol.addWidget(title)
-        self._comp_status_lbl = QLabel("Compositor status: checking...", banner)
-        self._comp_status_lbl.setStyleSheet("color: #00e5ff; font-size: 12px; font-weight: bold; background: transparent;")
-        tcol.addWidget(self._comp_status_lbl)
-        bh.addLayout(tcol, 1)
-
-        self._pause_picom_btn = QPushButton("Enable Turbo (Pause Picom)", banner)
-        self._pause_picom_btn.setObjectName("TurboBtn")
+        self._header = make_header(
+            title="Vice Turbo Mode & Telemetry HUD",
+            subtitle="Compositor control, memory tuning, and live process prioritization",
+            icon_name="vice-tool-turbo",
+            badge_text="CHECKING",
+            badge_variant="neutral",
+            parent=root,
+        )
+        self._pause_picom_btn = make_button("Enable Turbo", variant="primary", parent=self._header)
         self._pause_picom_btn.clicked.connect(self._pause_compositor)
-        bh.addWidget(self._pause_picom_btn)
+        self._header.right_layout.addWidget(self._pause_picom_btn)
 
-        self._resume_picom_btn = QPushButton("Resume Compositor", banner)
+        self._resume_picom_btn = make_button("Resume Compositor", variant="secondary", parent=self._header)
         self._resume_picom_btn.clicked.connect(self._resume_compositor)
-        bh.addWidget(self._resume_picom_btn)
+        self._header.right_layout.addWidget(self._resume_picom_btn)
+        layout.addWidget(self._header)
 
-        layout.addWidget(banner)
-
-        # Telemetry Grid (4 cards)
+        # Telemetry Grid (4 calm surface cards)
         grid = QGridLayout()
         grid.setSpacing(10)
 
-        self._cpu_lbl, self._cpu_bar = self._make_meter_card("CPU UTILIZATION", grid, 0, 0)
-        self._ram_lbl, self._ram_bar = self._make_meter_card("MEMORY & SWAP", grid, 0, 1)
-        self._disk_lbl, self._disk_bar = self._make_meter_card("ROOT STORAGE (/)", grid, 1, 0)
+        self._cpu_lbl, self._cpu_bar = self._make_meter_card("CPU Utilization", grid, 0, 0)
+        self._ram_lbl, self._ram_bar = self._make_meter_card("Memory & Swap", grid, 0, 1)
+        self._disk_lbl, self._disk_bar = self._make_meter_card("Root Storage (/)", grid, 1, 0)
 
-        info_card = QFrame(root)
-        info_card.setObjectName("StatCard")
-        iv = QVBoxLayout(info_card)
-        iv.setContentsMargins(12, 10, 12, 10)
-        ih = QLabel("THERMALS, LOAD & VM TUNING", info_card)
-        ih.setStyleSheet("color: #ff8a5b; font-size: 11px; font-weight: bold; background: transparent;")
-        iv.addWidget(ih)
+        info_card = make_card(title="Thermals, Load & VM Tuning", parent=root)
         self._kernel_lbl = QLabel("Load: - · Temp: - · vm.swappiness: -", info_card)
         self._kernel_lbl.setWordWrap(True)
-        self._kernel_lbl.setStyleSheet("color: #f4f1fa; font-weight: bold; background: transparent;")
-        iv.addWidget(self._kernel_lbl)
+        self._kernel_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-weight: 600;")
+        info_card.body_layout.addWidget(self._kernel_lbl)
         grid.addWidget(info_card, 1, 1)
 
         layout.addLayout(grid)
@@ -408,23 +313,22 @@ class ViceTurboApp(QMainWindow):
         # Memory & Swappiness Quick Tune Row
         mem_row = QHBoxLayout()
         mem_row.setSpacing(8)
-        drop_btn = QPushButton("Drop Page Cache (pkexec)", root)
+        drop_btn = make_button("Drop Page Cache (pkexec)", variant="secondary", parent=root)
         drop_btn.clicked.connect(self._drop_caches)
         mem_row.addWidget(drop_btn)
 
-        swap_zram_btn = QPushButton("Set vm.swappiness=100 (ZRAM)", root)
+        swap_zram_btn = make_button("Set vm.swappiness=100 (ZRAM)", variant="secondary", parent=root)
         swap_zram_btn.clicked.connect(lambda: self._set_swappiness(100))
         mem_row.addWidget(swap_zram_btn)
 
-        swap_bal_btn = QPushButton("Set vm.swappiness=60 (Balanced)", root)
+        swap_bal_btn = make_button("Set vm.swappiness=60 (Balanced)", variant="secondary", parent=root)
         swap_bal_btn.clicked.connect(lambda: self._set_swappiness(60))
         mem_row.addWidget(swap_bal_btn)
         mem_row.addStretch(1)
         layout.addLayout(mem_row)
 
-        # Top Processes Table
-        proc_lbl = QLabel("Top Active Processes (select row to renice or terminate):", root)
-        proc_lbl.setStyleSheet("color: #cfc6e6; font-weight: bold;")
+        proc_lbl = QLabel("Top Active Processes (select row to renice or terminate)", root)
+        proc_lbl.setObjectName("SectionTitle")
         layout.addWidget(proc_lbl)
 
         self._proc_table = QTableWidget(0, 5, root)
@@ -435,42 +339,34 @@ class ViceTurboApp(QMainWindow):
         self._proc_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         layout.addWidget(self._proc_table, 1)
 
-        # Process Action Row
         pact = QHBoxLayout()
-        boost_btn = QPushButton("Boost Priority (Nice -5)", root)
+        pact.setSpacing(8)
+        boost_btn = make_button("Boost Priority (Nice -5)", variant="primary", parent=root)
         boost_btn.clicked.connect(lambda: self._renice_selected(-5))
         pact.addWidget(boost_btn)
 
-        throttle_btn = QPushButton("Throttle Priority (Nice +10)", root)
+        throttle_btn = make_button("Throttle Priority (Nice +10)", variant="secondary", parent=root)
         throttle_btn.clicked.connect(lambda: self._renice_selected(10))
         pact.addWidget(throttle_btn)
 
-        kill_btn = QPushButton("Terminate Selected", root)
-        kill_btn.setObjectName("WarnBtn")
+        kill_btn = make_button("Terminate Selected", variant="danger", parent=root)
         kill_btn.clicked.connect(self._terminate_selected)
         pact.addWidget(kill_btn)
 
         pact.addStretch(1)
         self._action_status = QLabel("Ready.", root)
-        self._action_status.setStyleSheet("color: #a99ec9;")
+        self._action_status.setObjectName("MutedLabel")
         pact.addWidget(self._action_status)
         layout.addLayout(pact)
 
     def _make_meter_card(self, title: str, grid: QGridLayout, row: int, col: int) -> tuple:
-        card = QFrame(self)
-        card.setObjectName("StatCard")
-        v = QVBoxLayout(card)
-        v.setContentsMargins(12, 10, 12, 10)
-        v.setSpacing(6)
-        hdr = QLabel(title, card)
-        hdr.setStyleSheet("color: #ff8a5b; font-size: 11px; font-weight: bold; background: transparent;")
-        v.addWidget(hdr)
+        card = make_card(title=title, parent=self)
         val_lbl = QLabel("Sampling...", card)
-        val_lbl.setStyleSheet("color: #f4f1fa; font-weight: bold; background: transparent;")
-        v.addWidget(val_lbl)
+        val_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-weight: 600;")
+        card.body_layout.addWidget(val_lbl)
         bar = QProgressBar(card)
         bar.setRange(0, 100)
-        v.addWidget(bar)
+        card.body_layout.addWidget(bar)
         grid.addWidget(card, row, col)
         return val_lbl, bar
 
@@ -494,21 +390,15 @@ class ViceTurboApp(QMainWindow):
         self._disk_bar.setValue(s["disk_pct"])
 
         self._kernel_lbl.setText(
-            f"Load: {s['load']}  |  Temp: {s['temp']}  |  vm.swappiness: {s['swappiness']}"
+            f"Load: {s['load']}  ·  Temp: {s['temp']}  ·  vm.swappiness: {s['swappiness']}"
         )
 
         picom_on = bool(s["picom_on"])
-        self._comp_status_lbl.setText(
-            "Compositor: ACTIVE (picom running)" if picom_on
-            else "Compositor: PAUSED (Turbo Mode — zero compositing overhead)"
-        )
-        self._comp_status_lbl.setStyleSheet(
-            "color: #00e5ff; font-size: 12px; font-weight: bold; background: transparent;"
-            if picom_on else
-            "color: #ffd166; font-size: 12px; font-weight: bold; background: transparent;"
-        )
+        if picom_on:
+            self._header.set_badge("COMPOSITOR ON", "aqua")
+        else:
+            self._header.set_badge("TURBO ACTIVE", "gold")
 
-        # Preserve selected PID across refresh
         selected_pid = self._selected_pid()
         self._proc_table.setRowCount(0)
         for pid, name, cpu, mem, nice_val in s["procs"]:
@@ -516,8 +406,7 @@ class ViceTurboApp(QMainWindow):
             self._proc_table.insertRow(row)
             vals = [str(pid), str(name), f"{cpu:.1f}", f"{mem:.1f}", str(nice_val)]
             for col_idx, txt in enumerate(vals):
-                it = QTableWidgetItem(txt)
-                self._proc_table.setItem(row, col_idx, it)
+                self._proc_table.setItem(row, col_idx, QTableWidgetItem(txt))
             if selected_pid is not None and pid == selected_pid:
                 self._proc_table.selectRow(row)
 
@@ -533,13 +422,29 @@ class ViceTurboApp(QMainWindow):
         except ValueError:
             return None
 
+    def _run_priv_async(self, cmd: list, ok_msg: str) -> None:
+        if self._priv_worker is not None and self._priv_worker.isRunning():
+            self._action_status.setText("Another privileged task is already running...")
+            return
+        self._action_status.setText("Running privileged action...")
+        self._priv_worker = PrivActionWorker(cmd, ok_msg)
+        self._priv_worker.finished_msg.connect(self._on_priv_done)
+        self._priv_worker.start()
+
+    def _on_priv_done(self, ok: bool, msg: str) -> None:
+        color = COLORS["success"] if ok else COLORS["danger"]
+        self._action_status.setStyleSheet(f"color: {color}; font-weight: 600;")
+        self._action_status.setText(msg)
+        self._poll_telemetry()
+
     def _pause_compositor(self) -> None:
         if not shutil.which("pkill"):
             self._action_status.setText("pkill not available.")
             return
         for proc_name in ("picom", "compton"):
             subprocess.run(["pkill", "-x", proc_name], capture_output=True)
-        self._action_status.setText("Turbo Mode ON: compositor paused for maximum frame smoothness.")
+        self._action_status.setStyleSheet(f"color: {COLORS['accent_gold']}; font-weight: 600;")
+        self._action_status.setText("Turbo Mode ON: compositor paused for smoother frame pacing.")
         log_info("Vice Turbo paused picom/compton")
         self._poll_telemetry()
 
@@ -559,6 +464,7 @@ class ViceTurboApp(QMainWindow):
         if os.path.basename(comp_bin) == "picom":
             args.extend(["--backend", "xrender", "--no-fading-openclose"])
         QProcess.startDetached(comp_bin, args, os.path.expanduser("~"))
+        self._action_status.setStyleSheet(f"color: {COLORS['accent_aqua']}; font-weight: 600;")
         self._action_status.setText("Resumed compositor.")
         QTimer.singleShot(500, self._poll_telemetry)
 
@@ -571,16 +477,15 @@ class ViceTurboApp(QMainWindow):
             self._action_status.setText("renice binary missing.")
             return
         res = subprocess.run(["renice", "-n", str(nice_val), "-p", str(pid)], capture_output=True, text=True)
-        if res.returncode != 0 and shutil.which("pkexec"):
-            res = subprocess.run(
-                ["pkexec", "renice", "-n", str(nice_val), "-p", str(pid)],
-                capture_output=True, text=True
-            )
         if res.returncode == 0:
-            self._action_status.setText(f"Set PID {pid} nice={nice_val}.")
-            self._poll_telemetry()
+            self._on_priv_done(True, f"Set PID {pid} nice={nice_val}.")
+        elif shutil.which("pkexec"):
+            self._run_priv_async(
+                ["pkexec", "renice", "-n", str(nice_val), "-p", str(pid)],
+                f"Set PID {pid} nice={nice_val}.",
+            )
         else:
-            self._action_status.setText(f"Renice failed: {res.stderr.strip()}")
+            self._on_priv_done(False, f"Renice failed: {res.stderr.strip()}")
 
     def _terminate_selected(self) -> None:
         pid = self._selected_pid()
@@ -596,42 +501,35 @@ class ViceTurboApp(QMainWindow):
             return
         try:
             os.kill(pid, signal.SIGTERM)
-            self._action_status.setText(f"Sent SIGTERM to PID {pid}.")
-            QTimer.singleShot(400, self._poll_telemetry)
+            self._on_priv_done(True, f"Sent SIGTERM to PID {pid}.")
         except PermissionError:
             if shutil.which("pkexec"):
-                subprocess.run(["pkexec", "kill", "-TERM", str(pid)], capture_output=True)
-                QTimer.singleShot(400, self._poll_telemetry)
+                self._run_priv_async(
+                    ["pkexec", "kill", "-TERM", str(pid)],
+                    f"Sent SIGTERM to PID {pid}.",
+                )
             else:
-                self._action_status.setText(f"Permission denied terminating PID {pid}.")
+                self._on_priv_done(False, f"Permission denied terminating PID {pid}.")
         except Exception as exc:
-            self._action_status.setText(f"Error: {exc}")
+            self._on_priv_done(False, f"Error: {exc}")
 
     def _drop_caches(self) -> None:
         if not shutil.which("pkexec"):
             self._action_status.setText("pkexec required for privileged cache drop.")
             return
-        res = subprocess.run(
+        self._run_priv_async(
             ["pkexec", "sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"],
-            capture_output=True, text=True
+            "Dropped Linux page/inode caches.",
         )
-        self._action_status.setText(
-            "Dropped Linux page/inode caches." if res.returncode == 0 else f"Cancelled/failed: {res.stderr.strip()}"
-        )
-        self._poll_telemetry()
 
     def _set_swappiness(self, val: int) -> None:
         if not shutil.which("pkexec"):
             self._action_status.setText("pkexec required for sysctl tuning.")
             return
-        res = subprocess.run(
-            ["pkexec", "sysctl", "-w", f"vm.swappiness={val}"],
-            capture_output=True, text=True
+        self._run_priv_async(
+            ["pkexec", "sysctl", "-w", f"vm.swappiness={int(val)}"],
+            f"vm.swappiness set to {int(val)}.",
         )
-        self._action_status.setText(
-            f"vm.swappiness set to {val}." if res.returncode == 0 else f"Failed: {res.stderr.strip()}"
-        )
-        self._poll_telemetry()
 
     def closeEvent(self, event) -> None:
         self._timer.stop()
@@ -639,14 +537,15 @@ class ViceTurboApp(QMainWindow):
             self._worker.stop()
             if self._worker.isRunning():
                 self._worker.wait(1500)
+        if self._priv_worker is not None and self._priv_worker.isRunning():
+            self._priv_worker.wait(1500)
         event.accept()
 
 
 def main() -> None:
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication(sys.argv)
-    _configure_cjk_fonts(app)
-    app.setStyleSheet(STYLE)
+    apply_app_theme(app)
     win = ViceTurboApp()
     win.show()
     sys.exit(app.exec_())

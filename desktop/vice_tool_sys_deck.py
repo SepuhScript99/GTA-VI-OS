@@ -4,6 +4,7 @@ GTA VI OS (Vice OS) — Vice Hardware & System Deck.
 Multi-tab hardware and OS inspector covering CPU/Arch, Memory/Swap,
 Storage/Mounts, PCI/USB, Audio Sinks/Cards (pactl/aplay/wpctl),
 and Network interfaces with JSON and text report export.
+Styled via vice_theme (Noto Sans CJK fallback).
 """
 
 from datetime import datetime
@@ -16,114 +17,28 @@ import subprocess
 import sys
 
 from PyQt5.QtCore import QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QIcon, QPixmap
 from PyQt5.QtWidgets import (
-    QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow,
-    QMessageBox, QPlainTextEdit, QPushButton, QTabWidget, QVBoxLayout, QWidget
+    QApplication, QFileDialog, QMainWindow, QMessageBox,
+    QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget
 )
 
-sys.path.insert(0, "/opt/vice-os/lib")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _p in ("/opt/vice-os", _HERE, "/opt/vice-os/lib"):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from vice_theme import (  # noqa: E402
+    apply_app_theme,
+    load_tool_icon,
+    make_button,
+    make_header,
+)
 
 try:
     from python.vice_utils import log_info  # noqa: E402
 except ImportError:
     def log_info(msg: str) -> None:
         print(f"[INFO] {msg}")
-
-
-CJK_FONTS = [
-    "Noto Sans",
-    "Noto Sans CJK JP",
-    "Noto Sans CJK SC",
-    "Noto Sans CJK TC",
-    "Noto Sans CJK KR",
-    "DejaVu Sans",
-]
-
-STYLE = """
-QMainWindow, QWidget#RootWidget {
-    background-color: #120e1e;
-    color: #f4f1fa;
-    font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
-    font-size: 13px;
-}
-QFrame#Banner {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #1d1433, stop:0.6 #2e143a, stop:1 #13253a);
-    border: 1px solid #ff8a5b;
-    border-radius: 12px;
-}
-QTabWidget::pane {
-    border: 1px solid #3c2e5e;
-    border-radius: 10px;
-    background-color: #161126;
-}
-QTabBar::tab {
-    background-color: #1b152e;
-    color: #cfc6e6;
-    border: 1px solid #322650;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-    padding: 8px 14px;
-    margin-right: 4px;
-    font-weight: bold;
-}
-QTabBar::tab:selected {
-    background-color: #311d46;
-    color: #ffd166;
-    border-color: #ff4da6;
-}
-QPlainTextEdit {
-    background-color: #0d0a18;
-    color: #b8f5ff;
-    border: 1px solid #30244a;
-    border-radius: 8px;
-    font-family: "Noto Sans Mono CJK JP", "Noto Sans Mono CJK SC", "DejaVu Sans Mono", monospace;
-    font-size: 12px;
-    padding: 10px;
-}
-QPushButton {
-    background-color: #1f1836;
-    color: #00e5ff;
-    border: 1px solid #00e5ff;
-    border-radius: 8px;
-    padding: 7px 14px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00e5ff;
-    color: #120e1e;
-}
-QPushButton#ExportBtn {
-    color: #ffd166;
-    border-color: #ff8a5b;
-}
-QPushButton#ExportBtn:hover {
-    background-color: #ff8a5b;
-    color: #120e1e;
-}
-"""
-
-
-def _configure_cjk_fonts(app: QApplication) -> None:
-    for fam in ("Noto Sans", "DejaVu Sans", "Sans", "sans-serif"):
-        QFont.insertSubstitutions(fam, CJK_FONTS)
-    font = QFont("Noto Sans", 10)
-    if hasattr(font, "setFamilies"):
-        font.setFamilies(CJK_FONTS)
-    app.setFont(font)
-
-
-def _load_app_icon() -> QIcon:
-    for path in (
-        "/usr/share/icons/hicolor/64x64/apps/vice-tool-sys-deck.png",
-        "/usr/share/pixmaps/vice-tool-sys-deck.png",
-    ):
-        if os.path.isfile(path):
-            pm = QPixmap(path)
-            if not pm.isNull():
-                return QIcon(pm)
-    return QIcon.fromTheme("computer")
 
 
 def _read_text(path: str, limit: int = 8000) -> str:
@@ -136,7 +51,7 @@ def _read_text(path: str, limit: int = 8000) -> str:
         return ""
 
 
-def _run_tool(cmd: list, timeout: int = 4) -> str:
+def _run_tool(cmd: list, timeout: int = 3) -> str:
     if not shutil.which(cmd[0]):
         return f"[{cmd[0]} not installed]"
     try:
@@ -161,7 +76,6 @@ class SysDeckWorker(QThread):
     def run(self) -> None:
         data = {}
 
-        # 1. CPU & OS
         u = platform.uname()
         dmi_lines = []
         for field in ("sys_vendor", "product_name", "bios_version"):
@@ -181,7 +95,6 @@ class SysDeckWorker(QThread):
         if self._stopped:
             return
 
-        # 2. Memory & Swap
         mem_parts = ["=== Memory Overview (free -h) ===\n" + _run_tool(["free", "-h"])]
         swaps = _read_text("/proc/swaps", 2048)
         if swaps:
@@ -193,7 +106,6 @@ class SysDeckWorker(QThread):
         if self._stopped:
             return
 
-        # 3. Storage & Mounts
         stor_parts = [
             "=== Block Devices (lsblk) ===\n" + _run_tool(["lsblk", "-o", "NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL"]),
             "=== Filesystem Usage (df -hT) ===\n" + _run_tool(["df", "-hT"]),
@@ -210,14 +122,12 @@ class SysDeckWorker(QThread):
         if self._stopped:
             return
 
-        # 4. PCI & USB
         pci_out = _run_tool(["lspci"])
         usb_out = _run_tool(["lsusb"])
         data["devices"] = f"=== PCI Devices (lspci) ===\n{pci_out}\n\n=== USB Devices (lsusb) ===\n{usb_out}"
         if self._stopped:
             return
 
-        # 5. Audio Stack
         aud_parts = [
             "=== PipeWire / Pulse Server (pactl info) ===\n" + _run_tool(["pactl", "info"]),
             "=== Audio Sinks (pactl list short sinks) ===\n" + _run_tool(["pactl", "list", "short", "sinks"]),
@@ -229,7 +139,6 @@ class SysDeckWorker(QThread):
         if self._stopped:
             return
 
-        # 6. Network
         net_parts = [
             "=== Interfaces (ip -br addr) ===\n" + _run_tool(["ip", "-br", "addr"]),
             "=== Routing Table (ip route) ===\n" + _run_tool(["ip", "route"]),
@@ -249,10 +158,10 @@ class ViceSysDeckApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Vice Hardware & System Deck — Leonida Inspector")
+        self.setWindowTitle("Vice Hardware & System Deck — Vice OS")
         self.resize(960, 660)
         self.setMinimumSize(760, 520)
-        icon = _load_app_icon()
+        icon = load_tool_icon("vice-tool-sys-deck", "computer")
         if not icon.isNull():
             self.setWindowIcon(icon)
 
@@ -272,35 +181,26 @@ class ViceSysDeckApp(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 14)
         layout.setSpacing(12)
 
-        banner = QFrame(root)
-        banner.setObjectName("Banner")
-        bh = QHBoxLayout(banner)
-        bh.setContentsMargins(16, 12, 16, 12)
-
-        col = QVBoxLayout()
-        title = QLabel("VICE HARDWARE & SYSTEM DECK", banner)
-        title.setStyleSheet("color: #ffd166; font-size: 19px; font-weight: bold; background: transparent;")
-        col.addWidget(title)
-        self._sub_lbl = QLabel("Loading hardware telemetry...", banner)
-        self._sub_lbl.setStyleSheet("color: #cfc6e6; font-size: 12px; background: transparent;")
-        col.addWidget(self._sub_lbl)
-        bh.addLayout(col, 1)
-
-        ref_btn = QPushButton("Refresh All", banner)
+        self._header = make_header(
+            title="Vice Hardware & System Deck",
+            subtitle="Loading hardware telemetry...",
+            icon_name="vice-tool-sys-deck",
+            badge_text="6 SUBSYSTEMS",
+            badge_variant="neutral",
+            parent=root,
+        )
+        ref_btn = make_button("Refresh All", variant="primary", icon_name="view-refresh", parent=self._header)
         ref_btn.clicked.connect(self._refresh_all)
-        bh.addWidget(ref_btn)
+        self._header.right_layout.addWidget(ref_btn)
 
-        exp_json = QPushButton("Export JSON...", banner)
-        exp_json.setObjectName("ExportBtn")
+        exp_json = make_button("Export JSON...", variant="secondary", parent=self._header)
         exp_json.clicked.connect(lambda: self._export_report("json"))
-        bh.addWidget(exp_json)
+        self._header.right_layout.addWidget(exp_json)
 
-        exp_txt = QPushButton("Export Text...", banner)
-        exp_txt.setObjectName("ExportBtn")
+        exp_txt = make_button("Export Text...", variant="secondary", parent=self._header)
         exp_txt.clicked.connect(lambda: self._export_report("txt"))
-        bh.addWidget(exp_txt)
-
-        layout.addWidget(banner)
+        self._header.right_layout.addWidget(exp_txt)
+        layout.addWidget(self._header)
 
         tabs = QTabWidget(root)
         for key, label in (
@@ -315,13 +215,16 @@ class ViceSysDeckApp(QMainWindow):
             edit.setReadOnly(True)
             edit.setPlainText("Probing subsystem...")
             self._views[key] = edit
-            tabs.addTab(edit, label)
+            tabs.addTab(edit, label.replace("&", "&&"))
         layout.addWidget(tabs, 1)
 
     def _refresh_all(self) -> None:
         if self._worker is not None and self._worker.isRunning():
             return
-        self._sub_lbl.setText("Inspecting CPU, Memory, Storage, PCI/USB, Audio, and Network...")
+        self._header.subtitle_label.setText(
+            "Inspecting CPU, Memory, Storage, PCI/USB, Audio, and Network..."
+        )
+        self._header.set_badge("PROBING", "aqua")
         self._worker = SysDeckWorker()
         self._worker.report_ready.connect(self._on_report_ready)
         self._worker.start()
@@ -331,7 +234,8 @@ class ViceSysDeckApp(QMainWindow):
         for key, edit in self._views.items():
             edit.setPlainText(data.get(key, ""))
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self._sub_lbl.setText(f"Inspection complete at {ts} — 6 hardware & OS subsystems")
+        self._header.subtitle_label.setText(f"Inspection complete at {ts}")
+        self._header.set_badge("READY", "success")
         log_info("Vice Hardware & System Deck refreshed")
 
     def _export_report(self, fmt: str) -> None:
@@ -373,8 +277,7 @@ class ViceSysDeckApp(QMainWindow):
 def main() -> None:
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication(sys.argv)
-    _configure_cjk_fonts(app)
-    app.setStyleSheet(STYLE)
+    apply_app_theme(app)
     win = ViceSysDeckApp()
     win.show()
     sys.exit(app.exec_())

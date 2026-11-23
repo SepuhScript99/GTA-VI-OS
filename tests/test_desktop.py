@@ -14,8 +14,11 @@ import re
 import ast
 import glob
 import json
+import shutil
+import subprocess
 import configparser
 import tempfile
+import types
 import xml.etree.ElementTree as ET
 
 # Add repo root, lib/, and desktop/ to path
@@ -698,6 +701,219 @@ class TestViceAppsRuntimeSafety(unittest.TestCase):
 
         for sess_name in ("dbus_session.sh", "wayland_session.sh"):
             self.assertIn("QT_QPA_PLATFORMTHEME", self._read(sess_name))
+
+
+class TestLeonidaOverhaulAndTimesync(unittest.TestCase):
+    """Validates Batch 2 Leonida UI overhaul, galculator/LibreOffice styling, and host clock sync."""
+
+    @staticmethod
+    def _read_repo(*parts):
+        with open(os.path.join(REPO_ROOT, *parts), "r", encoding="utf-8") as fp:
+            return fp.read()
+
+    @staticmethod
+    def _find_bash():
+        candidates = []
+        which_bash = shutil.which("bash")
+        if which_bash and "WindowsApps" not in which_bash:
+            candidates.append(which_bash)
+        git_bash = r"C:\Program Files\Git\bin\bash.exe"
+        if os.path.isfile(git_bash) and git_bash not in candidates:
+            candidates.append(git_bash)
+        for cand in candidates:
+            try:
+                if subprocess.run([cand, "--version"], capture_output=True, check=False).returncode == 0:
+                    return cand
+            except OSError:
+                continue
+        return None
+
+    def test_galculator_dark_legibility_and_gtk_css(self):
+        galc_path = os.path.join(REPO_ROOT, "config", "skel", ".config", "galculator", "galculator.conf")
+        self.assertTrue(os.path.isfile(galc_path), "Missing skel galculator.conf")
+        cp = configparser.ConfigParser(interpolation=None)
+        cp.read(galc_path, encoding="utf-8")
+        self.assertIn("general", cp.sections())
+        gen = cp["general"]
+        self.assertEqual(gen.get("display_bkg_color").strip('"'), "#141621")
+        self.assertEqual(gen.get("display_result_color").strip('"').lower(), "#f5f6fa")
+        self.assertEqual(gen.get("display_stack_color").strip('"').lower(), "#a6aebf")
+        self.assertEqual(gen.get("display_module_active_color").strip('"').lower(), "#36d6c3")
+        self.assertNotEqual(gen.get("display_result_color").strip('"').lower(), "black")
+
+        gtk_css = self._read_repo("config", "gtk-3.0", "gtk.css")
+        self.assertIn("#galculator", gtk_css)
+        self.assertIn("vte-terminal", gtk_css)
+
+        skel_setup = self._read_repo("chroot_scripts", "22_skel_setup.sh")
+        self.assertIn(".config/galculator", skel_setup)
+        self.assertIn(".config/libreoffice/4/user", skel_setup)
+
+    def test_libreoffice_gtk3_theme_and_white_paper_xml(self):
+        xcu_path = os.path.join(
+            REPO_ROOT, "config", "skel", ".config", "libreoffice", "4", "user", "registrymodifications.xcu"
+        )
+        self.assertTrue(os.path.isfile(xcu_path), "Missing LibreOffice registrymodifications.xcu")
+        tree = ET.parse(xcu_path)
+        root = tree.getroot()
+        oor_ns = "{http://openoffice.org/2001/registry}"
+
+        items = {}
+        for item in root.findall("item"):
+            path_key = item.attrib.get(f"{oor_ns}path", "")
+            for prop in item.findall("prop"):
+                pname = prop.attrib.get(f"{oor_ns}name", "")
+                val_el = prop.find("value")
+                items[(path_key, pname)] = val_el.text if val_el is not None else ""
+
+        self.assertEqual(items.get(("/org.openoffice.Office.Common/Misc", "SymbolStyle")), "sifr_dark")
+        self.assertEqual(items.get(("/org.openoffice.Office.Common/View", "DarkMode")), "true")
+        self.assertEqual(
+            items.get((
+                "/org.openoffice.Office.UI/ColorScheme/ColorSchemes/"
+                "org.openoffice.Office.UI:ColorScheme['LibreOffice']/AppBackground",
+                "Color",
+            )),
+            "855573",
+        )
+        self.assertEqual(
+            items.get((
+                "/org.openoffice.Office.UI/ColorScheme/ColorSchemes/"
+                "org.openoffice.Office.UI:ColorScheme['LibreOffice']/DocColor",
+                "Color",
+            )),
+            "16777215",
+        )
+
+        self.assertIn("SAL_USE_VCLPLUGIN=gtk3", self._read_repo("chroot_scripts", "02_system_tuning.sh"))
+        self.assertIn("SAL_USE_VCLPLUGIN=gtk3", self._read_repo("desktop", "dbus_session.sh"))
+        self.assertIn("SAL_USE_VCLPLUGIN=gtk3", self._read_repo("desktop", "wayland_session.sh"))
+        self.assertIn("/usr/share/zoneinfo", self._read_repo("chroot_scripts", "90_optimize.sh"))
+
+    def test_host_timesync_script_systemd_nm_and_chrony(self):
+        ts_path = os.path.join(REPO_ROOT, "system_scripts", "vice-timesync.sh")
+        nm_path = os.path.join(REPO_ROOT, "config", "NetworkManager", "90-vice-timesync")
+        svc_path = os.path.join(REPO_ROOT, "config", "systemd", "system", "vice-timesync.service")
+        tmr_path = os.path.join(REPO_ROOT, "config", "systemd", "system", "vice-timesync.timer")
+
+        for p in (ts_path, nm_path, svc_path, tmr_path):
+            self.assertTrue(os.path.isfile(p), f"Missing host clock sync file: {p}")
+
+        ts_code = self._read_repo("system_scripts", "vice-timesync.sh")
+        self.assertNotIn("\r\n", ts_code)
+        self.assertTrue(ts_code.splitlines()[0] == "#!/bin/bash")
+        self.assertIn("set -Eeuo pipefail", ts_code)
+        for token in (
+            "--auto", "--force", "--sync-only", "--set", "--status",
+            "command -v VBoxService", "https://ipinfo.io/timezone",
+            "http://ip-api.com/line/?fields=timezone", "validate_timezone",
+        ):
+            self.assertIn(token, ts_code)
+
+        nm_code = self._read_repo("config", "NetworkManager", "90-vice-timesync")
+        self.assertNotIn("\r\n", nm_code)
+        self.assertIn("/usr/local/bin/vice-timesync --auto", nm_code)
+
+        bash_bin = self._find_bash()
+        if bash_bin:
+            for sh_file in (ts_path, nm_path):
+                proc = subprocess.run([bash_bin, "-n", sh_file], capture_output=True, text=True, check=False)
+                self.assertEqual(proc.returncode, 0, f"bash -n failed on {sh_file}: {proc.stderr}")
+
+        svc_cp = configparser.ConfigParser(interpolation=None)
+        svc_cp.read(svc_path, encoding="utf-8")
+        self.assertEqual(svc_cp["Service"]["ExecStart"], "/usr/local/bin/vice-timesync --auto")
+
+        tmr_cp = configparser.ConfigParser(interpolation=None)
+        tmr_cp.read(tmr_path, encoding="utf-8")
+        self.assertEqual(tmr_cp["Timer"]["Unit"], "vice-timesync.service")
+
+        chrony_setup = self._read_repo("chroot_scripts", "25_chrony_setup.sh")
+        self.assertIn("makestep 1 -1", chrony_setup)
+        self.assertIn("rtcsync", chrony_setup)
+
+        systemd_setup = self._read_repo("chroot_scripts", "19_systemd_setup.sh")
+        for token in (
+            "90-vice-timesync", "vice-timesync.service", "vice-timesync.timer",
+            "tor.service", "privoxy.service", "stubby.service", "unbound.service",
+            "chkrootkit.service", "chkrootkit.timer",
+        ):
+            self.assertIn(token, systemd_setup)
+
+        autostart = self._read_repo("config", "skel", ".config", "openbox", "autostart")
+        self.assertIn("/usr/local/bin/vice-timesync --auto", autostart)
+
+    def _assert_vice_theme_contract(self, theme_mod):
+        self.assertEqual(theme_mod.COLORS["bg_canvas"], "#0D0E15")
+        self.assertEqual(theme_mod.COLORS["bg_surface"], "#141621")
+        self.assertEqual(theme_mod.COLORS["accent_coral"], "#FF5E7E")
+        self.assertEqual(theme_mod.COLORS["accent_peach"], "#FF9A62")
+        self.assertEqual(theme_mod.COLORS["accent_aqua"], "#36D6C3")
+        self.assertEqual(theme_mod.COLORS["accent_gold"], "#F7C873")
+        self.assertIn("Noto Sans CJK JP", theme_mod.FONT_STACK)
+        qss = theme_mod.build_app_qss()
+        self.assertIn("#0D0E15", qss)
+        self.assertIn("#FF5E7E", qss)
+
+    def test_vice_theme_tokens_and_vice_shell_dynamic_tzset(self):
+        try:
+            import vice_theme
+            self._assert_vice_theme_contract(vice_theme)
+        except ImportError:
+            qt_pkg = types.ModuleType("PyQt5")
+            qt_core = types.ModuleType("PyQt5.QtCore")
+            qt_gui = types.ModuleType("PyQt5.QtGui")
+            qt_widgets = types.ModuleType("PyQt5.QtWidgets")
+            qt_core.Qt = type("Qt", (), {})
+            qt_core.QSize = type("QSize", (), {})
+            for name in ("QColor", "QFont", "QIcon"):
+                setattr(qt_gui, name, type(name, (), {}))
+            for name in ("QApplication", "QFrame", "QHBoxLayout", "QLabel", "QPushButton", "QVBoxLayout", "QWidget"):
+                setattr(qt_widgets, name, type(name, (), {}))
+            qt_pkg.QtCore = qt_core
+            qt_pkg.QtGui = qt_gui
+            qt_pkg.QtWidgets = qt_widgets
+            with patch.dict(sys.modules, {
+                "PyQt5": qt_pkg,
+                "PyQt5.QtCore": qt_core,
+                "PyQt5.QtGui": qt_gui,
+                "PyQt5.QtWidgets": qt_widgets,
+            }):
+                try:
+                    import vice_theme
+                    self._assert_vice_theme_contract(vice_theme)
+                finally:
+                    sys.modules.pop("vice_theme", None)
+
+        self.assertEqual(panel_config.DOCK_HEIGHT, 44)
+        shell_code = self._read_repo("desktop", "vice_shell.py")
+        for token in (
+            "/etc/localtime", "time.tzset()", "vice_tool_clock_sync.py",
+            "QFontMetrics(bold_font)", '"Office"', '"Security"',
+        ):
+            self.assertIn(token, shell_code)
+
+    def test_zero_legacy_neon_colors_in_refactored_ui(self):
+        ui_paths = [
+            os.path.join(DESKTOP_DIR, "vice_theme.py"),
+            os.path.join(DESKTOP_DIR, "style.qss"),
+            os.path.join(DESKTOP_DIR, "panel_config.py"),
+            os.path.join(DESKTOP_DIR, "vice_shell.py"),
+            os.path.join(DESKTOP_DIR, "vice_launcher.py"),
+            os.path.join(DESKTOP_DIR, "vice_settings.py"),
+            os.path.join(DESKTOP_DIR, "login.py"),
+            os.path.join(DESKTOP_DIR, "welcome_wizard.py"),
+            os.path.join(REPO_ROOT, "config", "gtk-3.0", "gtk.css"),
+            os.path.join(REPO_ROOT, "config", "themes", "Vice-Dark", "openbox-3", "themerc"),
+        ] + sorted(glob.glob(os.path.join(DESKTOP_DIR, "vice_tool_*.py")))
+
+        legacy_tokens = ("#00ffff", "#ff00ff", "#120e1e", "#ff4da6", "#00e5c3", "#ff8a5b")
+        for path in ui_paths:
+            self.assertTrue(os.path.isfile(path), f"Missing UI file: {path}")
+            with open(path, "r", encoding="utf-8") as fp:
+                content = fp.read().lower()
+            for hex_code in legacy_tokens:
+                self.assertNotIn(hex_code, content, f"Legacy neon color {hex_code} found in {path}")
 
 
 if __name__ == "__main__":

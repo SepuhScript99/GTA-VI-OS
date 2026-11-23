@@ -27,13 +27,13 @@
     <keepBorder>yes</keepBorder>
     <animateIconify>yes</animateIconify>
     <font place="ActiveWindow">
-      <name>Noto Sans,Noto Sans CJK JP,Noto Sans CJK SC,DejaVu Sans</name>
+      <name>Noto Sans,Noto Sans CJK JP,Noto Sans CJK SC,Noto Sans CJK TC,Noto Sans CJK KR,DejaVu Sans</name>
       <size>10</size>
       <weight>bold</weight>
       <slant>normal</slant>
     </font>
     <font place="InactiveWindow">
-      <name>Noto Sans,Noto Sans CJK JP,Noto Sans CJK SC,DejaVu Sans</name>
+      <name>Noto Sans,Noto Sans CJK JP,Noto Sans CJK SC,Noto Sans CJK TC,Noto Sans CJK KR,DejaVu Sans</name>
       <size>10</size>
       <weight>normal</weight>
       <slant>normal</slant>
@@ -133,6 +133,9 @@
 
     <!-- Vice OS Custom Keybinds -->
     <keybind key="A-F1">
+      <action name="Execute"><command>python3 /opt/vice-os/vice_shell.py --toggle-menu</command></action>
+    </keybind>
+    <keybind key="C-Escape">
       <action name="Execute"><command>python3 /opt/vice-os/vice_shell.py --toggle-menu</command></action>
     </keybind>
     <keybind key="W-a">

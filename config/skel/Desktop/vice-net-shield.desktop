@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Vice Net Shield
+Comment=Manage OpenVPN, WireGuard, Tor, Privoxy, Secure DNS & UFW Firewall
+Exec=python3 /opt/vice-os/vice_tool_net_shield.py
+Icon=vice-tool-net-shield
+Terminal=false
+Categories=Network;Security;
+StartupNotify=true

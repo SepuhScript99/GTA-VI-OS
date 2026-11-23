@@ -30,7 +30,10 @@ main() {
         local dest_dir="$1"
         local owner="$2"
 
-        # 1. Copy all contents, including hidden files and nested directories
+        mkdir -p "$dest_dir"
+
+        # 1. Copy all contents recursively, including dotfiles and nested app dirs
+        #    (e.g. .config/galculator/ and .config/libreoffice/4/user/)
         cp -r "$skel_src_dir"/. "$dest_dir"/
         chown -R "$owner" "$dest_dir"
 
@@ -47,6 +50,13 @@ main() {
             chmod 755 "$dest_dir/.config/labwc/autostart"
         fi
         chmod 755 "$dest_dir"/Desktop/*.desktop 2>/dev/null || true
+
+        if [ -f "$dest_dir/.config/galculator/galculator.conf" ]; then
+            log_info "Synced galculator dark config to $dest_dir/.config/galculator/"
+        fi
+        if [ -f "$dest_dir/.config/libreoffice/4/user/registrymodifications.xcu" ]; then
+            log_info "Synced LibreOffice GTA VI config to $dest_dir/.config/libreoffice/4/user/"
+        fi
     }
 
     # Ensure /etc/skel exists

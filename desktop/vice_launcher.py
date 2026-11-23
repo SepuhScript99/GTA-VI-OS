@@ -4,79 +4,112 @@ Vice OS Application Launcher — unified menu discovering standard XDG .desktop
 applications and Vice OS utilities with categories, search, and favorites.
 """
 
-import sys
-import os
 import glob
 import json
+import os
 import re
 import shlex
 import shutil
+import sys
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QLineEdit, QScrollArea, QGridLayout, QShortcut
-)
-from PyQt5.QtCore import Qt, QProcess, QSize
+from PyQt5.QtCore import QProcess, QSize, Qt
 from PyQt5.QtGui import QFont, QIcon, QKeySequence
+from PyQt5.QtWidgets import (
+    QApplication,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QScrollArea,
+    QShortcut,
+    QVBoxLayout,
+    QWidget,
+)
 
-sys.path.insert(0, '/opt/vice-os/lib')
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from python.vice_utils import log_info  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    build_app_qss,
+    configure_cjk_fonts,
+    configure_icon_theme,
+    resolve_icon,
+)
 
-WINDOW_WIDTH = 880
-WINDOW_HEIGHT = 580
+WINDOW_WIDTH = 960
+WINDOW_HEIGHT = 600
 
-STYLE = """
-QWidget { background-color: #120e1e; color: #f4f1fa; font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif; }
-QLineEdit {
-    background: #1b152e; color: #f4f1fa; border: 1px solid #382b57;
-    border-radius: 10px; padding: 10px 14px; font-size: 14px;
-}
-QLineEdit:focus { border-color: #ff4da6; background: #231b3b; }
-QScrollArea { border: none; background: transparent; }
-QScrollBar:vertical { background: transparent; width: 8px; }
-QScrollBar::handle:vertical { background: #3a2c59; border-radius: 4px; min-height: 30px; }
-QScrollBar::handle:vertical:hover { background: #ff4da6; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QPushButton#CategoryTab {
-    background: #1b152e; color: #cfc6e6; border: 1px solid #30244a;
-    border-radius: 8px; padding: 4px 12px; font-size: 12px; font-weight: bold;
+_c = COLORS
+STYLE = build_app_qss(
+    f"""
+QPushButton#CategoryTab {{
+    background: {_c['bg_surface']};
+    color: {_c['text_secondary']};
+    border: 1px solid {_c['border']};
+    border-radius: 8px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
     min-width: 0px;
-}
-QPushButton#CategoryTab:hover { background: #271e40; color: #ffffff; border-color: #ff8a5b; }
-QPushButton#CategoryTab:checked { background: #362247; color: #ff8a5b; border-color: #ff4da6; }
-QPushButton#AppCard {
-    background: #19132b; color: #f4f1fa; border: 1px solid #30244a;
-    border-radius: 10px; padding: 10px 8px; font-size: 12px; text-align: center;
-}
-QPushButton#AppCard:hover {
-    background: #2c1e45; color: #ff8a5b; border-color: #ff4da6;
-}
-QLabel { color: #f4f1fa; background: transparent; }
+}}
+QPushButton#CategoryTab:hover {{
+    background: {_c['bg_elevated']};
+    color: {_c['text_primary']};
+    border-color: {_c['border_strong']};
+}}
+QPushButton#CategoryTab:checked {{
+    background: {_c['bg_active']};
+    color: {_c['accent_peach']};
+    border-color: {_c['accent_coral']};
+}}
+QPushButton#AppCard {{
+    background: {_c['bg_surface']};
+    color: {_c['text_primary']};
+    border: 1px solid {_c['border']};
+    border-radius: 10px;
+    padding: 10px 8px;
+    font-size: 12px;
+    text-align: center;
+}}
+QPushButton#AppCard:hover {{
+    background: {_c['bg_elevated']};
+    color: {_c['accent_peach']};
+    border-color: {_c['border_strong']};
+}}
 """
+)
 
 CATEGORIES = {
     "Internet": ["vice_network_monitor.py", "vice_vpn_manager.py", "vice_network_shares.py",
-                 "vice_wifi_connect.py", "vice_ssh_manager.py", "vice_speedtest.py"],
+                 "vice_wifi_connect.py", "vice_ssh_manager.py", "vice_speedtest.py",
+                 "vice_tool_net_shield.py", "vice_tool_net_radar.py"],
     "Utilities": ["vice_file_manager.py", "vice_text_editor.py", "vice_terminal.py",
                   "vice_screenshot.py", "vice_clipboard.py", "vice_archive_manager.py",
                   "vice_backup_scheduler.py", "vice_sysinfo_exporter.py",
-                  "vice_calculator.py", "vice_calendar.py",
+                  "vice_calculator.py", "vice_calendar.py", "vice_tool_clock_sync.py",
                   "vice_trash_manager.py", "vice_help_viewer.py",
                   "vice_file_search.py", "vice_checksum.py"],
     "Multimedia": ["vice_audio_manager.py", "vice_font_manager.py", "vice_image_viewer.py",
-                   "vice_media_player.py", "vice_pdf_viewer.py", "vice_screen_recorder.py"],
+                   "vice_media_player.py", "vice_pdf_viewer.py", "vice_screen_recorder.py",
+                   "vice_tool_radio.py", "vice_tool_media_studio.py"],
     "Graphics": [],
-    "Office": [],
+    "Office": ["vice_tool_office_hub.py", "vice_tool_missions.py"],
     "Development": ["vice_software_center.py", "vice_package_search.py", "vice_iso_validator.py",
                     "vice_diagnostics.py", "vice_log_viewer.py", "vice_log_rotation.py",
-                    "vice_cron_manager.py"],
+                    "vice_cron_manager.py", "vice_tool_qr_hash.py", "vice_tool_cheatsheets.py"],
+    "Security": ["vice_tool_cyber_deck.py", "vice_tool_mac_cloak.py", "vice_tool_vault.py",
+                 "vice_firewall_manager.py"],
     "System": ["vice_task_manager.py", "vice_system_monitor.py", "vice_system_report.py",
                "vice_service_manager.py", "vice_power_manager.py", "vice_driver_manager.py",
                "vice_update_manager.py", "vice_kernel_manager.py", "vice_cleanup.py",
                "vice_session_manager.py", "vice_disk_benchmark.py", "vice_disk_manager.py",
                "vice_disk_usage.py", "vice_user_manager.py", "vice_usb_manager.py",
-               "vice_printer_manager.py", "vice_bluetooth_manager.py", "vice_firewall_manager.py"],
+               "vice_printer_manager.py", "vice_bluetooth_manager.py",
+               "vice_tool_hub.py", "vice_tool_turbo.py", "vice_tool_sys_deck.py"],
     "Settings": ["vice_settings.py", "vice_display_manager.py", "vice_keyboard_shortcuts.py",
                  "vice_mouse_settings.py", "vice_accessibility.py", "vice_theme_manager.py",
                  "vice_openbox_editor.py", "vice_startup_apps.py", "vice_wallpaper_picker.py",
@@ -98,9 +131,9 @@ _XDG_CATEGORY_MAP = {
     "Office": "Office",
     "Development": "Development",
     "IDE": "Development",
+    "Security": "Security",
     "System": "System",
     "Monitor": "System",
-    "Security": "System",
     "Settings": "Settings",
     "DesktopSettings": "Settings",
     "HardwareSettings": "Settings",
@@ -119,6 +152,7 @@ _EXCLUDED_VICE_SCRIPTS = {
     "vice_clipboard_manager.py",
     "vice_setup_apps.py",
     "vice_shell.py",
+    "vice_theme.py",
 }
 
 APP_LABELS = {
@@ -182,6 +216,21 @@ APP_LABELS = {
     "vice_help_viewer.py": ("Vice Help", "help-browser"),
     "vice_speedtest.py": ("Speed Test", "network-transmit-receive"),
     "vice_disk_benchmark.py": ("Disk Benchmark", "drive-harddisk"),
+    "vice_tool_hub.py": ("Vice Tool Hub", "vice-tool-hub"),
+    "vice_tool_radio.py": ("Leonida FM Radio", "vice-tool-radio"),
+    "vice_tool_net_radar.py": ("Leonida Net Radar", "vice-tool-net-radar"),
+    "vice_tool_missions.py": ("Vice Mission Board", "vice-tool-missions"),
+    "vice_tool_vault.py": ("Vice Vault", "vice-tool-vault"),
+    "vice_tool_turbo.py": ("Vice Turbo Mode", "vice-tool-turbo"),
+    "vice_tool_media_studio.py": ("Vice Media Studio", "vice-tool-media-studio"),
+    "vice_tool_qr_hash.py": ("Vice QR & Dev Lab", "vice-tool-qr-hash"),
+    "vice_tool_sys_deck.py": ("Vice Hardware Deck", "vice-tool-sys-deck"),
+    "vice_tool_cheatsheets.py": ("Vice Command Deck", "vice-tool-cheatsheets"),
+    "vice_tool_net_shield.py": ("Vice Net Shield", "vice-tool-net-shield"),
+    "vice_tool_cyber_deck.py": ("Vice Cyber Deck", "vice-tool-cyber-deck"),
+    "vice_tool_mac_cloak.py": ("Vice Identity Cloak", "vice-tool-mac-cloak"),
+    "vice_tool_office_hub.py": ("Vice Office Studio", "vice-tool-office-hub"),
+    "vice_tool_clock_sync.py": ("Vice World Clock", "vice-tool-clock-sync"),
 }
 
 FAVORITES_FILE = os.path.expanduser("~/.config/vice-os/favorites.json")
@@ -202,7 +251,7 @@ _VICE_CAT_LOOKUP = {
 def load_favorites():
     try:
         if os.path.exists(FAVORITES_FILE):
-            with open(FAVORITES_FILE) as f:
+            with open(FAVORITES_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
     except Exception:
         pass
@@ -210,7 +259,8 @@ def load_favorites():
         "Firefox ESR",
         "Thunar File Manager",
         "Xfce Terminal",
-        "Mousepad",
+        "Vice Office Studio",
+        "Vice Tool Hub",
         "Settings Center",
     ]
 
@@ -218,7 +268,7 @@ def load_favorites():
 def save_favorites(favs):
     os.makedirs(os.path.dirname(FAVORITES_FILE), exist_ok=True)
     try:
-        with open(FAVORITES_FILE, "w") as f:
+        with open(FAVORITES_FILE, "w", encoding="utf-8") as f:
             json.dump(favs, f)
     except Exception:
         pass
@@ -298,6 +348,10 @@ def _parse_xdg_desktop_file(filepath: str):
         args = [a for a in exec_cmd.split() if a != ""]
     if not args:
         return None
+    if args[0] == "su-to-root" and shutil.which("su-to-root") is None:
+        return None
+    if os.path.isabs(args[0]) and not os.path.exists(args[0]):
+        return None
 
     if terminal:
         term_bin = shutil.which("xfce4-terminal") or shutil.which("x-terminal-emulator") or "xterm"
@@ -324,10 +378,31 @@ def _parse_xdg_desktop_file(filepath: str):
     }
 
 
+def _exec_dedup_key(entry: dict):
+    """Return canonical command tuple for deduplicating stock .desktop vs vice-tool-*.desktop."""
+    args = entry.get("args") or []
+    if not args:
+        return None
+    if args[0] == "su-to-root" and shutil.which("su-to-root") is None:
+        return None
+    if os.path.isabs(args[0]) and not os.path.exists(args[0]):
+        return None
+    head = os.path.basename(args[0]).lower()
+    if head == "vice-run-tool" and len(args) >= 3:
+        cmd_tokens = [os.path.basename(args[2]).lower()] + [a.lower() for a in args[3:]]
+        return tuple(cmd_tokens)
+    if head in ("python3", "python") and len(args) >= 2:
+        return ("py", os.path.basename(args[1]).lower())
+    if head in ("xfce4-terminal", "xterm") and len(args) >= 3 and args[1] in ("-x", "-e"):
+        return tuple([os.path.basename(args[2]).lower()] + [a.lower() for a in args[3:]])
+    return tuple([head] + [a.lower() for a in args[1:]])
+
+
 def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> list:
     """Discover both standard XDG .desktop apps and curated Vice OS utilities."""
     apps = []
     seen_labels = set()
+    seen_execs = {}
     seen_vice_scripts = set()
 
     dirs = DESKTOP_APP_DIRS if desktop_app_dirs is None else desktop_app_dirs
@@ -341,7 +416,19 @@ def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> l
             key = entry["label"].lower()
             if key in seen_labels:
                 continue
+            exec_key = _exec_dedup_key(entry)
+            is_vice_tool = entry["id"].startswith("vice-tool-")
+            if exec_key and exec_key in seen_execs:
+                existing_idx = seen_execs[exec_key]
+                existing_is_vice = apps[existing_idx]["id"].startswith("vice-tool-")
+                if is_vice_tool and not existing_is_vice:
+                    seen_labels.discard(apps[existing_idx]["label"].lower())
+                    seen_labels.add(key)
+                    apps[existing_idx] = entry
+                continue
             seen_labels.add(key)
+            if exec_key:
+                seen_execs[exec_key] = len(apps)
             for arg in entry.get("args", []):
                 base = os.path.basename(arg)
                 if base.startswith("vice_") and base.endswith(".py"):
@@ -376,31 +463,7 @@ def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> l
 
 def _load_card_icon(icon_name: str) -> QIcon:
     """Resolve an icon from filesystem path, theme, hicolor apps, or pixmaps."""
-    if icon_name and os.path.isfile(icon_name):
-        return QIcon(icon_name)
-    if icon_name:
-        icon = QIcon.fromTheme(icon_name)
-        if not icon.isNull():
-            return icon
-        base_dirs = (
-            "/usr/share/icons/hicolor/64x64/apps",
-            "/usr/share/icons/hicolor/48x48/apps",
-            "/usr/share/icons/hicolor/scalable/apps",
-            "/usr/share/pixmaps",
-            os.path.expanduser("~/.local/share/icons/hicolor/64x64/apps"),
-        )
-        for d in base_dirs:
-            for ext in (".png", ".svg", ".xpm", ""):
-                cand = os.path.join(d, f"{icon_name}{ext}")
-                if os.path.isfile(cand):
-                    ic = QIcon(cand)
-                    if not ic.isNull():
-                        return ic
-    for candidate in ("application-x-executable", "applications-other"):
-        icon = QIcon.fromTheme(candidate)
-        if not icon.isNull():
-            return icon
-    return QIcon()
+    return resolve_icon(icon_name, "application-x-executable", "applications-other")
 
 
 class AppButton(QPushButton):
@@ -412,20 +475,29 @@ class AppButton(QPushButton):
         self.setFocusPolicy(Qt.NoFocus)
 
         label = app_info["label"]
-        if len(label) > 18:
-            display_label = label[:17] + "…"
-        else:
-            display_label = label
-
-        self.setText(display_label)
         self.setToolTip(f"{label}\n{app_info.get('comment', '')}".strip())
-        self.setMinimumSize(148, 80)
-        self.setMaximumWidth(172)
+        self.setMinimumSize(166, 92)
+        self.setMaximumSize(184, 96)
 
+        card_layout = QVBoxLayout(self)
+        card_layout.setContentsMargins(10, 10, 10, 8)
+        card_layout.setSpacing(6)
+        card_layout.setAlignment(Qt.AlignCenter)
+
+        icon_lbl = QLabel(self)
+        icon_lbl.setAlignment(Qt.AlignCenter)
+        icon_lbl.setStyleSheet("background: transparent; border: none;")
         icon = _load_card_icon(app_info.get("icon", ""))
         if not icon.isNull():
-            self.setIcon(icon)
-            self.setIconSize(QSize(24, 24))
+            icon_lbl.setPixmap(icon.pixmap(34, 34))
+        card_layout.addWidget(icon_lbl)
+
+        display_label = label[:32] + "…" if len(label) > 33 else label
+        text_lbl = QLabel(display_label, self)
+        text_lbl.setAlignment(Qt.AlignCenter)
+        text_lbl.setWordWrap(True)
+        text_lbl.setStyleSheet("background: transparent; border: none; font-size: 12px; font-weight: 600;")
+        card_layout.addWidget(text_lbl)
 
         self.clicked.connect(lambda: on_launch(app_info))
         self.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -439,7 +511,7 @@ class AppLauncher(QWidget):
         super().__init__()
         self.setWindowTitle("Vice OS — Applications")
         self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setMinimumSize(680, 460)
+        self.setMinimumSize(700, 480)
         self.setStyleSheet(STYLE)
         self._apps = discover_apps()
         self._favorites = load_favorites()
@@ -450,6 +522,7 @@ class AppLauncher(QWidget):
         self._search.setFocus()
 
     def _init_ui(self):
+        c = COLORS
         root = QVBoxLayout(self)
         root.setSpacing(10)
         root.setContentsMargins(16, 14, 16, 14)
@@ -457,23 +530,21 @@ class AppLauncher(QWidget):
         header = QHBoxLayout()
         title = QLabel("Applications")
         title.setFont(QFont("Noto Sans", 18, QFont.Bold))
-        title.setStyleSheet("color: #ff8a5b;")
+        title.setStyleSheet(f"color: {c['text_primary']};")
         header.addWidget(title)
         header.addStretch(1)
         hint = QLabel("Right-click card to pin/unpin Favorites · Esc to close")
-        hint.setStyleSheet("color: #b7aed1; font-size: 11px;")
+        hint.setStyleSheet(f"color: {c['text_secondary']}; font-size: 11px;")
         header.addWidget(hint)
         root.addLayout(header)
 
-        # Live Search
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Search Debian & Vice OS apps...")
+        self._search.setPlaceholderText("Search Debian, Office, Security & Vice OS apps...")
         self._search.textChanged.connect(self._populate)
         root.addWidget(self._search)
 
         QShortcut(QKeySequence("Escape"), self).activated.connect(self.close)
 
-        # Category bar (clean fixed height 32, zero clipped text)
         cat_row = QHBoxLayout()
         cat_row.setSpacing(6)
         for cat in ["All", "Favorites"] + list(CATEGORIES.keys()):
@@ -483,13 +554,12 @@ class AppLauncher(QWidget):
             btn.setCheckable(True)
             btn.setChecked(cat == "All")
             btn.setFocusPolicy(Qt.NoFocus)
-            btn.clicked.connect(lambda _checked=False, c=cat: self._set_category(c))
+            btn.clicked.connect(lambda _checked=False, name=cat: self._set_category(name))
             cat_row.addWidget(btn)
             self._cat_buttons[cat] = btn
         cat_row.addStretch(1)
         root.addLayout(cat_row)
 
-        # App grid (vertical scroll only, never clips columns horizontally)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -501,7 +571,7 @@ class AppLauncher(QWidget):
         root.addWidget(scroll, 1)
 
         self._count_label = QLabel("")
-        self._count_label.setStyleSheet("color: #8c96b2; font-size: 11px;")
+        self._count_label.setStyleSheet(f"color: {c['text_muted']}; font-size: 11px;")
         root.addWidget(self._count_label)
 
     def _set_category(self, cat):
@@ -565,26 +635,12 @@ class AppLauncher(QWidget):
 
 def _configure_icon_theme():
     """Ensure PyQt5 resolves Papirus-Dark / Adwaita icons properly."""
-    QIcon.setThemeSearchPaths([
-        "/usr/share/icons",
-        "/usr/local/share/icons",
-        os.path.expanduser("~/.local/share/icons"),
-    ])
-    for theme in ("Papirus-Dark", "Papirus", "Adwaita", "Tango", "hicolor"):
-        if os.path.isdir(os.path.join("/usr/share/icons", theme)):
-            QIcon.setThemeName(theme)
-            break
+    configure_icon_theme()
 
 
 def _configure_cjk_fonts(app: QApplication):
     """Ensure CJK characters render properly without tofu boxes."""
-    cjk_list = ["Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans"]
-    for base in ("Noto Sans", "DejaVu Sans", "Sans", "sans-serif"):
-        QFont.insertSubstitutions(base, cjk_list)
-    font = QFont("Noto Sans", 10)
-    if hasattr(font, "setFamilies"):
-        font.setFamilies(cjk_list)
-    app.setFont(font)
+    configure_cjk_fonts(app)
 
 
 def main():

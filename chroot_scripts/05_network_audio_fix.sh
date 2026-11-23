@@ -56,7 +56,13 @@ RESOLV
         if getent group plugdev >/dev/null 2>&1; then
             usermod -aG plugdev vice 2>/dev/null || true
         fi
-        log_info "User 'vice' added to netdev, audio, and video groups."
+        if getent group bluetooth >/dev/null 2>&1; then
+            usermod -aG bluetooth vice 2>/dev/null || true
+        fi
+        if getent group lpadmin >/dev/null 2>&1; then
+            usermod -aG lpadmin vice 2>/dev/null || true
+        fi
+        log_info "User 'vice' added to netdev, audio, video, and hardware groups."
     else
         log_warn "User 'vice' not found. Skipping group assignments."
     fi

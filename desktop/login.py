@@ -1,28 +1,45 @@
 #!/usr/bin/env python3
 """
-GTA VI OS (Vice OS) Animated Login Screen
-Authenticates the user against system PAM via 'su' and launches the X session.
-Uses QProcess to prevent UI freezing during authentication and session monitoring.
+GTA VI OS (Vice OS) Animated Login Screen.
+Authenticates the user against system PAM via 'su' and launches the X11 or Wayland
+session using QProcess, styled with the Leonida Coastal Dusk design system.
 """
 
-import sys
 import os
 import shutil
 import subprocess
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QLineEdit, QComboBox,
-    QVBoxLayout, QGraphicsOpacityEffect
-)
-from PyQt5.QtCore import Qt, QPropertyAnimation, QTimer, QProcess
+import sys
+
+from PyQt5.QtCore import QProcess, QPropertyAnimation, Qt, QTimer
 from PyQt5.QtGui import QFont, QPixmap
+from PyQt5.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QFrame,
+    QGraphicsOpacityEffect,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
-# Add the project lib directory to the system path to import shared modules
-sys.path.insert(0, '/opt/vice-os/lib')
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Require the shared library. Fail hard if missing.
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    configure_cjk_fonts,
+    configure_icon_theme,
+)
+
 
 class AnimatedLogin(QWidget):
+    """Full-screen PAM login greeter styled with calm slate surfaces and coral CTAs."""
+
     def __init__(self):
         super().__init__()
         self.session_process = None
@@ -30,102 +47,112 @@ class AnimatedLogin(QWidget):
         self.initUI()
 
     def initUI(self):
-        self.setWindowTitle('Login - Vice OS')
+        self.setWindowTitle("Login - Vice OS")
         self.setWindowFlags(Qt.FramelessWindowHint)
 
-        # Dynamically set geometry to primary screen safely
         screen = QApplication.primaryScreen()
         if not screen:
             log_error("No screen found. Cannot display login screen.")
             sys.exit(1)
 
-        geo = screen.geometry()
-        self.setGeometry(geo)
+        self.setGeometry(screen.geometry())
+        c = COLORS
+        self.setStyleSheet(f"QWidget#LoginRoot {{ background-color: {c['bg_canvas']}; }}")
+        self.setObjectName("LoginRoot")
 
-        self.setStyleSheet("background-color: #120e1e;")
+        outer = QVBoxLayout(self)
+        outer.setAlignment(Qt.AlignCenter)
 
-        layout = QVBoxLayout()
-        layout.setAlignment(Qt.AlignCenter)
+        card = QFrame(self)
+        card.setObjectName("Card")
+        card.setFixedWidth(376)
+        card.setStyleSheet(
+            f"QFrame#Card {{ background-color: {c['bg_surface']}; "
+            f"border: 1px solid {c['border']}; border-radius: 14px; }}"
+        )
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(32, 28, 32, 28)
+        layout.setSpacing(12)
 
-        logo_label = QLabel()
+        logo_label = QLabel(card)
         logo_label.setAlignment(Qt.AlignCenter)
-        logo_label.setStyleSheet("background: transparent;")
+        logo_label.setStyleSheet("background: transparent; border: none;")
         logo_loaded = False
-        for logo_path in ("/usr/share/pixmaps/vice-debian-gta6.png", "/usr/share/pixmaps/vice-app.png"):
+        for logo_path in (
+            "/usr/share/pixmaps/vice-debian-gta6.png",
+            "/usr/share/pixmaps/vice-app.png",
+        ):
             if os.path.isfile(logo_path):
                 pix = QPixmap(logo_path)
                 if not pix.isNull():
-                    logo_label.setPixmap(pix.scaled(112, 112, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                    logo_label.setPixmap(
+                        pix.scaled(88, 88, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    )
                     logo_loaded = True
                     break
 
-        label = QLabel("VICE OS")
-        label.setFont(QFont("Noto Sans", 52, QFont.Bold))
-        label.setStyleSheet("color: #ff4da6; background: transparent;")
-        label.setAlignment(Qt.AlignCenter)
-        label.setFixedHeight(80)
-
-        self.user_input = QLineEdit(self)
-        self.user_input.setPlaceholderText("Username")
-        self.user_input.setText("vice") # Default to vice for live iso
-        self.user_input.setStyleSheet(
-            "background-color: #1b152e; color: #f4f1fa; "
-            "border: 2px solid #ff8a5b; border-radius: 10px; padding: 10px;"
+        title = QLabel("VICE OS", card)
+        title.setFont(QFont("Noto Sans", 28, QFont.Bold))
+        title.setStyleSheet(
+            f"color: {c['text_primary']}; letter-spacing: 5px; background: transparent; border: none;"
         )
-        self.user_input.setFixedSize(300, 40)
-        self.pwd = QLineEdit(self)
+        title.setAlignment(Qt.AlignCenter)
+
+        subtitle = QLabel("Leonida Workstation", card)
+        subtitle.setStyleSheet(
+            f"color: {c['text_secondary']}; font-size: 12px; background: transparent; border: none;"
+        )
+        subtitle.setAlignment(Qt.AlignCenter)
+
+        self.user_input = QLineEdit(card)
+        self.user_input.setPlaceholderText("Username")
+        self.user_input.setText("vice")
+        self.user_input.setFixedHeight(40)
+
+        self.pwd = QLineEdit(card)
         self.pwd.setPlaceholderText("Password")
         self.pwd.setEchoMode(QLineEdit.Password)
-        self.pwd.setStyleSheet(
-            "background-color: #1b152e; color: #f4f1fa; "
-            "border: 2px solid #ff4da6; border-radius: 10px; padding: 10px;"
-        )
-        self.pwd.setFixedSize(300, 40)
+        self.pwd.setFixedHeight(40)
         self.pwd.returnPressed.connect(self.check_pass)
         self.user_input.returnPressed.connect(self.pwd.setFocus)
 
-        # Session selection dropdown (X11 / Wayland)
-        self.session_combo = QComboBox(self)
+        self.session_combo = QComboBox(card)
         self.session_combo.addItem("X11 (Openbox)", "x11")
         self.session_combo.addItem("Wayland (Labwc)", "wayland")
-        self.session_combo.setStyleSheet(
-            "QComboBox { background-color: #1b152e; color: #f4f1fa; border: 2px solid #9d4edd; "
-            "border-radius: 8px; padding: 6px 12px; font-weight: bold; } "
-            "QComboBox::drop-down { border: none; } "
-            "QComboBox QAbstractItemView { background-color: #181229; color: #f4f1fa; "
-            "selection-background-color: #ff4da6; selection-color: #ffffff; }"
-        )
-        self.session_combo.setFixedSize(300, 36)
-
-        # Load default session preference from system configuration
+        self.session_combo.setFixedHeight(38)
         self.load_default_session()
 
-        hint_label = QLabel("Live Session Default: vice / vice")
-        hint_label.setFont(QFont("Noto Sans", 10))
-        hint_label.setStyleSheet("color: #b7aed1; background: transparent;")
+        self.login_btn = QPushButton("Sign In", card)
+        self.login_btn.setObjectName("PrimaryButton")
+        self.login_btn.setFixedHeight(40)
+        self.login_btn.clicked.connect(self.check_pass)
+
+        hint_label = QLabel("Live Session Default: vice / vice", card)
+        hint_label.setStyleSheet(
+            f"color: {c['text_muted']}; font-size: 11px; background: transparent; border: none;"
+        )
         hint_label.setAlignment(Qt.AlignCenter)
 
-        layout.addStretch(2)
         if logo_loaded:
             layout.addWidget(logo_label)
-            layout.addSpacing(10)
-        layout.addWidget(label)
-        layout.addSpacing(20)
-        layout.addWidget(self.user_input, alignment=Qt.AlignCenter)
-        layout.addSpacing(12)
-        layout.addWidget(self.pwd, alignment=Qt.AlignCenter)
-        layout.addSpacing(12)
-        layout.addWidget(self.session_combo, alignment=Qt.AlignCenter)
-        layout.addSpacing(14)
-        layout.addWidget(hint_label, alignment=Qt.AlignCenter)
-        layout.addStretch(3)
-        self.setLayout(layout)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+        layout.addSpacing(8)
+        layout.addWidget(self.user_input)
+        layout.addWidget(self.pwd)
+        layout.addWidget(self.session_combo)
+        layout.addWidget(self.login_btn)
+        layout.addSpacing(4)
+        layout.addWidget(hint_label)
 
-        # Fade-in title animation (avoids geometry conflicts with QVBoxLayout)
-        self._title_opacity = QGraphicsOpacityEffect(label)
-        label.setGraphicsEffect(self._title_opacity)
+        outer.addStretch(2)
+        outer.addWidget(card, alignment=Qt.AlignCenter)
+        outer.addStretch(3)
+
+        self._title_opacity = QGraphicsOpacityEffect(card)
+        card.setGraphicsEffect(self._title_opacity)
         self.anim = QPropertyAnimation(self._title_opacity, b"opacity")
-        self.anim.setDuration(900)
+        self.anim.setDuration(600)
         self.anim.setStartValue(0.0)
         self.anim.setEndValue(1.0)
         self.anim.start()
@@ -141,18 +168,18 @@ class AnimatedLogin(QWidget):
         self.pwd.setFocus(Qt.ActiveWindowFocusReason)
 
     def load_default_session(self):
-        """Loads default session preference from system/user config."""
-        for conf_path in ["/etc/vice-os/session.conf", os.path.expanduser("~/.config/vice-os/session.conf")]:
+        """Load default session preference from system or user config."""
+        for conf_path in (
+            "/etc/vice-os/session.conf",
+            os.path.expanduser("~/.config/vice-os/session.conf"),
+        ):
             if os.path.isfile(conf_path):
                 try:
-                    with open(conf_path, "r") as f:
+                    with open(conf_path, "r", encoding="utf-8") as f:
                         for line in f:
                             if line.strip().startswith("SESSION_TYPE="):
                                 session_type = line.strip().split("=", 1)[1].strip('"\'')
-                                if session_type == "wayland":
-                                    self.session_combo.setCurrentIndex(1)
-                                else:
-                                    self.session_combo.setCurrentIndex(0)
+                                self.session_combo.setCurrentIndex(1 if session_type == "wayland" else 0)
                                 break
                 except Exception:
                     pass
@@ -162,36 +189,27 @@ class AnimatedLogin(QWidget):
         password = self.pwd.text()
 
         if not username or not password:
-            self.shake_error()
+            self.shake_error("Enter username and password")
             if not username:
                 self.user_input.setFocus()
             else:
                 self.pwd.setFocus()
             return
 
-        # Disable inputs to prevent multiple submissions
         self.user_input.setEnabled(False)
         self.pwd.setEnabled(False)
+        self.login_btn.setEnabled(False)
 
-        # Use QProcess to prevent UI freeze during PAM authentication
         self.auth_process = QProcess(self)
         self.auth_process.setProcessChannelMode(QProcess.ForwardedChannels)
-
-        # Handle the result asynchronously
         self.auth_process.finished.connect(self.handle_auth_result)
+        self.auth_process.start("su", [username, "-c", "true"])
 
-        # Start 'su' to verify the password
-        self.auth_process.start('su', [username, '-c', 'true'])
-
-        # Wait for the process to start writing to stdin safely
         if not self.auth_process.waitForStarted(3000):
             self.shake_error("Failed to start authentication process.")
             return
 
-        # Write the password to stdin and close it
         bytes_written = self.auth_process.write(f"{password}\n".encode())
-
-        # Clear the password from memory immediately after writing
         self.pwd.clear()
 
         if bytes_written == -1:
@@ -199,11 +217,8 @@ class AnimatedLogin(QWidget):
             self.shake_error("Authentication pipe error.")
             return
 
-        # Wait for bytes to be written to ensure 'su' receives the password
         self.auth_process.waitForBytesWritten(1000)
         self.auth_process.closeWriteChannel()
-
-        # Set a timeout to prevent infinite hangs
         QTimer.singleShot(5000, self.handle_auth_timeout)
 
     def handle_auth_timeout(self):
@@ -213,7 +228,6 @@ class AnimatedLogin(QWidget):
 
     def handle_auth_result(self):
         exit_code = self.auth_process.exitCode()
-
         if exit_code == 0:
             self.hide()
             self.start_session(self.user_input.text().strip())
@@ -221,35 +235,31 @@ class AnimatedLogin(QWidget):
             self.shake_error("Login incorrect.")
 
     def shake_error(self, message: str = "Login incorrect"):
+        c = COLORS
         self.pwd.clear()
         self.user_input.setEnabled(True)
         self.pwd.setEnabled(True)
+        self.login_btn.setEnabled(True)
         self.pwd.setStyleSheet(
-            "background-color: #2b1222; color: #f4f1fa; "
-            "border: 2px solid #ff3b6b; border-radius: 10px; padding: 10px;"
+            f"background-color: #2A161D; color: {c['text_primary']}; "
+            f"border: 1px solid {c['danger']}; border-radius: 8px; padding: 6px 10px;"
         )
         self.pwd.setPlaceholderText(message)
         self.pwd.setFocus()
         QTimer.singleShot(2000, self.reset_pwd_style)
 
     def reset_pwd_style(self):
-        self.pwd.setStyleSheet(
-            "background-color: #1b152e; color: #f4f1fa; "
-            "border: 2px solid #ff4da6; border-radius: 10px; padding: 10px;"
-        )
+        self.pwd.setStyleSheet("")
         self.pwd.setPlaceholderText("Password")
 
     def start_session(self, username: str):
-        """Starts the configured session (X11 or Wayland) and monitors it for exit."""
+        """Start the configured session (X11 or Wayland) and monitor it for exit."""
         try:
             uid = os.getuid()
             runtime_dir = f"/run/user/{uid}"
-
-            # Since we bypass pam_systemd via 'su', we must create the runtime dir manually
             os.makedirs(runtime_dir, exist_ok=True)
             os.chmod(runtime_dir, 0o700)
 
-            # Set necessary environment variables for the session
             os.environ["USER"] = username
             os.environ["LOGNAME"] = username
             os.environ["HOME"] = f"/home/{username}"
@@ -260,30 +270,28 @@ class AnimatedLogin(QWidget):
             else:
                 os.environ.pop("DBUS_SESSION_BUS_ADDRESS", None)
 
-            # Determine selected session type
             selected_session = self.session_combo.currentData() or "x11"
-
-            # Persist user choice to user configuration
             user_config_dir = f"/home/{username}/.config/vice-os"
             os.makedirs(user_config_dir, exist_ok=True)
             try:
-                with open(f"{user_config_dir}/session.conf", "w") as f:
+                with open(f"{user_config_dir}/session.conf", "w", encoding="utf-8") as f:
                     f.write(f'# Vice OS User Session Preference\nSESSION_TYPE="{selected_session}"\n')
             except Exception:
                 pass
 
-            session_script = "/opt/vice-os/wayland_session.sh" if selected_session == "wayland" else "/opt/vice-os/dbus_session.sh"
+            session_script = (
+                "/opt/vice-os/wayland_session.sh"
+                if selected_session == "wayland"
+                else "/opt/vice-os/dbus_session.sh"
+            )
 
-            # Start the session process to ensure audio/dbus work
             self.session_process = QProcess(self)
             self.session_process.setProcessChannelMode(QProcess.ForwardedChannels)
             self.session_process.finished.connect(QApplication.quit)
-
             self.session_process.start(session_script)
 
         except Exception as e:
             log_error(f"Failed to start session: {e}")
-            # Fallback to an installed terminal so the user isn't stranded on a black screen
             term = next(
                 (t for t in ("xfce4-terminal", "x-terminal-emulator", "xterm") if shutil.which(t)),
                 None,
@@ -294,8 +302,12 @@ class AnimatedLogin(QWidget):
                 subprocess.Popen(["bash"], env=os.environ)
             sys.exit(1)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     app = QApplication(sys.argv)
+    configure_cjk_fonts(app)
+    configure_icon_theme()
+    apply_app_theme(app)
     ex = AnimatedLogin()
     ex.showFullScreen()
     ex.raise_()

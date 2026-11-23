@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 GTA VI OS (Vice OS) Tools Registry, Icon Generator, & Tool Deployment Tests.
-Tests config/tools_registry.json (100/500 Batch 1), all 10 vice_tool_*.py
+Tests config/tools_registry.json (250/500 Batch 2), all 15 vice_tool_*.py
 native apps, assets/generate_tool_icons.py live PNG + .desktop generation,
 system_scripts/vice-run-tool.sh, chroot deployment, and docs/TOOLS_PROGRESS.md.
 Run with: python3 -m unittest tests.test_tools_registry
@@ -32,6 +32,7 @@ DOCS_DIR = os.path.join(REPO_ROOT, "docs")
 
 EXPECTED_CATEGORIES = {
     "GTA VI Originals",
+    "Office",
     "System",
     "Network",
     "Security",
@@ -52,6 +53,20 @@ EXPECTED_NATIVE_IDS = {
     "vice-tool-qr-hash",
     "vice-tool-sys-deck",
     "vice-tool-cheatsheets",
+    "vice-tool-net-shield",
+    "vice-tool-cyber-deck",
+    "vice-tool-mac-cloak",
+    "vice-tool-office-hub",
+    "vice-tool-clock-sync",
+}
+
+BANNED_PACKAGES = {
+    "nikto",
+    "typst",
+    "dnscrypt-proxy",
+    "hashcat",
+    "pandoc",
+    "pulseaudio",
 }
 
 DEBIAN_BASE_PACKAGES = {
@@ -106,19 +121,19 @@ def _read_png_dimensions(path: str) -> tuple:
 class TestToolsRegistry(unittest.TestCase):
     """Validates config/tools_registry.json, native apps, and Debian Bookworm packages."""
 
-    def test_registry_schema_and_batch1_counts(self):
+    def test_registry_schema_and_batch2_counts(self):
         reg = _load_registry()
         self.assertEqual(reg.get("target_count"), 500)
-        self.assertEqual(reg.get("batch"), 1)
+        self.assertEqual(reg.get("batch"), 2)
         self.assertTrue(isinstance(reg.get("theme"), str) and reg["theme"].strip())
 
         tools = reg.get("tools")
         self.assertIsInstance(tools, list)
-        self.assertEqual(len(tools), 100, "Batch 1 must contain exactly 100 tools")
+        self.assertEqual(len(tools), 250, "Batch 2 must contain exactly 250 tools")
         self.assertEqual(reg.get("current_count"), len(tools))
 
         ids = [t.get("id") for t in tools]
-        self.assertEqual(len(set(ids)), 100, "All 100 tool IDs must be unique")
+        self.assertEqual(len(set(ids)), 250, "All 250 tool IDs must be unique")
 
         seen_categories = {}
         for tool in tools:
@@ -133,13 +148,65 @@ class TestToolsRegistry(unittest.TestCase):
             seen_categories[cat] = seen_categories.get(cat, 0) + 1
 
         self.assertEqual(set(seen_categories.keys()), EXPECTED_CATEGORIES)
-        self.assertEqual(seen_categories["GTA VI Originals"], 10)
-        self.assertEqual(sum(v for k, v in seen_categories.items() if k != "GTA VI Originals"), 90)
+        self.assertEqual(seen_categories["GTA VI Originals"], 15)
+        self.assertEqual(seen_categories["Office"], 10)
+        self.assertGreaterEqual(seen_categories["Security"], 50)
+        self.assertEqual(sum(v for k, v in seen_categories.items() if k != "GTA VI Originals"), 235)
+
+    def test_office_security_vpn_dns_and_debian_coverage(self):
+        reg = _load_registry()
+        tools_by_id = {t["id"]: t for t in reg["tools"]}
+        pkgs_set = set(_load_packages_list())
+
+        for banned in BANNED_PACKAGES:
+            self.assertNotIn(banned, pkgs_set, f"Banned/absent/bloated package '{banned}' in packages.list")
+            self.assertFalse(
+                any(t["package"] == banned for t in reg["tools"]),
+                f"Banned/absent/bloated package '{banned}' in tools_registry.json",
+            )
+
+        required_office = (
+            "libreoffice-writer", "libreoffice-calc", "libreoffice-impress",
+            "libreoffice-draw", "libreoffice-math", "qpdfview", "evince", "simple-scan",
+        )
+        for tid in required_office:
+            self.assertIn(tid, tools_by_id, f"Missing Office tool '{tid}'")
+            self.assertEqual(tools_by_id[tid]["category"], "Office")
+
+        for lo_support in ("libreoffice-gtk3", "libreoffice-style-sifr", "libreoffice-style-colibre"):
+            self.assertIn(lo_support, pkgs_set, f"Missing LibreOffice GTK3/theme package '{lo_support}'")
+
+        for pkg in ("network-manager-openvpn-gnome", "openresolv"):
+            self.assertIn(pkg, pkgs_set, f"Missing VPN/DNS helper package '{pkg}'")
+
+        required_security_vpn_dns = (
+            "openvpn", "wireguard-tools",
+            "tor", "torsocks", "privoxy", "stubby", "unbound",
+            "macchanger", "ufw", "gufw", "clamav", "firejail", "keepassxc",
+            "sqlmap", "gobuster", "dirb", "hydra", "john", "aircrack-ng",
+            "wireshark", "nmap", "binwalk", "yara", "lynis", "chkrootkit",
+            "whatweb", "wafw00f", "sslscan", "testssl.sh", "dnsrecon", "mat2",
+        )
+        for pkg in required_security_vpn_dns:
+            self.assertIn(pkg, pkgs_set, f"Missing Security/VPN/DNS package '{pkg}'")
+            self.assertTrue(
+                any(t["package"] == pkg for t in reg["tools"]),
+                f"Missing Security/VPN/DNS tool entry for package '{pkg}'",
+            )
+
+        required_debian_features = (
+            "cups", "system-config-printer", "bluez", "blueman", "udisks2",
+            "ntfs-3g", "exfatprogs", "gnome-disk-utility", "timeshift",
+            "flameshot", "gcolor3", "redshift", "xdg-desktop-portal-gtk",
+            "bash-completion", "chrony",
+        )
+        for pkg in required_debian_features:
+            self.assertIn(pkg, pkgs_set, f"Missing standard Debian feature '{pkg}'")
 
     def test_native_gta_tools_exist_and_meet_standards(self):
         reg = _load_registry()
         natives = [t for t in reg["tools"] if t.get("package") == "vice-native"]
-        self.assertEqual(len(natives), 10)
+        self.assertEqual(len(natives), 15)
         self.assertEqual({t["id"] for t in natives}, EXPECTED_NATIVE_IDS)
 
         for tool in natives:
@@ -161,8 +228,11 @@ class TestToolsRegistry(unittest.TestCase):
             tree = ast.parse(code, filename=script_name)
             doc = ast.get_docstring(tree)
             self.assertTrue(bool(doc and len(doc.strip()) > 10), f"Missing docstring in {script_name}")
+            self.assertIn("vice_theme", code, f"Native app {script_name} must adopt vice_theme")
             self.assertIn("Noto Sans CJK", code, f"Missing CJK font fallback in {script_name}")
             self.assertIn("closeEvent", code, f"Missing clean closeEvent shutdown in {script_name}")
+            for legacy_hex in ("#00ffff", "#ff00ff", "#120e1e", "#ff4da6"):
+                self.assertNotIn(legacy_hex, code.lower(), f"Legacy neon color {legacy_hex} in {script_name}")
 
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom) and node.module == "PyQt5.QtWidgets":
@@ -185,7 +255,7 @@ class TestToolsRegistry(unittest.TestCase):
 
         reg = _load_registry()
         non_native = [t for t in reg["tools"] if t.get("package") != "vice-native"]
-        self.assertEqual(len(non_native), 90)
+        self.assertEqual(len(non_native), 235)
         for tool in non_native:
             self.assertFalse(tool["gta_themed"], f"Debian tool {tool['id']} should have gta_themed=false")
             pkg = tool["package"]
@@ -237,7 +307,7 @@ class TestToolIconGenerator(unittest.TestCase):
             else:
                 self.assertEqual(entry.get("Exec"), tool["exec"])
 
-    def test_live_generate_100_icons_and_desktop_files(self):
+    def test_live_generate_250_icons_and_desktop_files(self):
         reg = _load_registry()
         tools = reg["tools"]
         gen_path = os.path.join(ASSETS_DIR, "generate_tool_icons.py")
@@ -271,8 +341,8 @@ class TestToolIconGenerator(unittest.TestCase):
                 self.assertEqual(proc.returncode, 0, f"generate_tool_icons.py failed:\n{proc.stderr}\n{proc.stdout}")
                 icons = sorted(glob.glob(os.path.join(icon_dir, "*.png")))
                 pixmaps = sorted(glob.glob(os.path.join(pixmap_dir, "*.png")))
-                self.assertEqual(len(icons), 100)
-                self.assertEqual(len(pixmaps), 100)
+                self.assertEqual(len(icons), 250)
+                self.assertEqual(len(pixmaps), 250)
                 for png in icons + pixmaps:
                     w, h = _read_png_dimensions(png)
                     self.assertEqual((w, h), (64, 64), f"Expected 64x64 PNG, got {(w, h)} for {png}")
@@ -281,11 +351,13 @@ class TestToolIconGenerator(unittest.TestCase):
                 # Minimal CI runner without Pillow: still validate .desktop generation and glyph lookup
                 pil_pkg = types.ModuleType("PIL")
                 pil_img = types.ModuleType("PIL.Image")
+                pil_chops = types.ModuleType("PIL.ImageChops")
                 pil_draw = types.ModuleType("PIL.ImageDraw")
                 pil_filt = types.ModuleType("PIL.ImageFilter")
                 pil_img.Image = object
                 pil_draw.ImageDraw = object
                 pil_pkg.Image = pil_img
+                pil_pkg.ImageChops = pil_chops
                 pil_pkg.ImageDraw = pil_draw
                 pil_pkg.ImageFilter = pil_filt
                 sys.path.insert(0, ASSETS_DIR)
@@ -293,6 +365,7 @@ class TestToolIconGenerator(unittest.TestCase):
                     with patch.dict(sys.modules, {
                         "PIL": pil_pkg,
                         "PIL.Image": pil_img,
+                        "PIL.ImageChops": pil_chops,
                         "PIL.ImageDraw": pil_draw,
                         "PIL.ImageFilter": pil_filt,
                     }):
@@ -323,6 +396,9 @@ class TestToolsIntegrationAndDeployment(unittest.TestCase):
         self.assertIn("xfce4-terminal", code)
         self.assertIn("/usr/sbin", code)
         self.assertNotIn("\r\n", code)
+
+        for batch2_cli in ("testssl", "sqlmap", "gobuster", "dirb", "whatweb", "wafw00f", "wg-quick", "openvpn", "tor", "binwalk", "yara", "mat2", "tldr", "yq"):
+            self.assertIn(batch2_cli, code, f"vice-run-tool.sh missing Batch 2 CLI tool '{batch2_cli}'")
 
         bash_candidates = []
         which_bash = shutil.which("bash")
@@ -356,6 +432,9 @@ class TestToolsIntegrationAndDeployment(unittest.TestCase):
             "/usr/share/icons/hicolor/64x64/apps",
             "/usr/share/pixmaps",
             "/usr/share/applications",
+            "libreoffice-${lo_app}.desktop",
+            "lynis.desktop",
+            "Icon=vice-tool-lynis",
             "gtk-update-icon-cache",
             "update-desktop-database",
         ):
@@ -365,11 +444,15 @@ class TestToolsIntegrationAndDeployment(unittest.TestCase):
         self.assertIn('install_scripts "system_scripts"', sys_install)
         self.assertIn("vice-run-tool.sh", sys_install)
         self.assertIn("/usr/local/bin/vice-run-tool", sys_install)
+        self.assertIn("vice-timesync.sh", sys_install)
+        self.assertIn("/usr/local/bin/vice-timesync", sys_install)
 
     def test_skel_desktop_shortcuts_for_new_tools(self):
         expected = {
             "vice-tool-hub.desktop": ("vice-tool-hub", "vice_tool_hub.py"),
             "vice-radio.desktop": ("vice-tool-radio", "vice_tool_radio.py"),
+            "vice-office.desktop": ("vice-tool-office-hub", "vice_tool_office_hub.py"),
+            "vice-net-shield.desktop": ("vice-tool-net-shield", "vice_tool_net_shield.py"),
         }
         for fname, (icon_name, script_name) in expected.items():
             path = os.path.join(CONFIG_DIR, "skel", "Desktop", fname)
@@ -388,8 +471,8 @@ class TestToolsIntegrationAndDeployment(unittest.TestCase):
         doc_path = os.path.join(DOCS_DIR, "TOOLS_PROGRESS.md")
         self.assertTrue(os.path.isfile(doc_path), "Missing docs/TOOLS_PROGRESS.md")
         doc = _read_text("docs", "TOOLS_PROGRESS.md")
-        self.assertIn("100 / 500", doc)
-        self.assertIn("20%", doc)
+        self.assertIn("250 / 500", doc)
+        self.assertIn("50%", doc)
 
         reg = _load_registry()
         for tool in reg["tools"]:

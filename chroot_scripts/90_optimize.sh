@@ -72,7 +72,7 @@ main() {
         rm -rf "$firmware_dir/liquidio" 2>/dev/null || true
     fi
 
-    # ── 6. Mask slow-starting or unnecessary systemd services and their timers ──
+    # ── 6. Mask slow-starting or unnecessary systemd services and keep on-demand daemons disabled ──
     log_info "Masking non-essential systemd services and timers for faster boot..."
     local services_to_mask=(
         "apt-daily.service" "apt-daily.timer"
@@ -81,6 +81,31 @@ main() {
     )
     for svc in "${services_to_mask[@]}"; do
         systemctl mask "$svc" 2>/dev/null || true
+    done
+
+    # Re-verify VPN/Tor/Proxy/DNS/AV daemons stay disabled at boot (on-demand via Vice Net Shield)
+    local on_demand_units=(
+        "tor.service" "tor@default.service"
+        "privoxy.service"
+        "dnscrypt-proxy.service" "dnscrypt-proxy.socket"
+        "stubby.service"
+        "unbound.service" "unbound-resolvconf.service"
+        "openvpn.service"
+        "clamav-freshclam.service"
+        "clamav-daemon.service" "clamav-daemon.socket"
+    )
+    for unit in "${on_demand_units[@]}"; do
+        systemctl disable "$unit" 2>/dev/null || true
+    done
+
+    # Mask periodic audit timers/services that require an MTA (mail) or pre-built DB
+    local failing_timers=(
+        "chkrootkit.service" "chkrootkit.timer"
+        "dailyaidecheck.service" "dailyaidecheck.timer"
+    )
+    for unit in "${failing_timers[@]}"; do
+        systemctl disable "$unit" 2>/dev/null || true
+        systemctl mask "$unit" 2>/dev/null || true
     done
 
     # ── 7. Enable early OOM killer for low-memory responsiveness ──
@@ -103,7 +128,12 @@ vm.dirty_background_ratio=5
 kernel.numa_balancing=0
 SYSCTL
 
-    # ── 9. Safeguard PipeWire drop-in & rebuild font/desktop/icon/MIME caches ──
+    # ── 9. Safeguard PipeWire drop-in, zoneinfo/LibreOffice icons & rebuild caches ──
+    # Keep /usr/share/zoneinfo intact for host timezone auto-sync (vice-timesync)
+    # and keep LibreOffice sifr_dark/colibre icon themes intact for Office Studio.
+    if [ -d /usr/share/zoneinfo ]; then
+        log_info "Preserving /usr/share/zoneinfo for host timezone sync."
+    fi
     if [ -f /etc/pipewire/pipewire.conf.d/10-vice-audio.conf ]; then
         rm -f /etc/pipewire/pipewire.conf
     fi
@@ -118,7 +148,7 @@ SYSCTL
         update-mime-database /usr/share/mime 2>/dev/null || true
     fi
     if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-        for theme_dir in /usr/share/icons/Papirus-Dark /usr/share/icons/hicolor; do
+        for theme_dir in /usr/share/icons/Papirus-Dark /usr/share/icons/hicolor /usr/share/icons/Adwaita; do
             if [ -d "$theme_dir" ]; then
                 gtk-update-icon-cache -q -f "$theme_dir" 2>/dev/null || true
             fi

@@ -184,7 +184,7 @@ main() {
         chmod 644 /usr/share/applications/vice-os-settings.desktop
     fi
 
-    # Install Tool Registry & generate 100 GTA VI neon icons + .desktop launchers
+    # Install Tool Registry & generate 250 GTA VI icons + .desktop launchers
     log_info "Installing Vice OS tools registry and generating GTA VI tool icons..."
     if [ -f /vice_payload/config/tools_registry.json ]; then
         cp /vice_payload/config/tools_registry.json /opt/vice-os/tools_registry.json
@@ -206,6 +206,26 @@ main() {
     else
         log_error "assets/generate_tool_icons.py not found in payload!"
         exit 1
+    fi
+
+    # Theme Debian LibreOffice .desktop entries with the generated GTA VI icon badges
+    local lo_app
+    for lo_app in writer calc impress draw math; do
+        local lo_desktop="/usr/share/applications/libreoffice-${lo_app}.desktop"
+        if [ -f "$lo_desktop" ] && [ -f "/usr/share/icons/hicolor/64x64/apps/vice-tool-libreoffice-${lo_app}.png" ]; then
+            sed -i "s|^Icon=.*|Icon=vice-tool-libreoffice-${lo_app}|" "$lo_desktop"
+        fi
+    done
+    if [ -f "/usr/share/applications/libreoffice-startcenter.desktop" ] && [ -f "/usr/share/icons/hicolor/64x64/apps/vice-tool-office-hub.png" ]; then
+        sed -i "s|^Icon=.*|Icon=vice-tool-office-hub|" "/usr/share/applications/libreoffice-startcenter.desktop"
+    fi
+
+    # Replace missing su-to-root in Debian's stock lynis.desktop with vice-run-tool + GTA VI icon
+    if [ -f "/usr/share/applications/lynis.desktop" ] && grep -q "su-to-root" "/usr/share/applications/lynis.desktop" 2>/dev/null; then
+        sed -i 's|^Exec=.*|Exec=vice-run-tool "Lynis Security Audit" pkexec /usr/sbin/lynis audit system --no-colors|; s|^Icon=.*|Icon=vice-tool-lynis|; s|^Terminal=.*|Terminal=false|' "/usr/share/applications/lynis.desktop"
+        if ! grep -q "^Icon=" "/usr/share/applications/lynis.desktop" 2>/dev/null; then
+            printf 'Icon=vice-tool-lynis\n' >> "/usr/share/applications/lynis.desktop"
+        fi
     fi
 
     gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true

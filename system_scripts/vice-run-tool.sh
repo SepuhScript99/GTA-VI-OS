@@ -7,12 +7,12 @@ set -Eeuo pipefail
 # Usage: vice-run-tool <title> <cmd> [args...]
 # ============================================================================
 
-PINK='\033[38;2;255;77;166m'
-CORAL='\033[38;2;255;138;91m'
-CYAN='\033[38;2;0;229;255m'
-GOLD='\033[38;2;255;209;102m'
-MUTED='\033[38;2;180;168;210m'
-RED='\033[38;2;255;92;122m'
+CORAL='\033[38;2;255;94;126m'
+PEACH='\033[38;2;255;154;98m'
+AQUA='\033[38;2;54;214;195m'
+MUTED='\033[38;2;166;174;191m'
+SLATE='\033[38;2;74;82;108m'
+RED='\033[38;2;242;92;110m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
@@ -42,11 +42,9 @@ cleanup_tty() {
 print_header() {
     local title="$1"
     local cmd_display="$2"
-    printf '%b======================================================================%b\n' "$PINK" "$RESET"
-    printf '%b%b  VICE OS // LEONIDA POWER TOOL%b  %b[%s]%b\n' "$BOLD" "$CORAL" "$RESET" "$CYAN" "$title" "$RESET"
-    printf '%b  Command:%b %b%s%b\n' "$MUTED" "$RESET" "$GOLD" "$cmd_display" "$RESET"
-    printf '%b  Dir:%b     %s\n' "$MUTED" "$RESET" "$PWD"
-    printf '%b======================================================================%b\n\n' "$PINK" "$RESET"
+    printf '%b%bVICE OS%b  ·  %b%s%b\n' "$BOLD" "$CORAL" "$RESET" "$BOLD" "$title" "$RESET"
+    printf '%bcmd:%b %b%s%b   %bcwd:%b %s\n' "$MUTED" "$RESET" "$AQUA" "$cmd_display" "$RESET" "$MUTED" "$RESET" "$PWD"
+    printf '%b────────────────────────────────────────────────────────────%b\n\n' "$SLATE" "$RESET"
 }
 
 hold_terminal() {
@@ -71,7 +69,7 @@ needs_args_prompt() {
     local base
     base=$(basename "$1")
     case "$base" in
-        rg|fdfind|fd|batcat|bat|jq|yq|curl|wget|aria2c|axel|http|nmap|tcpdump|tshark|mtr|whois|dig|host|traceroute|nc|netcat|socat|iperf3|openssl|gpg|ufw|lynis|chkrootkit|rkhunter|age|pass|macchanger|proxychains4|strace|ltrace|valgrind|shellcheck|rsync|parted|ddrescue|smartctl|nvme|lsof|convert|magick|ffmpeg|ffprobe|mediainfo|sox|oggenc|flac|opusenc|qrencode|yt-dlp|7z|7za|tar|gzip|unzip|zip|grep|egrep|sed|awk|find|xargs|git|gcc|g++|make|cmake|ssh|scp|exiftool|pandoc|pdftotext|diff|colordiff)
+        rg|fdfind|fd|batcat|bat|jq|yq|curl|wget|aria2c|axel|http|nmap|tcpdump|tshark|mtr|whois|dig|host|traceroute|nc|netcat|ncat|ndiff|socat|iperf3|fping|ethtool|openssl|gpg|ufw|lynis|chkrootkit|rkhunter|age|pass|macchanger|proxychains4|strace|ltrace|valgrind|gdb-multiarch|nasm|objdump|eu-readelf|patchelf|hexedit|xxd|cloc|cppcheck|shellcheck|rsync|parted|ddrescue|smartctl|nvme|lsof|convert|magick|ffmpeg|ffprobe|mediainfo|sox|oggenc|flac|opusenc|qrencode|yt-dlp|7z|7za|tar|gzip|unzip|zip|zstd|grep|egrep|sed|awk|find|xargs|git|gcc|g++|make|cmake|ssh|scp|exiftool|pandoc|pdftotext|diff|colordiff|openvpn|wg|wg-quick|tor|privoxy|torsocks|obfs4proxy|stubby|unbound-checkconf|nft|iptables|firejail|nikto|sqlmap|gobuster|dirb|hydra|medusa|ncrack|john|crunch|cewl|aircrack-ng|aireplay-ng|airodump-ng|reaver|ettercap|arp-scan|netdiscover|hping3|masscan|binwalk|foremost|steghide|fls|mmls|icat|yara|tcpflow|ngrep|ssldump|sslscan|testssl.sh|testssl|whatweb|dnsrecon|dnsenum|fierce|mat2|nbtscan|smbclient|fcrackzip|pdfcrack|dmitry|wafw00f|swaks|stunnel4|stunnel|sshuttle|autossh|mosh|tcpreplay|clamscan|freshclam|aide|auditctl|fail2ban-client|cryptsetup|hdparm|btrfs|fsck.exfat|fsck.fat|ntfsfix|jdupes|optipng|jpegoptim|hunspell|tldr|lnav|multitail|redshift|qpdf|pdfimages|pdftohtml|tesseract|zbarimg|python3|sqlite3|hyperfine|entr|chafa)
             return 0
             ;;
         *)
@@ -99,7 +97,7 @@ run_help_and_prompt() {
     fi
 
     while true; do
-        printf '\n%bEnter args for "%s" (or "sh" for shell, Enter to close): %b' "$CYAN" "$bin" "$RESET"
+        printf '\n%bArgs for "%s" ("sh" for shell, Enter to close): %b' "$PEACH" "$bin" "$RESET"
         local user_line=""
         if ! read -r user_line; then
             break
@@ -118,7 +116,7 @@ run_help_and_prompt() {
         "$bin" "${extra_args[@]}"
         rc=$?
         set -e
-        printf '\n%b[EXIT %d]%b\n' "$GOLD" "$rc" "$RESET"
+        printf '\n%b[exit %d]%b\n' "$MUTED" "$rc" "$RESET"
     done
     return "$rc"
 }
@@ -196,11 +194,11 @@ main() {
     set -e
 
     cleanup_tty
-    printf '\n%b----------------------------------------------------------------------%b\n' "$PINK" "$RESET"
+    printf '\n%b────────────────────────────────────────────────────────────%b\n' "$SLATE" "$RESET"
     if [ "$rc" -eq 0 ]; then
-        printf '%b[DONE]%b %s exited cleanly (status 0).\n' "$CYAN" "$RESET" "$title"
+        printf '%b[DONE]%b %s exited cleanly (status 0).\n' "$AQUA" "$RESET" "$title"
     else
-        printf '%b[INFO]%b %s finished with exit status %d.\n' "$GOLD" "$RESET" "$title" "$rc"
+        printf '%b[INFO]%b %s finished with exit status %d.\n' "$PEACH" "$RESET" "$title" "$rc"
     fi
     hold_terminal
     exit "$rc"
