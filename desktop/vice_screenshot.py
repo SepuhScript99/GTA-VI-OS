@@ -4,57 +4,51 @@ GTA VI OS (Vice OS) Screenshot Utility
 Full screen, active window, and custom region screen capture with clipboard copying and saving.
 """
 
-import sys
-import os
-import subprocess
 import datetime
+import os
+import shutil
+import subprocess
+import sys
+import time
+
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtWidgets import (
+    QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout,
+    QLabel, QLineEdit, QSpinBox, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QSpinBox, QComboBox, QGroupBox, QLineEdit, QFileDialog, QMessageBox,
-    QCheckBox
-)
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QPixmap
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 560
-WINDOW_HEIGHT = 480
+WINDOW_HEIGHT = 500
 SAVE_DIR = os.path.expanduser("~/Pictures/Screenshots")
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 6px 16px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QGroupBox { border: 1px solid #00ffff; margin-top: 10px; padding: 8px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QSpinBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 3px; }
-QCheckBox { color: #00ffff; }
-QCheckBox::indicator { width: 13px; height: 13px; background: #1a1a1a; border: 1px solid #00ffff; }
-QCheckBox::indicator:checked { background: #00ffff; }
-QLabel { color: #00ffff; }
-"""
 
 
 class CaptureWorker(QThread):
     done = pyqtSignal(str, bool)
 
-    def __init__(self, mode, delay, path):
-        super().__init__()
+    def __init__(self, mode, delay, path, parent=None):
+        super().__init__(parent)
         self.mode = mode
         self.delay = delay
         self.path = path
+        self._cancelled = False
+
+    def stop(self):
+        self._cancelled = True
 
     def run(self):
-        import shutil
-        import time
-        time.sleep(self.delay)
+        remaining = float(self.delay)
+        while remaining > 0 and not self._cancelled:
+            step = min(0.1, remaining)
+            time.sleep(step)
+            remaining -= step
+        if self._cancelled:
+            return
         try:
             if shutil.which("scrot"):
                 if self.mode == "Active Window":
@@ -98,8 +92,9 @@ class ScreenshotTool(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Screenshot Tool")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(480, 440)
+        vt.apply_app_theme(self)
         self._worker = None
         self._last_path = None
         os.makedirs(SAVE_DIR, exist_ok=True)
@@ -108,13 +103,15 @@ class ScreenshotTool(QWidget):
     def _init_ui(self):
         root = QVBoxLayout(self)
 
-        title = QLabel("Vice OS — Screenshot Tool")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 14, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        root.addWidget(vt.make_header(
+            "Screenshot Tool",
+            "Full screen, active window and region capture to file & clipboard",
+            icon_name="camera-photo",
+            badge_text="CAPTURE",
+            badge_variant="aqua",
+            parent=self,
+        ))
 
-        # Mode
         mode_box = QGroupBox("Capture Mode")
         ml = QHBoxLayout(mode_box)
         ml.addWidget(QLabel("Mode:"))
@@ -128,14 +125,13 @@ class ScreenshotTool(QWidget):
         ml.addWidget(self._delay_spin)
         root.addWidget(mode_box)
 
-        # Save options
         save_box = QGroupBox("Save Options")
         sl = QVBoxLayout(save_box)
         dir_row = QHBoxLayout()
         dir_row.addWidget(QLabel("Save to:"))
         self._dir_edit = QLineEdit(SAVE_DIR)
         dir_row.addWidget(self._dir_edit)
-        browse_btn = QPushButton("Browse")
+        browse_btn = vt.make_button("Browse", "secondary", parent=self)
         browse_btn.clicked.connect(self._browse_dir)
         dir_row.addWidget(browse_btn)
         sl.addLayout(dir_row)
@@ -150,33 +146,35 @@ class ScreenshotTool(QWidget):
         sl.addLayout(fmt_row)
         root.addWidget(save_box)
 
-        # Preview
         self._preview = QLabel("No screenshot taken yet")
         self._preview.setAlignment(Qt.AlignCenter)
         self._preview.setFixedHeight(140)
-        self._preview.setStyleSheet("border: 1px solid #333; background: #0d0d0d; color: #444;")
+        self._preview.setStyleSheet(
+            f"border: 1px solid {vt.COLORS['border']}; background: {vt.COLORS['bg_surface']}; "
+            f"color: {vt.COLORS['text_muted']}; border-radius: 8px;"
+        )
         root.addWidget(self._preview)
 
-        # Buttons
         btn_row = QHBoxLayout()
-        self._capture_btn = QPushButton("Capture")
-        self._capture_btn.setFont(QFont("monospace", 11, QFont.Bold))
+        self._capture_btn = vt.make_button("Capture", "primary", parent=self)
         self._capture_btn.clicked.connect(self._capture)
         btn_row.addWidget(self._capture_btn)
 
-        self._open_btn = QPushButton("Open in Viewer")
+        self._open_btn = vt.make_button("Open in Viewer", "secondary", parent=self)
         self._open_btn.setEnabled(False)
         self._open_btn.clicked.connect(self._open_last)
         btn_row.addWidget(self._open_btn)
 
-        self._open_dir_btn = QPushButton("Open Folder")
-        self._open_dir_btn.clicked.connect(lambda: subprocess.Popen(["xdg-open", self._dir_edit.text()]))
+        self._open_dir_btn = vt.make_button("Open Folder", "secondary", parent=self)
+        self._open_dir_btn.clicked.connect(
+            lambda: subprocess.Popen(["xdg-open", self._dir_edit.text()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        )
         btn_row.addWidget(self._open_dir_btn)
         root.addLayout(btn_row)
 
         self._status = QLabel("Ready")
         self._status.setAlignment(Qt.AlignCenter)
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         root.addWidget(self._status)
 
     def _browse_dir(self):
@@ -185,11 +183,15 @@ class ScreenshotTool(QWidget):
             self._dir_edit.setText(path)
 
     def _capture(self):
+        if self._worker is not None and self._worker.isRunning():
+            return
         mode = self._mode_combo.currentText()
         delay = self._delay_spin.value()
         fmt = self._fmt_combo.currentText()
+        save_dir = self._dir_edit.text().strip() or SAVE_DIR
+        os.makedirs(save_dir, exist_ok=True)
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = os.path.join(self._dir_edit.text(), f"vice_shot_{ts}.{fmt}")
+        path = os.path.join(save_dir, f"vice_shot_{ts}.{fmt}")
 
         self._capture_btn.setEnabled(False)
         self._status.setText(f"Capturing in {delay}s..." if delay else "Capturing...")
@@ -201,23 +203,27 @@ class ScreenshotTool(QWidget):
             self._do_capture(mode, delay, path)
 
     def _do_capture(self, mode, delay, path):
-        self._worker = CaptureWorker(mode, delay, path)
+        self._worker = CaptureWorker(mode, delay, path, parent=self)
         self._worker.done.connect(self._on_done)
         self._worker.start()
 
     def _on_done(self, path_or_err, ok):
         self.show()
-        if ok:
+        if ok and os.path.exists(path_or_err):
             self._last_path = path_or_err
             self._status.setText(f"Saved: {os.path.basename(path_or_err)}")
             self._open_btn.setEnabled(True)
             pix = QPixmap(path_or_err)
             if not pix.isNull():
                 self._preview.setPixmap(
-                    pix.scaled(self._preview.width() - 4, self._preview.height() - 4,
-                               Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    pix.scaled(
+                        max(1, self._preview.width() - 4),
+                        max(1, self._preview.height() - 4),
+                        Qt.KeepAspectRatio,
+                        Qt.SmoothTransformation,
+                    )
                 )
-            if self._copy_cb.isChecked():
+            if self._copy_cb.isChecked() and not pix.isNull():
                 QApplication.clipboard().setPixmap(pix)
             log_info(f"Screenshot saved: {path_or_err}")
         else:
@@ -226,8 +232,14 @@ class ScreenshotTool(QWidget):
         self._capture_btn.setEnabled(True)
 
     def _open_last(self):
-        if self._last_path:
-            subprocess.Popen(["xdg-open", self._last_path])
+        if self._last_path and os.path.exists(self._last_path):
+            subprocess.Popen(["xdg-open", self._last_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def closeEvent(self, event):
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(2000)
+        super().closeEvent(event)
 
 
 def main():

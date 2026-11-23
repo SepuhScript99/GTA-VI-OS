@@ -1,46 +1,27 @@
 #!/usr/bin/env python3
 """Vice OS — Network Speed Test. speedtest-cli / iperf3 frontend with history."""
 
-import sys
-import os
-import json
-import subprocess
 import datetime
-import re
+import json
+import os
+import subprocess
+import sys
+
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor, QFont
+from PyQt5.QtWidgets import (
+    QAbstractItemView, QApplication, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit, QMessageBox, QProgressBar, QPushButton, QTabWidget,
+    QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QLineEdit, QComboBox, QTabWidget, QTableWidget, QTableWidgetItem,
-    QHeaderView, QTextEdit, QMessageBox, QProgressBar, QAbstractItemView
-)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QBrush
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 960
 WINDOW_HEIGHT = 600
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 6px 16px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QTextEdit { background: #0d0d0d; color: #aaffff; border: 1px solid #1a4a4a; font-size: 11px; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QTabBar::tab { background: #1a1a1a; color: #00ffff; padding: 6px 14px; }
-QTabBar::tab:selected { background: #00ffff; color: #0a0a0a; }
-QTabWidget::pane { border: 1px solid #00ffff; }
-QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; text-align: center; color: #00ffff; }
-QProgressBar::chunk { background: #00ffff; }
-QLabel { color: #00ffff; }
-"""
 
 HISTORY_FILE = os.path.expanduser("~/.local/share/vice-os/speedtest_history.json")
 MAX_HISTORY = 100
@@ -48,30 +29,52 @@ MAX_HISTORY = 100
 
 class SpeedtestWorker(QThread):
     """Runs speedtest-cli and parses the result."""
+
     line = pyqtSignal(str)
     finished = pyqtSignal(bool, dict)
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._proc = None
+        self._cancelled = False
+
+    def stop(self):
+        self._cancelled = True
+        if self._proc is not None and self._proc.poll() is None:
+            try:
+                self._proc.terminate()
+            except OSError:
+                pass
+
     def run(self):
         try:
-            proc = subprocess.Popen(
+            self._proc = subprocess.Popen(
                 ["speedtest-cli", "--simple"],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             )
             lines = []
-            for line in proc.stdout:
-                lines.append(line.rstrip())
-                self.line.emit(line.rstrip())
-            proc.wait()
+            if self._proc.stdout:
+                for line in self._proc.stdout:
+                    if self._cancelled:
+                        break
+                    text = line.rstrip()
+                    lines.append(text)
+                    self.line.emit(text)
+            rc = self._proc.wait()
         except FileNotFoundError:
-            self.line.emit("speedtest-cli not found. Install: apt install speedtest-cli")
-            self.finished.emit(False, {})
+            if not self._cancelled:
+                self.line.emit("speedtest-cli not found. Install: apt install speedtest-cli")
+                self.finished.emit(False, {})
             return
         except Exception as e:
-            self.line.emit(f"Error: {e}")
-            self.finished.emit(False, {})
+            if not self._cancelled:
+                self.line.emit(f"Error: {e}")
+                self.finished.emit(False, {})
             return
 
-        if proc.returncode != 0:
+        if self._cancelled:
+            return
+        if rc != 0:
             self.finished.emit(False, {})
             return
 
@@ -88,42 +91,60 @@ class SpeedtestWorker(QThread):
 
 class IperfWorker(QThread):
     """Runs an iperf3 client test against a server."""
+
     line = pyqtSignal(str)
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, server, port, seconds, reverse):
-        super().__init__()
+    def __init__(self, server, port, seconds, reverse, parent=None):
+        super().__init__(parent)
         self._server = server
         self._port = port
         self._seconds = seconds
         self._reverse = reverse
+        self._proc = None
+        self._cancelled = False
+
+    def stop(self):
+        self._cancelled = True
+        if self._proc is not None and self._proc.poll() is None:
+            try:
+                self._proc.terminate()
+            except OSError:
+                pass
 
     def run(self):
-        cmd = ["iperf3", "-c", self._server, "-p", str(self._port),
-               "-t", str(self._seconds)]
+        cmd = ["iperf3", "-c", self._server, "-p", str(self._port), "-t", str(self._seconds)]
         if self._reverse:
             cmd.append("-R")
         self.line.emit("$ " + " ".join(cmd))
         try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                     stderr=subprocess.STDOUT, text=True)
-            for line in proc.stdout:
-                self.line.emit(line.rstrip())
-            proc.wait()
-            self.finished.emit(proc.returncode == 0, "")
+            self._proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+            if self._proc.stdout:
+                for line in self._proc.stdout:
+                    if self._cancelled:
+                        break
+                    self.line.emit(line.rstrip())
+            rc = self._proc.wait()
+            if not self._cancelled:
+                self.finished.emit(rc == 0, "")
         except FileNotFoundError:
-            self.line.emit("iperf3 not found. Install: apt install iperf3")
-            self.finished.emit(False, "")
+            if not self._cancelled:
+                self.line.emit("iperf3 not found. Install: apt install iperf3")
+                self.finished.emit(False, "")
         except Exception as e:
-            self.line.emit(f"Error: {e}")
-            self.finished.emit(False, "")
+            if not self._cancelled:
+                self.line.emit(f"Error: {e}")
+                self.finished.emit(False, "")
 
 
 def load_history():
     if os.path.exists(HISTORY_FILE):
         try:
-            with open(HISTORY_FILE) as f:
-                return json.load(f)
+            with open(HISTORY_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+                return data if isinstance(data, list) else []
         except Exception:
             return []
     return []
@@ -132,7 +153,7 @@ def load_history():
 def save_history(entries):
     try:
         os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
-        with open(HISTORY_FILE, "w") as f:
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
             json.dump(entries[-MAX_HISTORY:], f, indent=2)
     except Exception as e:
         log_error(f"Speedtest history save failed: {e}")
@@ -142,8 +163,9 @@ class SpeedTest(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Network Speed Test")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(780, 480)
+        vt.apply_app_theme(self)
         self._worker = None
         self._init_ui()
         self._load_history_table()
@@ -151,29 +173,31 @@ class SpeedTest(QWidget):
     def _init_ui(self):
         root = QVBoxLayout(self)
 
-        title = QLabel("Vice OS — Network Speed Test")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        root.addWidget(vt.make_header(
+            "Network Speed Test",
+            "Measure WAN throughput (speedtest-cli), LAN bandwidth (iperf3) & history",
+            icon_name="network-workgroup",
+            badge_text="BANDWIDTH",
+            badge_variant="aqua",
+            parent=self,
+        ))
 
-        # Big result display
         res_row = QHBoxLayout()
-        self._dl_label = QLabel("↓ --")
-        self._dl_label.setFont(QFont("monospace", 28, QFont.Bold))
-        self._dl_label.setStyleSheet("color: #00ffff; border: none;")
+        self._dl_label = QLabel("DL: --")
+        self._dl_label.setFont(QFont("monospace", 24, QFont.Bold))
+        self._dl_label.setStyleSheet(f"color: {vt.COLORS['accent_aqua']}; border: none;")
         self._dl_label.setAlignment(Qt.AlignCenter)
         res_row.addWidget(self._dl_label)
 
-        self._up_label = QLabel("↑ --")
-        self._up_label.setFont(QFont("monospace", 28, QFont.Bold))
-        self._up_label.setStyleSheet("color: #ff00ff; border: none;")
+        self._up_label = QLabel("UL: --")
+        self._up_label.setFont(QFont("monospace", 24, QFont.Bold))
+        self._up_label.setStyleSheet(f"color: {vt.COLORS['accent_coral']}; border: none;")
         self._up_label.setAlignment(Qt.AlignCenter)
         res_row.addWidget(self._up_label)
 
-        self._ping_label = QLabel("ping --")
-        self._ping_label.setFont(QFont("monospace", 16))
-        self._ping_label.setStyleSheet("color: #888; border: none;")
+        self._ping_label = QLabel("Ping: --")
+        self._ping_label.setFont(QFont("monospace", 15))
+        self._ping_label.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; border: none;")
         self._ping_label.setAlignment(Qt.AlignCenter)
         res_row.addWidget(self._ping_label)
         root.addLayout(res_row)
@@ -181,11 +205,9 @@ class SpeedTest(QWidget):
         tabs = QTabWidget()
         root.addWidget(tabs, 1)
 
-        # --- Internet tab ---
         net_tab = QWidget()
         nl = QVBoxLayout(net_tab)
-        self._run_btn = QPushButton("▶ Run Speed Test")
-        self._run_btn.setStyleSheet("QPushButton { border-color: #ff00ff; color: #ff00ff; } QPushButton:hover { background: #ff00ff; color: #0a0a0a; }")
+        self._run_btn = vt.make_button("Run Speed Test", "primary", parent=net_tab)
         self._run_btn.clicked.connect(self._run_speedtest)
         nl.addWidget(self._run_btn)
         self._progress = QProgressBar()
@@ -197,50 +219,47 @@ class SpeedTest(QWidget):
         nl.addWidget(self._net_log)
         tabs.addTab(net_tab, "Internet (speedtest)")
 
-        # --- LAN tab ---
         lan_tab = QWidget()
         ll = QVBoxLayout(lan_tab)
         form_row = QHBoxLayout()
-        ll.addWidget(QLabel("Server:"))
+        form_row.addWidget(QLabel("Server:"))
         self._iperf_host = QLineEdit()
         self._iperf_host.setPlaceholderText("192.168.1.10 (run 'iperf3 -s' there)")
-        form_row.addWidget(self._iperf_host)
-        ll.addWidget(QLabel("Port:"))
+        form_row.addWidget(self._iperf_host, 1)
+        form_row.addWidget(QLabel("Port:"))
         self._iperf_port = QLineEdit("5201")
         self._iperf_port.setFixedWidth(70)
         form_row.addWidget(self._iperf_port)
-        ll.addWidget(QLabel("Seconds:"))
+        form_row.addWidget(QLabel("Seconds:"))
         self._iperf_time = QLineEdit("10")
         self._iperf_time.setFixedWidth(50)
         form_row.addWidget(self._iperf_time)
         self._iperf_reverse_btn = QPushButton("Reverse (download)")
         self._iperf_reverse_btn.setCheckable(True)
         form_row.addWidget(self._iperf_reverse_btn)
-        self._iperf_run_btn = QPushButton("▶ Run iperf3")
+        self._iperf_run_btn = vt.make_button("Run iperf3", "primary", parent=lan_tab)
         self._iperf_run_btn.clicked.connect(self._run_iperf)
         form_row.addWidget(self._iperf_run_btn)
-        form_row.addStretch()
         ll.addLayout(form_row)
+
         self._iperf_log = QTextEdit()
         self._iperf_log.setReadOnly(True)
         ll.addWidget(self._iperf_log)
         tabs.addTab(lan_tab, "LAN (iperf3)")
 
-        # --- History tab ---
         hist_tab = QWidget()
         hl = QVBoxLayout(hist_tab)
         self._hist_table = QTableWidget()
         self._hist_table.setColumnCount(5)
         self._hist_table.setHorizontalHeaderLabels(["Time", "Ping", "Download", "Upload", "Type"])
-        self._hist_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        for i in [1, 2, 3, 4]:
-            self._hist_table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        self._hist_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        for col in (1, 2, 3, 4):
+            self._hist_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeToContents)
         self._hist_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._hist_table.setEditTriggers(QTableWidget.NoEditTriggers)
         hl.addWidget(self._hist_table)
         clear_row = QHBoxLayout()
-        clear_btn = QPushButton("Clear History")
-        clear_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        clear_btn = vt.make_button("Clear History", "danger", parent=hist_tab)
         clear_btn.clicked.connect(self._clear_history)
         clear_row.addWidget(clear_btn)
         clear_row.addStretch()
@@ -248,18 +267,20 @@ class SpeedTest(QWidget):
         tabs.addTab(hist_tab, "History")
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         root.addWidget(self._status)
 
     def _run_speedtest(self):
+        if self._worker is not None and self._worker.isRunning():
+            return
         self._run_btn.setEnabled(False)
         self._progress.setVisible(True)
         self._net_log.clear()
         self._status.setText("Running speedtest...")
-        self._dl_label.setText("↓ ...")
-        self._up_label.setText("↑ ...")
-        self._ping_label.setText("ping ...")
-        self._worker = SpeedtestWorker()
+        self._dl_label.setText("DL: ...")
+        self._up_label.setText("UL: ...")
+        self._ping_label.setText("Ping: ...")
+        self._worker = SpeedtestWorker(parent=self)
         self._worker.line.connect(self._net_log.append)
         self._worker.finished.connect(self._speedtest_done)
         self._worker.start()
@@ -273,9 +294,9 @@ class SpeedTest(QWidget):
         dl = result.get("download", "--")
         ul = result.get("upload", "--")
         ping = result.get("ping", "--")
-        self._dl_label.setText(f"↓ {dl}")
-        self._up_label.setText(f"↑ {ul}")
-        self._ping_label.setText(f"ping {ping}")
+        self._dl_label.setText(f"DL: {dl}")
+        self._up_label.setText(f"UL: {ul}")
+        self._ping_label.setText(f"Ping: {ping}")
         self._status.setText("Speedtest complete")
 
         history = load_history()
@@ -285,9 +306,11 @@ class SpeedTest(QWidget):
         })
         save_history(history)
         self._load_history_table()
-        log_info(f"Speedtest: ↓{dl} ↑{ul} {ping}")
+        log_info(f"Speedtest: DL={dl} UL={ul} {ping}")
 
     def _run_iperf(self):
+        if self._worker is not None and self._worker.isRunning():
+            return
         server = self._iperf_host.text().strip()
         if not server:
             QMessageBox.warning(self, "Missing Server", "Enter an iperf3 server address.")
@@ -301,7 +324,7 @@ class SpeedTest(QWidget):
         self._iperf_run_btn.setEnabled(False)
         self._iperf_log.clear()
         self._status.setText(f"Running iperf3 against {server}...")
-        self._worker = IperfWorker(server, port, seconds, self._iperf_reverse_btn.isChecked())
+        self._worker = IperfWorker(server, port, seconds, self._iperf_reverse_btn.isChecked(), parent=self)
         self._worker.line.connect(self._iperf_log.append)
         self._worker.finished.connect(self._iperf_done)
         self._worker.start()
@@ -313,7 +336,7 @@ class SpeedTest(QWidget):
             history = load_history()
             history.append({
                 "time": datetime.datetime.now().isoformat(timespec="seconds"),
-                "ping": "", "download": "", "upload": "", "type": f"lan:{self._iperf_host.text()}",
+                "ping": "", "download": "", "upload": "", "type": f"lan:{self._iperf_host.text().strip()}",
             })
             save_history(history)
             self._load_history_table()
@@ -326,19 +349,26 @@ class SpeedTest(QWidget):
             self._hist_table.setItem(row, 0, QTableWidgetItem(entry.get("time", "")))
             self._hist_table.setItem(row, 1, QTableWidgetItem(entry.get("ping", "")))
             dl_item = QTableWidgetItem(entry.get("download", ""))
-            dl_item.setForeground(QBrush(QColor("#00ffff")))
+            dl_item.setForeground(QBrush(QColor(vt.COLORS["accent_aqua"])))
             self._hist_table.setItem(row, 2, dl_item)
             ul_item = QTableWidgetItem(entry.get("upload", ""))
-            ul_item.setForeground(QBrush(QColor("#ff00ff")))
+            ul_item.setForeground(QBrush(QColor(vt.COLORS["accent_coral"])))
             self._hist_table.setItem(row, 3, ul_item)
             self._hist_table.setItem(row, 4, QTableWidgetItem(entry.get("type", "")))
 
     def _clear_history(self):
-        if QMessageBox.question(self, "Clear", "Delete all speedtest history?",
-                                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+        if QMessageBox.question(
+            self, "Clear", "Delete all speedtest history?", QMessageBox.Yes | QMessageBox.No
+        ) != QMessageBox.Yes:
             return
         save_history([])
         self._load_history_table()
+
+    def closeEvent(self, event):
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(2500)
+        super().closeEvent(event)
 
 
 def main():

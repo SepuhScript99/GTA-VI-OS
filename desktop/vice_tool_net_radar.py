@@ -184,16 +184,15 @@ class PortProbeWorker(QThread):
             state = "CLOSED"
             latency = "-"
             try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(self._timeout)
-                rc = sock.connect_ex((self._host, port))
+                sock = socket.create_connection((self._host, port), timeout=self._timeout)
                 elapsed_ms = (time.monotonic() - t0) * 1000.0
-                if rc == 0:
-                    state = "OPEN"
-                    latency = f"{elapsed_ms:.1f} ms"
-                    open_count += 1
+                state = "OPEN"
+                latency = f"{elapsed_ms:.1f} ms"
+                open_count += 1
             except socket.timeout:
                 state = "TIMEOUT"
+            except ConnectionRefusedError:
+                state = "CLOSED"
             except OSError as exc:
                 state = f"ERR ({exc.errno or 'socket'})"
             finally:
@@ -202,8 +201,10 @@ class PortProbeWorker(QThread):
                         sock.close()
                     except OSError:
                         pass
-            self.port_result.emit(port, service, state, latency)
-        self.scan_done.emit(open_count, total)
+            if not self._stopped:
+                self.port_result.emit(port, service, state, latency)
+        if not self._stopped:
+            self.scan_done.emit(open_count, total)
 
 
 class DnsLookupWorker(QThread):
@@ -215,25 +216,44 @@ class DnsLookupWorker(QThread):
         self._domain = domain
         self._rtype = rtype
         self._stopped = False
+        self._proc = None
 
     def stop(self) -> None:
         self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def run(self) -> None:
         lines = [f"=== DNS Query: {self._domain} ({self._rtype}) ==="]
         dig_bin = shutil.which("dig")
         if dig_bin:
             try:
-                res = subprocess.run(
+                self._proc = subprocess.Popen(
                     [dig_bin, "+noall", "+answer", "+comments", self._domain, self._rtype],
-                    capture_output=True, text=True, timeout=6
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
                 )
-                if res.stdout.strip():
-                    lines.append(res.stdout.strip())
-                if res.stderr.strip():
-                    lines.append(res.stderr.strip())
+                stdout, stderr = self._proc.communicate(timeout=6)
+                if (stdout or "").strip():
+                    lines.append(stdout.strip())
+                if (stderr or "").strip():
+                    lines.append(stderr.strip())
+            except subprocess.TimeoutExpired:
+                if self._proc is not None:
+                    self._proc.kill()
+                    self._proc.communicate()
+                lines.append("dig timed out after 6s")
             except Exception as exc:
                 lines.append(f"dig failed: {exc}")
+            finally:
+                self._proc = None
         else:
             lines.append("[dig not installed — using Python socket resolver]")
             try:
@@ -259,34 +279,58 @@ class NetInspectWorker(QThread):
     def __init__(self):
         super().__init__()
         self._stopped = False
+        self._proc = None
 
     def stop(self) -> None:
         self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def _run_cmd(self, cmd: list) -> str:
+        if self._stopped:
+            return "[cancelled]"
         if not shutil.which(cmd[0]):
             return f"[{cmd[0]} not available]"
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-            out = res.stdout.strip() or res.stderr.strip()
+            self._proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            )
+            stdout, stderr = self._proc.communicate(timeout=5)
+            out = (stdout or "").strip() or (stderr or "").strip()
             return out or "(no output)"
+        except subprocess.TimeoutExpired:
+            if self._proc is not None:
+                self._proc.kill()
+                self._proc.communicate()
+            return f"[{' '.join(cmd)} timed out]"
         except Exception as exc:
             return f"Error running {' '.join(cmd)}: {exc}"
+        finally:
+            self._proc = None
 
     def run(self) -> None:
         sections = []
-        if shutil.which("ip"):
+        if not self._stopped and shutil.which("ip"):
             sections.append("=== Network Interfaces (ip -br addr) ===\n" + self._run_cmd(["ip", "-br", "addr"]))
-            sections.append("=== Routing Table (ip route) ===\n" + self._run_cmd(["ip", "route"]))
-        else:
+            if not self._stopped:
+                sections.append("=== Routing Table (ip route) ===\n" + self._run_cmd(["ip", "route"]))
+        elif not self._stopped:
             sections.append(f"=== Hostname ===\n{socket.gethostname()}")
 
-        if shutil.which("ss"):
+        if not self._stopped and shutil.which("ss"):
             sections.append("=== Active Listening & Open Sockets (ss -tuln) ===\n" + self._run_cmd(["ss", "-tuln"]))
-        elif shutil.which("netstat"):
+        elif not self._stopped and shutil.which("netstat"):
             sections.append("=== Active Sockets (netstat -an) ===\n" + self._run_cmd(["netstat", "-an"]))
 
-        if os.path.isfile("/etc/resolv.conf"):
+        if not self._stopped and os.path.isfile("/etc/resolv.conf"):
             try:
                 with open("/etc/resolv.conf", "r", encoding="utf-8", errors="ignore") as fp:
                     sections.append("=== /etc/resolv.conf ===\n" + fp.read().strip())
@@ -492,6 +536,7 @@ class LeonidaNetRadarApp(QMainWindow):
         self._ping_proc.setProcessChannelMode(QProcess.MergedChannels)
         self._ping_proc.readyReadStandardOutput.connect(self._read_ping_output)
         self._ping_proc.finished.connect(self._on_ping_finished)
+        self._ping_proc.errorOccurred.connect(self._on_ping_error)
 
         self._ping_btn.setEnabled(False)
         self._ping_stop_btn.setEnabled(True)
@@ -499,6 +544,15 @@ class LeonidaNetRadarApp(QMainWindow):
         self._header.set_badge("PINGING", "aqua")
         self._summary_lbl.setText(f"Pinging {target} ({count} packets)...")
         self._ping_proc.start(ping_bin, args)
+
+    def _on_ping_error(self, _err) -> None:
+        self._ping_btn.setEnabled(True)
+        self._ping_stop_btn.setEnabled(False)
+        self._radar.set_active(False)
+        self._header.set_badge("ERROR", "danger")
+        msg = self._ping_proc.errorString() if self._ping_proc is not None else "Process failed to start"
+        self._summary_lbl.setText(f"Ping failed: {msg}")
+        self._ping_out.appendPlainText(f"\n[ERROR] {msg}\n")
 
     def _read_ping_output(self) -> None:
         if self._ping_proc is None:
@@ -613,8 +667,9 @@ class LeonidaNetRadarApp(QMainWindow):
         for worker in self._workers:
             if hasattr(worker, "stop"):
                 worker.stop()
+        for worker in self._workers:
             if worker.isRunning():
-                worker.wait(1500)
+                worker.wait(2500)
         log_info("Leonida Net Radar shut down cleanly.")
         event.accept()
 

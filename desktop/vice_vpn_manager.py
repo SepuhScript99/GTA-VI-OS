@@ -1,44 +1,28 @@
 #!/usr/bin/env python3
 """Vice OS — VPN Manager. OpenVPN + WireGuard profile manager with connect/disconnect/status."""
 
-import sys
-import os
-import subprocess
 import glob
-import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+from PyQt5.QtCore import QThread, QTimer, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor
+from PyQt5.QtWidgets import (
+    QAbstractItemView, QApplication, QDialog, QDialogButtonBox, QFileDialog,
+    QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
+    QSpinBox, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QMessageBox, QFileDialog, QDialog, QFormLayout, QLineEdit, QComboBox,
-    QSpinBox, QGroupBox, QCheckBox, QDialogButtonBox
-)
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QBrush
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 960
 WINDOW_HEIGHT = 580
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QGroupBox { border: 1px solid #00ffff; margin-top: 10px; padding: 8px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QSpinBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 3px; }
-QCheckBox { color: #00ffff; }
-QLabel { color: #00ffff; }
-"""
 
 VPN_DIR = os.path.expanduser("~/.config/vice-os/vpn")
 OPENVPN_DIR = os.path.join(VPN_DIR, "openvpn")
@@ -46,275 +30,70 @@ WIREGUARD_DIR = os.path.join(VPN_DIR, "wireguard")
 
 
 def run_cmd(cmd, sudo=False):
-    full = (["sudo"] if sudo else []) + cmd
+    is_root = os.geteuid() == 0 if hasattr(os, "geteuid") else False
+    full = (["pkexec"] if (sudo and not is_root) else []) + list(cmd)
     try:
         r = subprocess.run(full, capture_output=True, text=True, timeout=15)
-        return r.stdout.strip(), r.returncode == 0
+        out = (r.stdout or "").strip() or (r.stderr or "").strip()
+        return out, r.returncode == 0
     except Exception as e:
         return str(e), False
 
 
-class VPNManager(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Vice OS — VPN Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
-        self._init_dirs()
-        self._init_ui()
-        self._refresh()
-        self._timer = QTimer()
-        self._timer.setInterval(5000)
-        self._timer.timeout.connect(self._refresh)
-        self._timer.start()
+def _ovpn_pid_file(name):
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    return f"/run/vice-ovpn-{safe}.pid"
 
-    def _init_dirs(self):
-        os.makedirs(OPENVPN_DIR, exist_ok=True)
-        os.makedirs(WIREGUARD_DIR, exist_ok=True)
 
-    def _init_ui(self):
-        root = QVBoxLayout(self)
+def _pid_alive(pid_path):
+    try:
+        with open(pid_path, encoding="utf-8") as f:
+            pid = int(f.read().strip())
+        return os.path.isdir(f"/proc/{pid}")
+    except (OSError, ValueError):
+        return False
 
-        title = QLabel("Vice OS — VPN Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
 
-        # Tab: OpenVPN | WireGuard
-        from PyQt5.QtWidgets import QTabWidget
-        self._tabs = QTabWidget()
-        root.addWidget(self._tabs)
+class CmdWorker(QThread):
+    done = pyqtSignal(bool, str)
 
-        self._ovpn_tab = self._create_tab("OpenVPN")
-        self._wg_tab = self._create_tab("WireGuard")
+    def __init__(self, cmd, sudo=False, parent=None):
+        super().__init__(parent)
+        self.cmd = list(cmd)
+        self.sudo = sudo
+        self._proc = None
+        self._cancelled = False
 
-        self._tabs.addTab(self._ovpn_tab, "OpenVPN")
-        self._tabs.addTab(self._wg_tab, "WireGuard")
-
-        # Common actions
-        act_row = QHBoxLayout()
-        refresh_btn = QPushButton("Refresh")
-        refresh_btn.clicked.connect(self._refresh)
-        act_row.addWidget(refresh_btn)
-
-        add_ovpn = QPushButton("Add OpenVPN Profile")
-        add_ovpn.clicked.connect(lambda: self._add_profile("openvpn"))
-        act_row.addWidget(add_ovpn)
-
-        add_wg = QPushButton("Add WireGuard Profile")
-        add_wg.clicked.connect(lambda: self._add_profile("wireguard"))
-        act_row.addWidget(add_wg)
-
-        act_row.addStretch()
-        self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
-        act_row.addWidget(self._status)
-        root.addLayout(act_row)
-
-    def _create_tab(self, vpn_type):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        table = QTableWidget()
-        table.setColumnCount(4 if vpn_type == "OpenVPN" else 5)
-        if vpn_type == "OpenVPN":
-            table.setHorizontalHeaderLabels(["Profile", "Server", "Status", "Auth Type"])
-        else:
-            table.setHorizontalHeaderLabels(["Profile", "Interface", "Endpoint", "Status", "Handshake"])
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        table.setEditTriggers(QTableWidget.NoEditTriggers)
-        layout.addWidget(table)
-
-        btn_row = QHBoxLayout()
-        conn_btn = QPushButton("Connect")
-        conn_btn.clicked.connect(lambda: self._connect(vpn_type))
-        btn_row.addWidget(conn_btn)
-
-        disc_btn = QPushButton("Disconnect")
-        disc_btn.clicked.connect(lambda: self._disconnect(vpn_type))
-        btn_row.addWidget(disc_btn)
-
-        del_btn = QPushButton("Delete")
-        del_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
-        del_btn.clicked.connect(lambda: self._delete_profile(vpn_type))
-        btn_row.addWidget(del_btn)
-        layout.addLayout(btn_row)
-
-        if vpn_type == "OpenVPN":
-            self._ovpn_table = table
-        else:
-            self._wg_table = table
-        return tab
-
-    def _refresh(self):
-        self._load_openvpn()
-        self._load_wireguard()
-
-    def _load_openvpn(self):
-        self._ovpn_table.setRowCount(0)
-        profiles = glob.glob(os.path.join(OPENVPN_DIR, "*.ovpn"))
-        for prof in profiles:
-            name = os.path.basename(prof).replace(".ovpn", "")
-            # Parse server from ovpn file
-            server = ""
-            auth = "password"
+    def stop(self):
+        self._cancelled = True
+        if self._proc is not None:
             try:
-                with open(prof) as f:
-                    for line in f:
-                        if line.startswith("remote "):
-                            server = line.split()[1]
-                        elif "auth-user-pass" in line:
-                            auth = "user/pass"
-            except Exception:
+                self._proc.terminate()
+            except OSError:
                 pass
 
-            # Check if connected
-            status = "Disconnected"
-            try:
-                out, _ = run_cmd(["systemctl", "is-active", f"openvpn@{name}"])
-                if out == "active":
-                    status = "Connected"
-            except Exception:
-                pass
-
-            row = self._ovpn_table.rowCount()
-            self._ovpn_table.insertRow(row)
-            self._ovpn_table.setItem(row, 0, QTableWidgetItem(name))
-            self._ovpn_table.setItem(row, 1, QTableWidgetItem(server))
-            status_item = QTableWidgetItem(status)
-            status_item.setForeground(QBrush(QColor("#00ff88" if status == "Connected" else "#ff4444")))
-            self._ovpn_table.setItem(row, 2, status_item)
-            self._ovpn_table.setItem(row, 3, QTableWidgetItem(auth))
-
-    def _load_wireguard(self):
-        self._wg_table.setRowCount(0)
-        profiles = glob.glob(os.path.join(WIREGUARD_DIR, "*.conf"))
-        for prof in profiles:
-            name = os.path.basename(prof).replace(".conf", "")
-            interface = ""
-            endpoint = ""
-            status = "Disconnected"
-            handshake = ""
-            try:
-                with open(prof) as f:
-                    for line in f:
-                        if line.strip().startswith("Interface"):
-                            interface = name
-                        elif "Endpoint" in line:
-                            endpoint = line.split("=")[1].strip()
-            except Exception:
-                pass
-
-            out, _ = run_cmd(["wg", "show", name, "latest-handshakes"])
-            if out:
-                status = "Connected"
-                handshake = out.strip()
-
-            row = self._wg_table.rowCount()
-            self._wg_table.insertRow(row)
-            self._wg_table.setItem(row, 0, QTableWidgetItem(name))
-            self._wg_table.setItem(row, 1, QTableWidgetItem(interface or name))
-            self._wg_table.setItem(row, 2, QTableWidgetItem(endpoint))
-            status_item = QTableWidgetItem(status)
-            status_item.setForeground(QBrush(QColor("#00ff88" if status == "Connected" else "#ff4444")))
-            self._wg_table.setItem(row, 3, status_item)
-            self._wg_table.setItem(row, 4, QTableWidgetItem(handshake))
-
-    def _selected_profile(self, vpn_type):
-        table = self._ovpn_table if vpn_type == "openvpn" else self._wg_table
-        row = table.currentRow()
-        if row < 0:
-            QMessageBox.warning(self, "No Selection", "Select a profile first.")
-            return None
-        return table.item(row, 0).text()
-
-    def _connect(self, vpn_type):
-        name = self._selected_profile(vpn_type)
-        if not name:
-            return
-        if vpn_type == "openvpn":
-            self._run_cmd(["systemctl", "start", f"openvpn@{name}"], True, f"Connecting {name}...")
-        else:
-            self._run_cmd(["wg-quick", "up", name], True, f"Connecting {name}...")
-
-    def _disconnect(self, vpn_type):
-        name = self._selected_profile(vpn_type)
-        if not name:
-            return
-        if vpn_type == "openvpn":
-            self._run_cmd(["systemctl", "stop", f"openvpn@{name}"], True, f"Disconnecting {name}...")
-        else:
-            self._run_cmd(["wg-quick", "down", name], True, f"Disconnecting {name}...")
-
-    def _delete_profile(self, vpn_type):
-        name = self._selected_profile(vpn_type)
-        if not name:
-            return
-        if QMessageBox.question(self, "Delete", f"Delete profile {name}?", QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
-            return
-        if vpn_type == "openvpn":
-            os.remove(os.path.join(OPENVPN_DIR, f"{name}.ovpn"))
-        else:
-            os.remove(os.path.join(WIREGUARD_DIR, f"{name}.conf"))
-        self._refresh()
-
-    def _add_profile(self, vpn_type):
-        if vpn_type == "openvpn":
-            path, _ = QFileDialog.getOpenFileName(self, "Select OpenVPN Config", os.path.expanduser("~"), "OpenVPN (*.ovpn *.conf)")
-            if path:
-                dest = os.path.join(OPENVPN_DIR, os.path.basename(path))
-                import shutil
-                shutil.copy2(path, dest)
-                self._refresh()
-        else:
-            dlg = WGProfileDialog(self)
-            if dlg.exec_() == QDialog.Accepted:
-                vals = dlg.get_values()
-                content = f"""[Interface]
-PrivateKey = {vals['private_key']}
-Address = {vals['address']}
-DNS = {vals['dns']}
-
-[Peer]
-PublicKey = {vals['public_key']}
-Endpoint = {vals['endpoint']}
-AllowedIPs = {vals['allowed_ips']}
-PersistentKeepalive = {vals['keepalive']}
-"""
-                dest = os.path.join(WIREGUARD_DIR, f"{vals['name']}.conf")
-                with open(dest, "w") as f:
-                    f.write(content)
-                self._refresh()
-
-    def _run_cmd(self, cmd, sudo, msg):
-        self._status.setText(msg)
-        w = CmdWorker(cmd, sudo)
-        w.done.connect(lambda ok, out: self._cmd_done(ok, out, cmd))
-        w.start()
-        self._worker = w
-
-    def _cmd_done(self, ok, out, cmd):
-        if ok:
-            self._status.setText("Done")
-            self._refresh()
-        else:
-            self._status.setText(f"Failed: {out[:80]}")
-            QMessageBox.warning(self, "Error", out)
-        log_info(f"VPN cmd {' '.join(cmd)}: {'OK' if ok else 'FAIL'}")
+    def run(self):
+        is_root = os.geteuid() == 0 if hasattr(os, "geteuid") else False
+        full = (["pkexec"] if (self.sudo and not is_root) else []) + self.cmd
+        try:
+            self._proc = subprocess.Popen(
+                full, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            )
+            stdout, stderr = self._proc.communicate(timeout=30)
+            if not self._cancelled:
+                out = (stdout or "").strip() or (stderr or "").strip()
+                self.done.emit(self._proc.returncode == 0, out)
+        except Exception as e:
+            if not self._cancelled:
+                self.done.emit(False, str(e))
 
 
 class WGProfileDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Create WireGuard Profile")
-        self.setFixedSize(500, 380)
-        self.setStyleSheet("""
-            QWidget { background: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-            QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-            QLabel { color: #00ffff; }
-            QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px 12px; }
-        """)
+        self.setMinimumSize(500, 380)
+        vt.apply_app_theme(self)
 
         layout = QFormLayout(self)
         self._name = QLineEdit("wg0")
@@ -349,8 +128,10 @@ class WGProfileDialog(QDialog):
         layout.addRow(btns)
 
     def get_values(self):
+        raw_name = self._name.text().strip() or "wg0"
+        safe_name = re.sub(r"[^A-Za-z0-9_-]", "_", raw_name)
         return {
-            "name": self._name.text().strip() or "wg0",
+            "name": safe_name,
             "private_key": self._private_key.text().strip(),
             "address": self._address.text().strip(),
             "dns": self._dns.text().strip(),
@@ -361,17 +142,315 @@ class WGProfileDialog(QDialog):
         }
 
 
-class CmdWorker(QThread):
-    done = pyqtSignal(bool, str)
-
-    def __init__(self, cmd, sudo=False):
+class VPNManager(QWidget):
+    def __init__(self):
         super().__init__()
-        self.cmd = cmd
-        self.sudo = sudo
+        self.setWindowTitle("Vice OS — VPN Manager")
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(780, 480)
+        vt.apply_app_theme(self)
+        self._worker = None
+        self._init_dirs()
+        self._init_ui()
+        self._refresh()
+        self._timer = QTimer(self)
+        self._timer.setInterval(5000)
+        self._timer.timeout.connect(self._refresh)
+        self._timer.start()
 
-    def run(self):
-        out, ok = run_cmd(self.cmd, self.sudo)
-        self.done.emit(ok, out)
+    def _init_dirs(self):
+        os.makedirs(OPENVPN_DIR, exist_ok=True)
+        os.makedirs(WIREGUARD_DIR, exist_ok=True)
+
+    def _init_ui(self):
+        root = QVBoxLayout(self)
+
+        root.addWidget(vt.make_header(
+            "VPN Manager",
+            "OpenVPN & WireGuard profiles — connect, disconnect and inspect status",
+            icon_name="network-vpn",
+            badge_text="TUNNEL",
+            badge_variant="coral",
+            parent=self,
+        ))
+
+        self._tabs = QTabWidget()
+        root.addWidget(self._tabs)
+
+        self._ovpn_tab = self._create_tab("openvpn")
+        self._wg_tab = self._create_tab("wireguard")
+
+        self._tabs.addTab(self._ovpn_tab, "OpenVPN")
+        self._tabs.addTab(self._wg_tab, "WireGuard")
+
+        act_row = QHBoxLayout()
+        refresh_btn = vt.make_button("Refresh", "secondary", parent=self)
+        refresh_btn.clicked.connect(self._refresh)
+        act_row.addWidget(refresh_btn)
+
+        add_ovpn = vt.make_button("Add OpenVPN Profile", "primary", parent=self)
+        add_ovpn.clicked.connect(lambda: self._add_profile("openvpn"))
+        act_row.addWidget(add_ovpn)
+
+        add_wg = vt.make_button("Add WireGuard Profile", "primary", parent=self)
+        add_wg.clicked.connect(lambda: self._add_profile("wireguard"))
+        act_row.addWidget(add_wg)
+
+        act_row.addStretch()
+        self._status = QLabel("Ready")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
+        act_row.addWidget(self._status)
+        root.addLayout(act_row)
+
+    def _create_tab(self, vpn_type):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        table = QTableWidget()
+        table.setColumnCount(4 if vpn_type == "openvpn" else 5)
+        if vpn_type == "openvpn":
+            table.setHorizontalHeaderLabels(["Profile", "Server", "Status", "Auth Type"])
+        else:
+            table.setHorizontalHeaderLabels(["Profile", "Interface", "Endpoint", "Status", "Handshake"])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        layout.addWidget(table)
+
+        btn_row = QHBoxLayout()
+        conn_btn = vt.make_button("Connect", "primary", parent=tab)
+        conn_btn.clicked.connect(lambda: self._connect(vpn_type))
+        btn_row.addWidget(conn_btn)
+
+        disc_btn = vt.make_button("Disconnect", "secondary", parent=tab)
+        disc_btn.clicked.connect(lambda: self._disconnect(vpn_type))
+        btn_row.addWidget(disc_btn)
+
+        del_btn = vt.make_button("Delete", "danger", parent=tab)
+        del_btn.clicked.connect(lambda: self._delete_profile(vpn_type))
+        btn_row.addWidget(del_btn)
+        layout.addLayout(btn_row)
+
+        if vpn_type == "openvpn":
+            self._ovpn_table = table
+        else:
+            self._wg_table = table
+        return tab
+
+    def _refresh(self):
+        self._load_openvpn()
+        self._load_wireguard()
+
+    def _load_openvpn(self):
+        self._ovpn_table.setRowCount(0)
+        profiles = sorted(glob.glob(os.path.join(OPENVPN_DIR, "*.ovpn")))
+        for prof in profiles:
+            name = os.path.splitext(os.path.basename(prof))[0]
+            server = ""
+            auth = "certificate"
+            try:
+                with open(prof, encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        stripped = line.strip()
+                        if stripped.startswith("remote "):
+                            parts = stripped.split()
+                            if len(parts) >= 2:
+                                server = parts[1]
+                        elif "auth-user-pass" in stripped and not stripped.startswith(("#", ";")):
+                            auth = "user/pass"
+            except OSError:
+                pass
+
+            status = "Disconnected"
+            if _pid_alive(_ovpn_pid_file(name)):
+                status = "Connected"
+            else:
+                out, ok = run_cmd(["systemctl", "is-active", f"openvpn@{name}"])
+                if ok and out == "active":
+                    status = "Connected"
+
+            row = self._ovpn_table.rowCount()
+            self._ovpn_table.insertRow(row)
+            self._ovpn_table.setItem(row, 0, QTableWidgetItem(name))
+            self._ovpn_table.setItem(row, 1, QTableWidgetItem(server))
+            status_item = QTableWidgetItem(status)
+            status_item.setForeground(QBrush(QColor(
+                vt.COLORS["success"] if status == "Connected" else vt.COLORS["danger"]
+            )))
+            self._ovpn_table.setItem(row, 2, status_item)
+            self._ovpn_table.setItem(row, 3, QTableWidgetItem(auth))
+
+    def _load_wireguard(self):
+        self._wg_table.setRowCount(0)
+        profiles = sorted(glob.glob(os.path.join(WIREGUARD_DIR, "*.conf")))
+        for prof in profiles:
+            name = os.path.splitext(os.path.basename(prof))[0]
+            interface = name
+            endpoint = ""
+            status = "Disconnected"
+            handshake = ""
+            try:
+                with open(prof, encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        stripped = line.strip()
+                        if stripped.startswith(("#", ";")):
+                            continue
+                        if stripped.startswith("Endpoint") and "=" in stripped:
+                            endpoint = stripped.split("=", 1)[1].strip()
+            except OSError:
+                pass
+
+            if os.path.isdir(f"/sys/class/net/{name}"):
+                status = "Connected"
+            out, ok = run_cmd(["wg", "show", name, "latest-handshakes"])
+            if ok and out:
+                status = "Connected"
+                handshake = out.strip()
+
+            row = self._wg_table.rowCount()
+            self._wg_table.insertRow(row)
+            self._wg_table.setItem(row, 0, QTableWidgetItem(name))
+            self._wg_table.setItem(row, 1, QTableWidgetItem(interface))
+            self._wg_table.setItem(row, 2, QTableWidgetItem(endpoint))
+            status_item = QTableWidgetItem(status)
+            status_item.setForeground(QBrush(QColor(
+                vt.COLORS["success"] if status == "Connected" else vt.COLORS["danger"]
+            )))
+            self._wg_table.setItem(row, 3, status_item)
+            self._wg_table.setItem(row, 4, QTableWidgetItem(handshake))
+
+    def _selected_profile(self, vpn_type):
+        kind = vpn_type.lower()
+        table = self._ovpn_table if kind == "openvpn" else self._wg_table
+        row = table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "No Selection", "Select a profile first.")
+            return None
+        item = table.item(row, 0)
+        return item.text() if item else None
+
+    def _connect(self, vpn_type):
+        kind = vpn_type.lower()
+        name = self._selected_profile(kind)
+        if not name:
+            return
+        if kind == "openvpn":
+            prof = os.path.join(OPENVPN_DIR, f"{name}.ovpn")
+            etc_conf = f"/etc/openvpn/{name}.conf"
+            if os.path.exists(etc_conf):
+                cmd = ["systemctl", "start", f"openvpn@{name}"]
+            else:
+                pid_file = _ovpn_pid_file(name)
+                cmd = ["openvpn", "--config", prof, "--daemon", "--writepid", pid_file]
+            self._run_cmd(cmd, True, f"Connecting {name}...")
+        else:
+            conf = os.path.join(WIREGUARD_DIR, f"{name}.conf")
+            self._run_cmd(["wg-quick", "up", conf], True, f"Connecting {name}...")
+
+    def _disconnect(self, vpn_type):
+        kind = vpn_type.lower()
+        name = self._selected_profile(kind)
+        if not name:
+            return
+        if kind == "openvpn":
+            pid_file = _ovpn_pid_file(name)
+            if _pid_alive(pid_file):
+                cmd = [
+                    "sh", "-c",
+                    'kill "$(cat "$1")" 2>/dev/null || true; rm -f "$1"',
+                    "_", pid_file,
+                ]
+            else:
+                cmd = ["systemctl", "stop", f"openvpn@{name}"]
+            self._run_cmd(cmd, True, f"Disconnecting {name}...")
+        else:
+            conf = os.path.join(WIREGUARD_DIR, f"{name}.conf")
+            self._run_cmd(["wg-quick", "down", conf], True, f"Disconnecting {name}...")
+
+    def _delete_profile(self, vpn_type):
+        kind = vpn_type.lower()
+        name = self._selected_profile(kind)
+        if not name:
+            return
+        if QMessageBox.question(
+            self, "Delete", f"Delete profile {name}?",
+            QMessageBox.Yes | QMessageBox.No,
+        ) != QMessageBox.Yes:
+            return
+        target = (
+            os.path.join(OPENVPN_DIR, f"{name}.ovpn")
+            if kind == "openvpn"
+            else os.path.join(WIREGUARD_DIR, f"{name}.conf")
+        )
+        try:
+            os.remove(target)
+        except OSError as e:
+            QMessageBox.warning(self, "Delete Failed", str(e))
+        self._refresh()
+
+    def _add_profile(self, vpn_type):
+        kind = vpn_type.lower()
+        if kind == "openvpn":
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Select OpenVPN Config", os.path.expanduser("~"),
+                "OpenVPN (*.ovpn *.conf)",
+            )
+            if path:
+                base = os.path.splitext(os.path.basename(path))[0] + ".ovpn"
+                dest = os.path.join(OPENVPN_DIR, base)
+                try:
+                    shutil.copy2(path, dest)
+                    self._refresh()
+                except OSError as e:
+                    QMessageBox.warning(self, "Import Failed", str(e))
+        else:
+            dlg = WGProfileDialog(self)
+            if dlg.exec_() == QDialog.Accepted:
+                vals = dlg.get_values()
+                content = (
+                    "[Interface]\n"
+                    f"PrivateKey = {vals['private_key']}\n"
+                    f"Address = {vals['address']}\n"
+                    f"DNS = {vals['dns']}\n\n"
+                    "[Peer]\n"
+                    f"PublicKey = {vals['public_key']}\n"
+                    f"Endpoint = {vals['endpoint']}\n"
+                    f"AllowedIPs = {vals['allowed_ips']}\n"
+                    f"PersistentKeepalive = {vals['keepalive']}\n"
+                )
+                dest = os.path.join(WIREGUARD_DIR, f"{vals['name']}.conf")
+                try:
+                    with open(dest, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    os.chmod(dest, 0o600)
+                except OSError as e:
+                    QMessageBox.warning(self, "Save Failed", str(e))
+                self._refresh()
+
+    def _run_cmd(self, cmd, sudo, msg):
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.information(self, "Busy", "Another VPN operation is already running.")
+            return
+        self._status.setText(msg)
+        w = CmdWorker(cmd, sudo, parent=self)
+        w.done.connect(lambda ok, out: self._cmd_done(ok, out, cmd))
+        self._worker = w
+        w.start()
+
+    def _cmd_done(self, ok, out, cmd):
+        if ok:
+            self._status.setText("Done")
+            self._refresh()
+        else:
+            self._status.setText(f"Failed: {out[:80]}")
+            QMessageBox.warning(self, "Error", out or "VPN command failed.")
+        log_info(f"VPN cmd {' '.join(cmd)}: {'OK' if ok else 'FAIL'}")
+
+    def closeEvent(self, event):
+        self._timer.stop()
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(2500)
+        super().closeEvent(event)
 
 
 def main():

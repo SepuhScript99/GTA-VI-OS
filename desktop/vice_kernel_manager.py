@@ -1,39 +1,41 @@
 #!/usr/bin/env python3
 """Vice OS — Kernel Manager. List installed kernels, running kernel, purge old."""
 
-import sys
 import os
-import subprocess
 import re
-
-sys.path.insert(0, '/opt/vice-os/lib')
+import shutil
+import subprocess
+import sys
 
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QMessageBox, QProgressBar, QPlainTextEdit
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QBrush
+from PyQt5.QtGui import QColor, QBrush
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from python.vice_utils import log_info  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    make_button,
+    make_header,
+)
 
 WINDOW_WIDTH = 960
-WINDOW_HEIGHT = 580
+WINDOW_HEIGHT = 600
 
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QPlainTextEdit { background: #0d0d0d; color: #aaffff; border: 1px solid #1a4a4a; font-size: 11px; }
-QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; text-align: center; color: #00ffff; }
-QProgressBar::chunk { background: #00ffff; }
-QLabel { color: #00ffff; }
-"""
+
+def _priv_cmd(cmd):
+    is_root = os.geteuid() == 0 if hasattr(os, "geteuid") else False
+    if not is_root and shutil.which("pkexec"):
+        return ["pkexec"] + list(cmd)
+    return list(cmd)
 
 
 def run_cmd(cmd, timeout=15):
@@ -57,7 +59,7 @@ def get_installed_kernels():
         parts = line.split()
         if len(parts) < 3 or parts[0] != "ii":
             continue
-        pkg, version = parts[1], parts[2]
+        pkg = parts[1]
         m = re.match(r"linux-(image|headers)-(\d+\.\d+\.\d+[\w.-]*)", pkg)
         if m:
             kernels.add(m.group(2))
@@ -86,36 +88,57 @@ def fmt_size(kb):
 
 
 class KernelWorker(QThread):
-    """Remove old kernel packages (image + headers)."""
+    """Run privileged kernel actions (purge or GRUB update) off the UI thread."""
     line = pyqtSignal(str)
     finished = pyqtSignal(bool)
 
-    def __init__(self, version):
+    def __init__(self, cmd):
         super().__init__()
-        self._version = version
+        self._cmd = list(cmd)
+        self._stopped = False
+        self._proc = None
+
+    def stop(self):
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def run(self):
-        pkgs = [f"linux-image-{self._version}", f"linux-headers-{self._version}"]
-        cmd = ["sudo", "apt", "purge", "-y"] + pkgs
-        self.line.emit("$ " + " ".join(cmd))
+        self.line.emit("$ " + " ".join(self._cmd))
         try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, text=True)
-            for line in proc.stdout:
+            self._proc = subprocess.Popen(
+                self._cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+            for line in self._proc.stdout:
+                if self._stopped:
+                    break
                 self.line.emit(line.rstrip())
-            proc.wait()
-            self.finished.emit(proc.returncode == 0)
+            self._proc.wait()
+            if not self._stopped:
+                self.finished.emit(self._proc.returncode == 0)
         except Exception as e:
-            self.line.emit(f"Error: {e}")
-            self.finished.emit(False)
+            if not self._stopped:
+                self.line.emit(f"Error: {e}")
+                self.finished.emit(False)
+        finally:
+            self._proc = None
 
 
 class KernelManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Kernel Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(760, 480)
+        apply_app_theme(self)
         self._worker = None
         self._kernels = []
         self._running = ""
@@ -124,42 +147,43 @@ class KernelManager(QWidget):
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 14)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — Kernel Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        header = make_header(
+            title="Kernel Manager",
+            subtitle="Inspect installed Linux kernels, GRUB default entry, and safely remove old kernels",
+            icon_name="applications-system",
+            badge_text="KERNEL",
+            badge_variant="aqua",
+            parent=self,
+        )
+        root.addWidget(header)
 
-        # Running kernel banner
         self._running_label = QLabel("Running: ...")
-        self._running_label.setFont(QFont("monospace", 11, QFont.Bold))
-        self._running_label.setStyleSheet("color: #00ff88; margin: 4px;")
+        self._running_label.setStyleSheet(f"color: {COLORS['success']}; font-weight: bold;")
         root.addWidget(self._running_label)
 
-        # Kernel table
         self._table = QTableWidget()
         self._table.setColumnCount(4)
         self._table.setHorizontalHeaderLabels(["Version", "Status", "Packages Size", "Boot Default"])
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        for i in [1, 2, 3]:
+        for i in (1, 2, 3):
             self._table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeToContents)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
         root.addWidget(self._table, 1)
 
-        # Buttons
         btn_row = QHBoxLayout()
-        refresh_btn = QPushButton("↻ Refresh")
+        refresh_btn = make_button("Refresh", variant="secondary", parent=self)
         refresh_btn.clicked.connect(self._refresh)
         btn_row.addWidget(refresh_btn)
 
-        set_default_btn = QPushButton("Set as Boot Default")
+        set_default_btn = make_button("Set as Boot Default", variant="primary", parent=self)
         set_default_btn.clicked.connect(self._set_default)
         btn_row.addWidget(set_default_btn)
 
-        remove_btn = QPushButton("Remove Selected Kernel")
-        remove_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        remove_btn = make_button("Remove Selected Kernel", variant="danger", parent=self)
         remove_btn.clicked.connect(self._remove_selected)
         btn_row.addWidget(remove_btn)
         btn_row.addStretch()
@@ -176,7 +200,7 @@ class KernelManager(QWidget):
         root.addWidget(self._log)
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setObjectName("MutedLabel")
         root.addWidget(self._status)
 
     def _refresh(self):
@@ -184,12 +208,12 @@ class KernelManager(QWidget):
         self._running_label.setText(f"Running: {self._running or 'unknown'}")
         self._kernels = get_installed_kernels()
 
-        # Boot default from GRUB
         default_kernel = ""
-        out, _ = run_cmd(["grub-editenv", "list"])
-        for line in out.splitlines():
-            if line.startswith("kernel="):
-                default_kernel = line.split("=", 1)[1].split()[0].replace("/boot/vmlinuz-", "")
+        if shutil.which("grub-editenv"):
+            out, _ = run_cmd(["grub-editenv", "list"])
+            for line in out.splitlines():
+                if line.startswith("saved_entry=") or line.startswith("kernel="):
+                    default_kernel = line.split("=", 1)[1].strip()
 
         self._table.setRowCount(0)
         for kern in self._kernels:
@@ -198,11 +222,11 @@ class KernelManager(QWidget):
             self._table.setItem(row, 0, QTableWidgetItem(kern))
 
             if kern == self._running:
-                status = "● RUNNING"
-                color = "#00ff88"
+                status = "RUNNING"
+                color = COLORS["success"]
             else:
                 status = "Installed"
-                color = "#888888"
+                color = COLORS["text_muted"]
             status_item = QTableWidgetItem(status)
             status_item.setForeground(QBrush(QColor(color)))
             self._table.setItem(row, 1, status_item)
@@ -210,10 +234,10 @@ class KernelManager(QWidget):
             size = kernel_size(kern)
             self._table.setItem(row, 2, QTableWidgetItem(fmt_size(size) if size else "—"))
 
-            is_default = (default_kernel and kern in default_kernel) or kern == self._running
+            is_default = (default_kernel and kern in default_kernel) or (not default_kernel and kern == self._running)
             default_item = QTableWidgetItem("Yes" if is_default else "No")
             if is_default:
-                default_item.setForeground(QBrush(QColor("#ff00ff")))
+                default_item.setForeground(QBrush(QColor(COLORS["accent_peach"])))
             self._table.setItem(row, 3, default_item)
 
         self._status.setText(f"{len(self._kernels)} kernel(s) installed")
@@ -225,31 +249,40 @@ class KernelManager(QWidget):
             return None
         return self._kernels[row]
 
+    def _run_worker(self, cmd, slot):
+        if self._worker is not None and self._worker.isRunning():
+            self._status.setText("Another operation is already running...")
+            return
+        self._progress.setVisible(True)
+        self._worker = KernelWorker(cmd)
+        self._worker.line.connect(self._log.appendPlainText)
+        self._worker.finished.connect(slot)
+        self._worker.start()
+
     def _set_default(self):
         kern = self._selected_kernel()
         if not kern:
             return
         if QMessageBox.question(
             self, "Set Default",
-            f"Set kernel {kern} as default for next boot?\n"
-            f"(Updates GRUB and regenerates config)",
+            f"Set kernel {kern} as default for next boot?\n(Updates GRUB saved_entry and regenerates config)",
             QMessageBox.Yes | QMessageBox.No
         ) != QMessageBox.Yes:
             return
-        self._progress.setVisible(True)
-        self._log.appendPlainText(f"$ grub-set-default 0 (with GRUB_DEFAULT=standard index for {kern})")
-        # Pin specific kernel via grub-editenv saved_entry
-        out, ok = run_cmd(["sudo", "grub-editenv", "set", "saved_entry=Advanced options for GNU/Linux>GNU/Linux, with Linux " + kern])
-        # Also update GRUB config default
-        out2, ok2 = run_cmd(["sudo", "update-grub"], timeout=60)
+        entry = f"Advanced options for GNU/Linux>GNU/Linux, with Linux {kern}"
+        cmd = _priv_cmd(["bash", "-c", 'grub-editenv - set "saved_entry=$1" && update-grub', "vice-kernel", entry])
+        self._status.setText(f"Updating GRUB default to {kern}...")
+        self._run_worker(cmd, lambda ok: self._default_done(ok, kern))
+
+    def _default_done(self, ok, kern):
         self._progress.setVisible(False)
-        if ok and ok2:
+        if ok:
             self._status.setText(f"Default set to {kern}")
             self._log.appendPlainText("[OK] GRUB updated")
             log_info(f"Kernel default set: {kern}")
         else:
             self._status.setText("Failed to set default")
-            self._log.appendPlainText(f"[FAIL] {out2[:200] or out[:200]}")
+            self._log.appendPlainText("[FAIL] Check output log")
         self._refresh()
 
     def _remove_selected(self):
@@ -257,8 +290,10 @@ class KernelManager(QWidget):
         if not kern:
             return
         if kern == self._running:
-            QMessageBox.warning(self, "Cannot Remove",
-                                f"Kernel {kern} is currently RUNNING and cannot be removed.")
+            QMessageBox.warning(
+                self, "Cannot Remove",
+                f"Kernel {kern} is currently RUNNING and cannot be removed."
+            )
             return
         if len(self._kernels) <= 1:
             QMessageBox.warning(self, "Cannot Remove", "At least one kernel must remain installed.")
@@ -266,26 +301,31 @@ class KernelManager(QWidget):
         if QMessageBox.question(
             self, "Remove Kernel",
             f"Remove kernel {kern}?\nThis purges linux-image-{kern} and linux-headers-{kern}.\n"
-            "This action requires sudo and cannot be undone easily.",
+            "This action requires administrator privileges.",
             QMessageBox.Yes | QMessageBox.No
         ) != QMessageBox.Yes:
             return
-        self._progress.setVisible(True)
-        self._worker = KernelWorker(kern)
-        self._worker.line.connect(self._log.appendPlainText)
-        self._worker.finished.connect(self._remove_done)
-        self._worker.start()
+        pkgs = [f"linux-image-{kern}", f"linux-headers-{kern}"]
+        cmd = _priv_cmd(["bash", "-c", 'DEBIAN_FRONTEND=noninteractive apt-get purge -y "$@" && update-grub', "vice-kernel"] + pkgs)
+        self._status.setText(f"Removing kernel {kern}...")
+        self._run_worker(cmd, self._remove_done)
 
     def _remove_done(self, ok):
         self._progress.setVisible(False)
         if ok:
             self._status.setText("Kernel removed")
-            self._log.appendPlainText("[OK] Kernel purged — updating GRUB")
-            run_cmd(["sudo", "update-grub"], timeout=60)
+            self._log.appendPlainText("[OK] Kernel purged and GRUB updated")
             log_info("Old kernel removed")
         else:
             self._status.setText("Removal failed — check log")
         self._refresh()
+
+    def closeEvent(self, event):
+        if self._worker is not None:
+            self._worker.stop()
+            if self._worker.isRunning():
+                self._worker.wait(2500)
+        event.accept()
 
 
 def main():

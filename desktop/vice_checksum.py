@@ -1,55 +1,45 @@
 #!/usr/bin/env python3
 """Vice OS — Checksum Verifier. Compute/verify MD5, SHA1, SHA256, SHA512 for any file."""
 
-import sys
-import os
 import hashlib
-import datetime
-
-sys.path.insert(0, '/opt/vice-os/lib')
+import os
+import sys
 
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QLineEdit, QComboBox, QGroupBox, QPlainTextEdit, QFileDialog,
     QMessageBox, QProgressBar, QTabWidget
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-WINDOW_WIDTH = 820
-WINDOW_HEIGHT = 580
+from python.vice_utils import log_info, log_error  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    make_button,
+    make_header,
+)
 
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QGroupBox { border: 1px solid #00ffff; margin-top: 10px; padding: 8px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QPlainTextEdit { background: #0d0d0d; color: #aaffff; border: 1px solid #1a4a4a; font-size: 11px; }
-QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; text-align: center; color: #00ffff; }
-QProgressBar::chunk { background: #00ffff; }
-QTabBar::tab { background: #1a1a1a; color: #00ffff; padding: 6px 14px; }
-QTabBar::tab:selected { background: #00ffff; color: #0a0a0a; }
-QTabWidget::pane { border: 1px solid #00ffff; }
-QLabel { color: #00ffff; }
-"""
+WINDOW_WIDTH = 840
+WINDOW_HEIGHT = 600
 
 CHUNK = 1024 * 1024
 ALGOS = ["SHA256", "SHA512", "SHA1", "MD5"]
 
 
-def hash_file(path, algo, progress_cb=None):
+def hash_file(path, algo, progress_cb=None, stop_cb=None):
     """Hash a file in chunks, reporting progress. Returns hex digest."""
     h = hashlib.new(algo.lower())
     total = os.path.getsize(path)
     done = 0
     with open(path, "rb") as f:
         while True:
+            if stop_cb and stop_cb():
+                return ""
             chunk = f.read(CHUNK)
             if not chunk:
                 break
@@ -68,85 +58,96 @@ class HashWorker(QThread):
         super().__init__()
         self._path = path
         self._algo = algo
+        self._stopped = False
+
+    def stop(self):
+        self._stopped = True
 
     def run(self):
         try:
-            digest = hash_file(self._path, self._algo,
-                               lambda p: self.progress.emit(p))
-            self.finished.emit(digest)
+            digest = hash_file(
+                self._path,
+                self._algo,
+                lambda p: self.progress.emit(p),
+                lambda: self._stopped,
+            )
+            if not self._stopped:
+                self.finished.emit(digest)
         except Exception as e:
-            self.finished.emit(f"ERROR: {e}")
+            if not self._stopped:
+                self.finished.emit(f"ERROR: {e}")
 
 
 class ChecksumVerifier(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Checksum Verifier")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(680, 500)
+        apply_app_theme(self)
         self._worker = None
         self._computed = ""
         self._init_ui()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 14)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — Checksum Verifier")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        header = make_header(
+            title="Checksum Verifier",
+            subtitle="Compute MD5/SHA digests and batch-verify SHA256SUMS manifest files",
+            icon_name="document-properties",
+            badge_text="HASHES",
+            badge_variant="aqua",
+            parent=self,
+        )
+        root.addWidget(header)
 
-        # File selection
         file_box = QGroupBox("File")
         fl = QHBoxLayout(file_box)
         self._file_edit = QLineEdit()
         self._file_edit.setPlaceholderText("/path/to/file or ISO")
         fl.addWidget(self._file_edit, 1)
-        browse_btn = QPushButton("Browse...")
+        browse_btn = make_button("Browse...", variant="secondary", parent=self)
         browse_btn.clicked.connect(self._browse)
         fl.addWidget(browse_btn)
         root.addWidget(file_box)
 
-        # Algorithm
         algo_row = QHBoxLayout()
         algo_row.addWidget(QLabel("Algorithm:"))
         self._algo_combo = QComboBox()
         self._algo_combo.addItems(ALGOS)
         algo_row.addWidget(self._algo_combo)
 
-        compute_btn = QPushButton("Compute")
-        compute_btn.setStyleSheet("QPushButton { border-color: #ff00ff; color: #ff00ff; } QPushButton:hover { background: #ff00ff; color: #0a0a0a; }")
+        compute_btn = make_button("Compute", variant="primary", parent=self)
         compute_btn.clicked.connect(self._compute)
         algo_row.addWidget(compute_btn)
         algo_row.addStretch()
         root.addLayout(algo_row)
 
-        # Progress
         self._progress = QProgressBar()
         self._progress.setRange(0, 100)
         self._progress.setVisible(False)
         root.addWidget(self._progress)
 
-        # Result
         res_box = QGroupBox("Computed Checksum")
         rl = QVBoxLayout(res_box)
         self._result_edit = QLineEdit()
         self._result_edit.setReadOnly(True)
         self._result_edit.setStyleSheet("font-size: 11px;")
         rl.addWidget(self._result_edit)
-        copy_btn = QPushButton("Copy to Clipboard")
+        copy_btn = make_button("Copy to Clipboard", variant="secondary", parent=self)
         copy_btn.clicked.connect(self._copy)
         rl.addWidget(copy_btn)
         root.addWidget(res_box)
 
-        # Verify
         ver_box = QGroupBox("Verify Against Expected")
         vl = QHBoxLayout(ver_box)
         self._expected_edit = QLineEdit()
         self._expected_edit.setPlaceholderText("Paste expected checksum here...")
         vl.addWidget(self._expected_edit, 1)
-        verify_btn = QPushButton("Verify")
+        verify_btn = make_button("Verify", variant="primary", parent=self)
         verify_btn.clicked.connect(self._verify)
         vl.addWidget(verify_btn)
         root.addWidget(ver_box)
@@ -156,7 +157,6 @@ class ChecksumVerifier(QWidget):
         self._verify_result.setStyleSheet("font-size: 13px; font-weight: bold;")
         root.addWidget(self._verify_result)
 
-        # SHA256SUMS tab-style batch verify
         tabs = QTabWidget()
         root.addWidget(tabs, 1)
 
@@ -167,10 +167,10 @@ class ChecksumVerifier(QWidget):
         self._batch_edit.setPlaceholderText("Select a SHA256SUMS file...")
         bl.addWidget(self._batch_edit)
         batch_btns = QHBoxLayout()
-        sums_btn = QPushButton("Select SHA256SUMS File")
+        sums_btn = make_button("Select SHA256SUMS File", variant="secondary", parent=self)
         sums_btn.clicked.connect(self._browse_sums)
         batch_btns.addWidget(sums_btn)
-        run_batch_btn = QPushButton("Verify All")
+        run_batch_btn = make_button("Verify All", variant="primary", parent=self)
         run_batch_btn.clicked.connect(self._run_batch)
         batch_btns.addWidget(run_batch_btn)
         batch_btns.addStretch()
@@ -181,7 +181,7 @@ class ChecksumVerifier(QWidget):
         tabs.addTab(batch_tab, "Batch Verify (SHA256SUMS)")
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setObjectName("MutedLabel")
         root.addWidget(self._status)
 
     def _browse(self):
@@ -197,6 +197,8 @@ class ChecksumVerifier(QWidget):
             self._batch_edit.setText(path)
 
     def _compute(self):
+        if self._worker is not None and self._worker.isRunning():
+            return
         path = self._file_edit.text().strip()
         if not os.path.isfile(path):
             QMessageBox.warning(self, "Invalid File", "Select a valid file first.")
@@ -237,12 +239,12 @@ class ChecksumVerifier(QWidget):
             QMessageBox.warning(self, "Missing Expected", "Paste the expected checksum.")
             return
         if expected == self._computed:
-            self._verify_result.setText("✓ MATCH — checksum verified")
-            self._verify_result.setStyleSheet("color: #00ff88; font-size: 13px; font-weight: bold;")
+            self._verify_result.setText("[MATCH] Checksum verified")
+            self._verify_result.setStyleSheet(f"color: {COLORS['success']}; font-size: 13px; font-weight: bold;")
             log_info("Checksum verified: MATCH")
         else:
-            self._verify_result.setText("✗ MISMATCH — file corrupted or altered")
-            self._verify_result.setStyleSheet("color: #ff4444; font-size: 13px; font-weight: bold;")
+            self._verify_result.setText("[MISMATCH] File corrupted or altered")
+            self._verify_result.setStyleSheet(f"color: {COLORS['danger']}; font-size: 13px; font-weight: bold;")
             log_error("Checksum MISMATCH")
 
     def _run_batch(self):
@@ -255,7 +257,7 @@ class ChecksumVerifier(QWidget):
         passed = failed = missing = 0
 
         try:
-            with open(sums_path) as f:
+            with open(sums_path, encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
         except Exception as e:
             QMessageBox.warning(self, "Read Failed", str(e))
@@ -287,10 +289,17 @@ class ChecksumVerifier(QWidget):
                 self._batch_log.appendPlainText(f"[ERROR] {filename}: {e}")
                 failed += 1
 
-        summary = f"\n{'='*50}\n{passed} passed | {failed} failed | {missing} missing"
+        summary = f"\n{'=' * 50}\n{passed} passed | {failed} failed | {missing} missing"
         self._batch_log.appendPlainText(summary)
         self._status.setText(f"Batch: {passed} pass, {failed} fail, {missing} missing")
-        log_info(f"Batch checksum verify: {passed}/{passed+failed+missing} passed")
+        log_info(f"Batch checksum verify: {passed}/{passed + failed + missing} passed")
+
+    def closeEvent(self, event):
+        if self._worker is not None:
+            self._worker.stop()
+            if self._worker.isRunning():
+                self._worker.wait(2500)
+        event.accept()
 
 
 def main():

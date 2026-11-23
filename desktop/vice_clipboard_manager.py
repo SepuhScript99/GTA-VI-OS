@@ -4,38 +4,29 @@ GTA VI OS (Vice OS) Clipboard Manager (CLI Backend)
 Legacy clipboard viewer with xclip/xsel integration.
 """
 
-import sys
-import os
-import json
 import datetime
+import json
+import os
+import shutil
 import subprocess
+import sys
+
+from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtGui import QColor
+from PyQt5.QtWidgets import (
+    QAbstractItemView, QApplication, QHBoxLayout, QLabel, QLineEdit,
+    QListWidget, QListWidgetItem, QMessageBox, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QListWidget, QListWidgetItem, QLineEdit, QMessageBox, QAbstractItemView
-)
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont, QColor
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 680
-WINDOW_HEIGHT = 560
+WINDOW_HEIGHT = 580
 HISTORY_FILE = os.path.expanduser("~/.local/share/vice-os/clipboard_history.json")
 MAX_ITEMS = 200
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QListWidget { background: #0d0d0d; color: #00ffff; border: 1px solid #00ffff; font-size: 11px; }
-QListWidget::item:selected { background: #00ffff; color: #0a0a0a; }
-QListWidget::item:hover { background: #1a1a1a; }
-QLabel { color: #00ffff; }
-"""
 
 
 def load_history():
@@ -58,59 +49,65 @@ def save_history(entries):
 
 
 def get_clipboard():
-    try:
-        r = subprocess.run(["xclip", "-selection", "clipboard", "-o"],
-                           capture_output=True, text=True, timeout=2)
-        return r.stdout
-    except Exception:
-        try:
-            r = subprocess.run(["xsel", "--clipboard", "--output"],
-                               capture_output=True, text=True, timeout=2)
-            return r.stdout
-        except Exception:
-            cb = QApplication.clipboard()
-            return cb.text() if cb is not None else ""
+    cb = QApplication.clipboard()
+    if cb is not None:
+        text = cb.text()
+        if text:
+            return text
+    for cmd in (["xclip", "-selection", "clipboard", "-o"], ["xsel", "--clipboard", "--output"]):
+        if shutil.which(cmd[0]):
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=2)
+                if r.returncode == 0:
+                    return r.stdout
+            except Exception:
+                pass
+    return ""
 
 
 def set_clipboard(text):
-    try:
-        proc = subprocess.Popen(["xclip", "-selection", "clipboard"],
-                                stdin=subprocess.PIPE)
-        proc.communicate(text.encode())
-    except Exception:
-        try:
-            proc = subprocess.Popen(["xsel", "--clipboard", "--input"],
-                                    stdin=subprocess.PIPE)
-            proc.communicate(text.encode())
-        except Exception:
-            cb = QApplication.clipboard()
-            if cb is not None:
-                cb.setText(text)
+    cb = QApplication.clipboard()
+    if cb is not None:
+        cb.setText(text)
+    for cmd in (["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]):
+        if shutil.which(cmd[0]):
+            try:
+                proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+                proc.communicate(text.encode(), timeout=2)
+                return
+            except Exception:
+                pass
 
 
 class ClipboardManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Clipboard Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(520, 440)
+        vt.apply_app_theme(self)
         self._entries = load_history()
         self._last_clip = ""
         self._init_ui()
         self._populate()
-        self._timer = QTimer()
+        self._timer = QTimer(self)
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._poll_clipboard)
         self._timer.start()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — Clipboard Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 4px;")
-        root.addWidget(title)
+        root.addWidget(vt.make_header(
+            "Clipboard Manager",
+            "Monitor and restore recent clipboard entries across X11 and Qt",
+            icon_name="edit-paste",
+            badge_text="Live",
+            badge_variant="aqua",
+            parent=self,
+        ))
 
         search_row = QHBoxLayout()
         search_row.addWidget(QLabel("Search:"))
@@ -123,46 +120,46 @@ class ClipboardManager(QWidget):
         self._list = QListWidget()
         self._list.setSelectionMode(QAbstractItemView.SingleSelection)
         self._list.itemDoubleClicked.connect(self._paste_selected)
-        root.addWidget(self._list)
+        root.addWidget(self._list, 1)
 
-        # Preview
         self._preview = QLabel("")
         self._preview.setWordWrap(True)
-        self._preview.setMaximumHeight(60)
-        self._preview.setStyleSheet("color: #888; font-size: 10px; border: 1px solid #333; padding: 4px;")
+        self._preview.setMaximumHeight(64)
+        self._preview.setStyleSheet(
+            f"color: {vt.COLORS['text_secondary']}; font-size: 11px; "
+            f"border: 1px solid {vt.COLORS['border']}; border-radius: 6px; padding: 6px; "
+            f"background: {vt.COLORS['bg_surface']};"
+        )
         self._list.currentItemChanged.connect(self._update_preview)
         root.addWidget(self._preview)
 
         btn_row = QHBoxLayout()
-        paste_btn = QPushButton("Copy to Clipboard")
+        paste_btn = vt.make_button("Copy to Clipboard", variant="primary", parent=self)
         paste_btn.clicked.connect(self._paste_selected)
         btn_row.addWidget(paste_btn)
 
-        pin_btn = QPushButton("Pin / Unpin")
+        pin_btn = vt.make_button("Pin / Unpin", variant="secondary", parent=self)
         pin_btn.clicked.connect(self._toggle_pin)
         btn_row.addWidget(pin_btn)
 
-        del_btn = QPushButton("Delete")
-        del_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        del_btn = vt.make_button("Delete", variant="secondary", parent=self)
         del_btn.clicked.connect(self._delete_selected)
         btn_row.addWidget(del_btn)
 
-        clear_btn = QPushButton("Clear All")
-        clear_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        clear_btn = vt.make_button("Clear All", variant="danger", parent=self)
         clear_btn.clicked.connect(self._clear_all)
         btn_row.addWidget(clear_btn)
         root.addLayout(btn_row)
 
         self._status = QLabel(f"{len(self._entries)} item(s)")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         root.addWidget(self._status)
 
     def _poll_clipboard(self):
         text = get_clipboard()
         if text and text != self._last_clip and text.strip():
             self._last_clip = text
-            # Don't duplicate
-            existing = [e["text"] for e in self._entries]
+            existing = [e.get("text") for e in self._entries]
             if text not in existing:
                 self._entries.append({
                     "text": text,
@@ -175,20 +172,22 @@ class ClipboardManager(QWidget):
     def _populate(self):
         search = self._search.text().lower()
         self._list.clear()
-        # Pinned first
-        sorted_entries = sorted(self._entries, key=lambda e: (not e.get("pinned"), e.get("ts", "")), reverse=False)
-        sorted_entries = list(reversed(sorted_entries))
+        sorted_entries = sorted(
+            self._entries,
+            key=lambda e: (bool(e.get("pinned")), e.get("ts") or e.get("timestamp") or ""),
+            reverse=True,
+        )
         for entry in sorted_entries:
-            text = entry["text"]
+            text = entry.get("text", "")
             if search and search not in text.lower():
                 continue
             preview = text.replace("\n", " ")[:80]
-            pinned = "📌 " if entry.get("pinned") else ""
-            ts = entry.get("ts", "")[:16]
+            pinned = "[PIN] " if entry.get("pinned") else ""
+            ts = (entry.get("ts") or entry.get("timestamp") or "")[:16]
             item = QListWidgetItem(f"{pinned}[{ts}]  {preview}")
             item.setData(Qt.UserRole, entry)
             if entry.get("pinned"):
-                item.setForeground(QColor("#ff00ff"))
+                item.setForeground(QColor(vt.COLORS["accent_peach"]))
             self._list.addItem(item)
         self._status.setText(f"{len(self._entries)} item(s)")
 
@@ -197,7 +196,11 @@ class ClipboardManager(QWidget):
             return
         entry = current.data(Qt.UserRole)
         if entry:
-            self._preview.setText(entry["text"][:300])
+            self._preview.setText(entry.get("text", "")[:300])
+
+    def closeEvent(self, event):
+        self._timer.stop()
+        super().closeEvent(event)
 
     def _selected_entry(self):
         item = self._list.currentItem()

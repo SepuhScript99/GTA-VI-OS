@@ -4,40 +4,27 @@ GTA VI OS (Vice OS) Clipboard History Manager
 Tracks clipboard history with pinning, persistent storage, search, and context menu actions.
 """
 
-import sys
-import os
-import json
 import datetime
+import json
+import os
+import sys
+
+from PyQt5.QtCore import QObject, QTimer, Qt, pyqtSignal
+from PyQt5.QtGui import QColor
+from PyQt5.QtWidgets import (
+    QAbstractItemView, QApplication, QHBoxLayout, QLabel, QLineEdit,
+    QListWidget, QListWidgetItem, QMenu, QMessageBox, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QListWidget, QListWidgetItem, QLineEdit, QMessageBox, QAbstractItemView,
-    QMenu, QAction
-)
-from PyQt5.QtCore import Qt, QObject, QTimer, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QClipboard
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
-from python.vice_utils import log_info, log_error
-
-WINDOW_WIDTH = 620
+WINDOW_WIDTH = 640
 WINDOW_HEIGHT = 600
 HISTORY_FILE = os.path.expanduser("~/.local/share/vice-os/clipboard_history.json")
 MAX_ENTRIES = 200
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QListWidget { background: #0d0d0d; color: #00ffff; border: 1px solid #00ffff; font-size: 11px; }
-QListWidget::item { padding: 4px; border-bottom: 1px solid #1a1a1a; }
-QListWidget::item:selected { background: #00ffff; color: #0a0a0a; }
-QLabel { color: #00ffff; }
-QMenu { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; }
-QMenu::item:selected { background: #00ffff; color: #0a0a0a; }
-"""
 
 
 def load_history():
@@ -78,7 +65,10 @@ class ClipboardWatcher(QObject):
         self._timer.stop()
 
     def _check(self):
-        text = self._app.clipboard().text()
+        cb = self._app.clipboard()
+        if cb is None:
+            return
+        text = cb.text()
         if text and text != self._last:
             self._last = text
             self.new_content.emit(text)
@@ -88,8 +78,9 @@ class ClipboardManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Clipboard Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(480, 440)
+        vt.apply_app_theme(self)
         self._entries = load_history()
         self._watcher = None
         self._init_ui()
@@ -98,12 +89,17 @@ class ClipboardManager(QWidget):
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — Clipboard Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        root.addWidget(vt.make_header(
+            "Clipboard Manager",
+            "Search, pin, and restore copied clipboard history",
+            icon_name="edit-paste",
+            badge_text="History",
+            badge_variant="peach",
+            parent=self,
+        ))
 
         search_row = QHBoxLayout()
         search_row.addWidget(QLabel("Search:"))
@@ -118,29 +114,28 @@ class ClipboardManager(QWidget):
         self._list.itemDoubleClicked.connect(self._paste_item)
         self._list.setContextMenuPolicy(Qt.CustomContextMenu)
         self._list.customContextMenuRequested.connect(self._context_menu)
-        root.addWidget(self._list)
+        root.addWidget(self._list, 1)
 
         btn_row = QHBoxLayout()
-        paste_btn = QPushButton("Paste Selected")
+        paste_btn = vt.make_button("Paste Selected", variant="primary", parent=self)
         paste_btn.clicked.connect(self._paste_selected)
         btn_row.addWidget(paste_btn)
 
-        pin_btn = QPushButton("Pin / Unpin")
+        pin_btn = vt.make_button("Pin / Unpin", variant="secondary", parent=self)
         pin_btn.clicked.connect(self._toggle_pin)
         btn_row.addWidget(pin_btn)
 
-        del_btn = QPushButton("Delete")
+        del_btn = vt.make_button("Delete", variant="secondary", parent=self)
         del_btn.clicked.connect(self._delete_selected)
         btn_row.addWidget(del_btn)
 
-        clear_btn = QPushButton("Clear All")
-        clear_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        clear_btn = vt.make_button("Clear All", variant="danger", parent=self)
         clear_btn.clicked.connect(self._clear_all)
         btn_row.addWidget(clear_btn)
         root.addLayout(btn_row)
 
         self._status = QLabel(f"{len(self._entries)} item(s)")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         root.addWidget(self._status)
 
     def _populate(self):
@@ -153,11 +148,11 @@ class ClipboardManager(QWidget):
             if search and search not in text.lower():
                 continue
             preview = text.replace("\n", " ").replace("\t", " ")[:80]
-            label = f"📌 {preview}" if entry.get("pinned") else preview
+            label = f"[PIN] {preview}" if entry.get("pinned") else preview
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, entry)
             if entry.get("pinned"):
-                item.setForeground(QColor("#ff00ff"))
+                item.setForeground(QColor(vt.COLORS["accent_peach"]))
             self._list.addItem(item)
         self._status.setText(f"{self._list.count()} item(s) shown  |  {len(self._entries)} total")
 
@@ -167,7 +162,7 @@ class ClipboardManager(QWidget):
         self._watcher.start()
 
     def _on_new_clip(self, text):
-        if any(e["text"] == text for e in self._entries):
+        if any(e.get("text") == text for e in self._entries):
             return
         self._entries.append({
             "text": text,
@@ -200,7 +195,7 @@ class ClipboardManager(QWidget):
         if not entry:
             return
         for e in self._entries:
-            if e["text"] == entry["text"]:
+            if e.get("text") == entry.get("text"):
                 e["pinned"] = not e.get("pinned", False)
                 break
         save_history(self._entries)
@@ -210,7 +205,7 @@ class ClipboardManager(QWidget):
         entry = self._selected_entry()
         if not entry:
             return
-        self._entries = [e for e in self._entries if e["text"] != entry["text"]]
+        self._entries = [e for e in self._entries if e.get("text") != entry.get("text")]
         save_history(self._entries)
         self._populate()
 
@@ -231,12 +226,19 @@ class ClipboardManager(QWidget):
         if not item:
             return
         entry = item.data(Qt.UserRole)
+        if not entry:
+            return
         menu = QMenu(self)
         menu.addAction("Copy to Clipboard", lambda: QApplication.clipboard().setText(entry["text"]))
         menu.addAction("Pin / Unpin", self._toggle_pin)
         menu.addSeparator()
         menu.addAction("Delete", self._delete_selected)
         menu.exec_(self._list.viewport().mapToGlobal(pos))
+
+    def closeEvent(self, event):
+        if self._watcher is not None:
+            self._watcher.stop()
+        super().closeEvent(event)
 
 
 def main():

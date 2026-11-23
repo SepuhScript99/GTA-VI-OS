@@ -1,50 +1,42 @@
 #!/usr/bin/env python3
 """
-GTA VI OS (Vice OS) Hardware Driver Manager
+GTA VI OS (Vice OS) Hardware Driver Manager.
 Detects GPU (NVIDIA/AMD/Intel) and wireless chipsets with one-click driver installation.
 """
 
-import sys
 import os
 import re
+import shutil
 import subprocess
-
-sys.path.insert(0, '/opt/vice-os/lib')
+import sys
 
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QTextEdit, QProgressBar,
-    QGroupBox, QMessageBox, QSplitter
+    QMessageBox, QSplitter
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QBrush
+from PyQt5.QtGui import QColor, QBrush
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from python.vice_utils import log_info  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    make_button,
+    make_header,
+)
 
 WINDOW_WIDTH = 960
 WINDOW_HEIGHT = 680
 
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QTextEdit { background: #0d0d0d; color: #00e5ff; border: 1px solid #1a4a4a; font-size: 11px; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #00ffff; color: #0a0a0a; }
-QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; text-align: center; color: #00ffff; }
-QProgressBar::chunk { background: #00ffff; }
-QGroupBox { border: 1px solid #00ffff; margin-top: 8px; padding: 6px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QSplitter::handle { background: #00ffff; width: 1px; }
-QLabel { color: #00ffff; }
-"""
-
 
 def run_cmd(cmd, timeout=8):
     try:
-        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(cmd, shell=isinstance(cmd, str), capture_output=True, text=True, timeout=timeout)
         return r.stdout.strip(), r.returncode
     except Exception as e:
         return str(e), 1
@@ -54,86 +46,121 @@ class DetectWorker(QThread):
     driver_found = pyqtSignal(dict)
     finished = pyqtSignal()
 
+    def __init__(self):
+        super().__init__()
+        self._stopped = False
+
+    def stop(self):
+        self._stopped = True
+
+    def _dpkg_installed(self, pattern):
+        out, _ = run_cmd("dpkg -l 2>/dev/null | awk '$1==\"ii\"{print $2}'")
+        for line in out.splitlines():
+            if re.match(pattern, line.strip()):
+                return line.strip()
+        return ""
+
     def run(self):
+        pci_out, _ = run_cmd(["lspci"] if shutil.which("lspci") else "lspci 2>/dev/null")
+        usb_out, _ = run_cmd(["lsusb"] if shutil.which("lsusb") else "lsusb 2>/dev/null")
+
         # NVIDIA
-        out, _ = run_cmd("lspci 2>/dev/null | grep -i nvidia")
-        if out:
-            installed, _ = run_cmd("dpkg -l nvidia-driver* 2>/dev/null | grep '^ii' | head -1")
-            pkg = installed.split()[1] if installed else ""
-            rec, _ = run_cmd("ubuntu-drivers devices 2>/dev/null | grep nvidia | grep recommended | awk '{print $3}'")
-            self.driver_found.emit({
-                "type": "GPU", "vendor": "NVIDIA",
-                "device": out.split(":")[-1].strip()[:60],
-                "installed": pkg or "None",
-                "recommended": rec or "nvidia-driver-535",
-                "status": "Installed" if pkg else "Not Installed",
-            })
+        for line in pci_out.splitlines():
+            if self._stopped:
+                return
+            if "nvidia" in line.lower():
+                pkg = self._dpkg_installed(r"^nvidia-driver")
+                self.driver_found.emit({
+                    "type": "GPU",
+                    "vendor": "NVIDIA",
+                    "device": line.split(":")[-1].strip()[:60],
+                    "installed": pkg or "None",
+                    "recommended": "nvidia-driver",
+                    "status": "Installed" if pkg else "Not Installed",
+                })
+                break
 
         # AMD GPU
-        out, _ = run_cmd("lspci 2>/dev/null | grep -i 'amd\\|ati' | grep -i 'vga\\|3d\\|display'")
-        if out:
-            installed, _ = run_cmd("dpkg -l firmware-amd-graphics 2>/dev/null | grep '^ii' | head -1")
-            pkg = installed.split()[1] if installed else ""
-            self.driver_found.emit({
-                "type": "GPU", "vendor": "AMD",
-                "device": out.split(":")[-1].strip()[:60],
-                "installed": pkg or "None",
-                "recommended": "firmware-amd-graphics",
-                "status": "Installed" if pkg else "Not Installed",
-            })
+        for line in pci_out.splitlines():
+            if self._stopped:
+                return
+            low = line.lower()
+            if ("amd" in low or "ati" in low) and any(k in low for k in ("vga", "3d", "display")):
+                pkg = self._dpkg_installed(r"^firmware-amd-graphics$")
+                self.driver_found.emit({
+                    "type": "GPU",
+                    "vendor": "AMD",
+                    "device": line.split(":")[-1].strip()[:60],
+                    "installed": pkg or "None",
+                    "recommended": "firmware-amd-graphics",
+                    "status": "Installed" if pkg else "Not Installed",
+                })
+                break
 
         # Intel GPU
-        out, _ = run_cmd("lspci 2>/dev/null | grep -i intel | grep -i 'vga\\|3d\\|display'")
-        if out:
-            installed, _ = run_cmd("dpkg -l intel-media-va-driver* 2>/dev/null | grep '^ii' | head -1")
-            pkg = installed.split()[1] if installed else ""
-            self.driver_found.emit({
-                "type": "GPU", "vendor": "Intel",
-                "device": out.split(":")[-1].strip()[:60],
-                "installed": pkg or "None",
-                "recommended": "intel-media-va-driver",
-                "status": "Installed" if pkg else "Not Installed",
-            })
+        for line in pci_out.splitlines():
+            if self._stopped:
+                return
+            low = line.lower()
+            if "intel" in low and any(k in low for k in ("vga", "3d", "display")):
+                pkg = self._dpkg_installed(r"^intel-media-va-driver")
+                self.driver_found.emit({
+                    "type": "GPU",
+                    "vendor": "Intel",
+                    "device": line.split(":")[-1].strip()[:60],
+                    "installed": pkg or "None",
+                    "recommended": "intel-media-va-driver",
+                    "status": "Installed" if pkg else "Not Installed",
+                })
+                break
 
         # WiFi
-        out, _ = run_cmd("lspci 2>/dev/null | grep -i 'network\\|wireless\\|wifi'")
-        if not out:
-            out, _ = run_cmd("lsusb 2>/dev/null | grep -i 'wireless\\|wifi\\|802.11'")
-        if out:
-            for line in out.splitlines():
-                vendor = "Broadcom" if "broadcom" in line.lower() else \
-                         "Realtek" if "realtek" in line.lower() else \
-                         "Intel" if "intel" in line.lower() else "WiFi"
-                pkg_map = {
-                    "Broadcom": "broadcom-sta-dkms",
-                    "Realtek": "firmware-realtek",
-                    "Intel": "firmware-iwlwifi",
-                }
-                pkg = pkg_map.get(vendor, "firmware-linux-nonfree")
-                installed, _ = run_cmd(f"dpkg -l {pkg} 2>/dev/null | grep '^ii' | head -1")
-                inst = installed.split()[1] if installed else ""
-                self.driver_found.emit({
-                    "type": "WiFi", "vendor": vendor,
-                    "device": line.split(":")[-1].strip()[:60],
-                    "installed": inst or "None",
-                    "recommended": pkg,
-                    "status": "Installed" if inst else "Not Installed",
-                })
-
-        # Bluetooth
-        out, _ = run_cmd("lsusb 2>/dev/null | grep -i bluetooth")
-        if out:
-            installed, _ = run_cmd("dpkg -l bluez 2>/dev/null | grep '^ii' | head -1")
-            pkg = installed.split()[1] if installed else ""
+        wifi_lines = [ln for ln in pci_out.splitlines() if any(k in ln.lower() for k in ("network", "wireless", "wifi"))]
+        if not wifi_lines:
+            wifi_lines = [ln for ln in usb_out.splitlines() if any(k in ln.lower() for k in ("wireless", "wifi", "802.11"))]
+        for line in wifi_lines:
+            if self._stopped:
+                return
+            low = line.lower()
+            vendor = (
+                "Broadcom" if "broadcom" in low else
+                "Realtek" if "realtek" in low else
+                "Intel" if "intel" in low else "WiFi"
+            )
+            pkg_map = {
+                "Broadcom": "broadcom-sta-dkms",
+                "Realtek": "firmware-realtek",
+                "Intel": "firmware-iwlwifi",
+            }
+            pkg = pkg_map.get(vendor, "firmware-linux-nonfree")
+            inst = self._dpkg_installed(f"^{re.escape(pkg)}$")
             self.driver_found.emit({
-                "type": "Bluetooth", "vendor": "Generic",
-                "device": out.split(":")[-1].strip()[:60],
-                "installed": pkg or "None",
-                "recommended": "bluez",
-                "status": "Installed" if pkg else "Not Installed",
+                "type": "WiFi",
+                "vendor": vendor,
+                "device": line.split(":")[-1].strip()[:60],
+                "installed": inst or "None",
+                "recommended": pkg,
+                "status": "Installed" if inst else "Not Installed",
             })
 
-        self.finished.emit()
+        # Bluetooth
+        for line in usb_out.splitlines():
+            if self._stopped:
+                return
+            if "bluetooth" in line.lower():
+                pkg = self._dpkg_installed(r"^bluez$")
+                self.driver_found.emit({
+                    "type": "Bluetooth",
+                    "vendor": "Generic",
+                    "device": line.split(":")[-1].strip()[:60],
+                    "installed": pkg or "None",
+                    "recommended": "bluez",
+                    "status": "Installed" if pkg else "Not Installed",
+                })
+                break
+
+        if not self._stopped:
+            self.finished.emit()
 
 
 class InstallWorker(QThread):
@@ -144,35 +171,57 @@ class InstallWorker(QThread):
         super().__init__()
         self.pkg = pkg
         self.op = op if op in ("install", "remove") else "install"
+        self._stopped = False
+        self._proc = None
+
+    def stop(self):
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def run(self):
         if not re.match(r"^[a-zA-Z0-9.+_:-]+$", self.pkg):
             self.output_line.emit(f"Invalid package name: {self.pkg}")
             self.finished.emit(False)
             return
-        cmd = ["sudo", "DEBIAN_FRONTEND=noninteractive", "apt-get", self.op, "-y", self.pkg]
+        cmd = ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", self.op, "-y", self.pkg]
+        if (os.geteuid() != 0 if hasattr(os, "geteuid") else True) and shutil.which("pkexec"):
+            cmd = ["pkexec"] + cmd
         self.output_line.emit(f"Running: {' '.join(cmd)}\n")
         try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True
+            self._proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
             )
-            for line in proc.stdout:
+            for line in self._proc.stdout:
+                if self._stopped:
+                    break
                 self.output_line.emit(line.rstrip())
-            proc.wait()
-            self.finished.emit(proc.returncode == 0)
+            self._proc.wait()
+            if not self._stopped:
+                self.finished.emit(self._proc.returncode == 0)
         except Exception as e:
-            self.output_line.emit(f"Error: {e}")
-            self.finished.emit(False)
+            if not self._stopped:
+                self.output_line.emit(f"Error: {e}")
+                self.finished.emit(False)
+        finally:
+            self._proc = None
 
 
 class DriverManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Driver Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(760, 520)
+        apply_app_theme(self)
         self._drivers = []
         self._workers = []
         self._init_ui()
@@ -180,17 +229,22 @@ class DriverManager(QWidget):
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 14)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — Driver Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 15, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        header = make_header(
+            title="Hardware Driver Manager",
+            subtitle="Detect GPU, wireless, and Bluetooth hardware and manage Debian drivers",
+            icon_name="preferences-desktop-display",
+            badge_text="DRIVERS",
+            badge_variant="aqua",
+            parent=self,
+        )
+        root.addWidget(header)
 
         splitter = QSplitter(Qt.Vertical)
-        root.addWidget(splitter)
+        root.addWidget(splitter, 1)
 
-        # Top: driver table
         top = QWidget()
         top_layout = QVBoxLayout(top)
         top_layout.setContentsMargins(0, 0, 0, 0)
@@ -206,15 +260,15 @@ class DriverManager(QWidget):
         top_layout.addWidget(self._table)
 
         btn_row = QHBoxLayout()
-        self._scan_btn = QPushButton("Scan Devices")
+        self._scan_btn = make_button("Scan Devices", variant="secondary", parent=self)
         self._scan_btn.clicked.connect(self._scan)
         btn_row.addWidget(self._scan_btn)
 
-        self._install_btn = QPushButton("Install Driver")
+        self._install_btn = make_button("Install Driver", variant="primary", parent=self)
         self._install_btn.clicked.connect(self._install_selected)
         btn_row.addWidget(self._install_btn)
 
-        self._remove_btn = QPushButton("Remove Driver")
+        self._remove_btn = make_button("Remove Driver", variant="danger", parent=self)
         self._remove_btn.clicked.connect(self._remove_selected)
         btn_row.addWidget(self._remove_btn)
 
@@ -222,29 +276,27 @@ class DriverManager(QWidget):
         top_layout.addLayout(btn_row)
         splitter.addWidget(top)
 
-        # Bottom: output log
         bottom = QWidget()
         bottom_layout = QVBoxLayout(bottom)
         bottom_layout.setContentsMargins(0, 0, 0, 0)
         log_label = QLabel("Output Log")
-        log_label.setStyleSheet("color: #ff00ff; font-weight: bold;")
+        log_label.setObjectName("SectionTitle")
         bottom_layout.addWidget(log_label)
         self._log = QTextEdit()
         self._log.setReadOnly(True)
         bottom_layout.addWidget(self._log)
         splitter.addWidget(bottom)
-        splitter.setSizes([420, 220])
+        splitter.setSizes([400, 220])
 
-        # Status bar
         status_row = QHBoxLayout()
         self._progress = QProgressBar()
         self._progress.setRange(0, 0)
         self._progress.setVisible(False)
         status_row.addWidget(self._progress)
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888;")
+        self._status.setObjectName("MutedLabel")
         status_row.addWidget(self._status)
-        clear_btn = QPushButton("Clear Log")
+        clear_btn = make_button("Clear Log", variant="secondary", parent=self)
         clear_btn.clicked.connect(self._log.clear)
         status_row.addWidget(clear_btn)
         root.addLayout(status_row)
@@ -268,16 +320,16 @@ class DriverManager(QWidget):
         row = self._table.rowCount()
         self._table.insertRow(row)
 
-        cols = [info["type"], info["vendor"], info["device"],
-                info["installed"], info["recommended"], info["status"]]
+        cols = [
+            info["type"], info["vendor"], info["device"],
+            info["installed"], info["recommended"], info["status"],
+        ]
         for col, val in enumerate(cols):
             item = QTableWidgetItem(val)
             item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
             if col == 5:
-                if val == "Installed":
-                    item.setForeground(QBrush(QColor("#00ff88")))
-                else:
-                    item.setForeground(QBrush(QColor("#ff4444")))
+                col_hex = COLORS["success"] if val == "Installed" else COLORS["danger"]
+                item.setForeground(QBrush(QColor(col_hex)))
             self._table.setItem(row, col, item)
 
     def _scan_done(self):
@@ -302,7 +354,7 @@ class DriverManager(QWidget):
         pkg = info["recommended"]
         confirm = QMessageBox.question(
             self, "Install Driver",
-            f"Install package: {pkg}\n\nThis requires sudo privileges.",
+            f"Install package: {pkg}\n\nThis requires administrator privileges.",
             QMessageBox.Yes | QMessageBox.No
         )
         if confirm != QMessageBox.Yes:
@@ -319,7 +371,7 @@ class DriverManager(QWidget):
             return
         confirm = QMessageBox.question(
             self, "Remove Driver",
-            f"Remove package: {pkg}\n\nThis requires sudo privileges.",
+            f"Remove package: {pkg}\n\nThis requires administrator privileges.",
             QMessageBox.Yes | QMessageBox.No
         )
         if confirm != QMessageBox.Yes:
@@ -342,13 +394,21 @@ class DriverManager(QWidget):
         self._progress.setVisible(False)
         self._install_btn.setEnabled(True)
         self._remove_btn.setEnabled(True)
-        color = "#00ff88" if ok else "#ff4444"
+        color = COLORS["success"] if ok else COLORS["danger"]
         result = "succeeded" if ok else "failed"
         self._log.append(f'<span style="color:{color};">[{op.upper()} {result.upper()}] {pkg}</span>')
         self._status.setText(f"{op.capitalize()} {result}: {pkg}")
         log_info(f"Driver {op} {result}: {pkg}")
         if ok:
             self._scan()
+
+    def closeEvent(self, event):
+        for w in self._workers:
+            w.stop()
+        for w in self._workers:
+            if w.isRunning():
+                w.wait(2500)
+        event.accept()
 
 
 def main():

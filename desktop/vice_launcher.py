@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from python.vice_utils import log_info  # noqa: E402
 from vice_theme import (  # noqa: E402
     COLORS,
+    FlowLayout,
     build_app_qss,
     configure_cjk_fonts,
     configure_icon_theme,
@@ -71,7 +72,7 @@ QPushButton#AppCard {{
     color: {_c['text_primary']};
     border: 1px solid {_c['border']};
     border-radius: 10px;
-    padding: 10px 8px;
+    padding: 0px;
     font-size: 12px;
     text-align: center;
 }}
@@ -476,13 +477,13 @@ class AppButton(QPushButton):
 
         label = app_info["label"]
         self.setToolTip(f"{label}\n{app_info.get('comment', '')}".strip())
-        self.setMinimumSize(166, 92)
-        self.setMaximumSize(184, 96)
+        self.setMinimumSize(166, 102)
+        self.setMaximumSize(188, 108)
 
         card_layout = QVBoxLayout(self)
-        card_layout.setContentsMargins(10, 10, 10, 8)
+        card_layout.setContentsMargins(10, 8, 10, 8)
         card_layout.setSpacing(6)
-        card_layout.setAlignment(Qt.AlignCenter)
+        card_layout.setAlignment(Qt.AlignVCenter)
 
         icon_lbl = QLabel(self)
         icon_lbl.setAlignment(Qt.AlignCenter)
@@ -496,7 +497,11 @@ class AppButton(QPushButton):
         text_lbl = QLabel(display_label, self)
         text_lbl.setAlignment(Qt.AlignCenter)
         text_lbl.setWordWrap(True)
-        text_lbl.setStyleSheet("background: transparent; border: none; font-size: 12px; font-weight: 600;")
+        text_lbl.setMinimumWidth(144)
+        lbl_font = text_lbl.font()
+        lbl_font.setBold(True)
+        text_lbl.setFont(lbl_font)
+        text_lbl.setStyleSheet("background: transparent; border: none; font-size: 12px;")
         card_layout.addWidget(text_lbl)
 
         self.clicked.connect(lambda: on_launch(app_info))
@@ -517,9 +522,13 @@ class AppLauncher(QWidget):
         self._favorites = load_favorites()
         self._category = "All"
         self._cat_buttons = {}
+        self._cols = self._calc_cols()
         self._init_ui()
         self._populate()
         self._search.setFocus()
+
+    def _calc_cols(self) -> int:
+        return max(3, (self.width() - 44) // 182)
 
     def _init_ui(self):
         c = COLORS
@@ -545,20 +554,21 @@ class AppLauncher(QWidget):
 
         QShortcut(QKeySequence("Escape"), self).activated.connect(self.close)
 
-        cat_row = QHBoxLayout()
-        cat_row.setSpacing(6)
+        cats_host = QWidget(self)
+        cats_host.setStyleSheet("background: transparent;")
+        cats_flow = FlowLayout(cats_host, h_spacing=6, v_spacing=6)
+        cats_flow.setContentsMargins(0, 0, 0, 0)
         for cat in ["All", "Favorites"] + list(CATEGORIES.keys()):
-            btn = QPushButton(cat)
+            btn = QPushButton(cat, cats_host)
             btn.setObjectName("CategoryTab")
             btn.setFixedHeight(32)
             btn.setCheckable(True)
             btn.setChecked(cat == "All")
             btn.setFocusPolicy(Qt.NoFocus)
             btn.clicked.connect(lambda _checked=False, name=cat: self._set_category(name))
-            cat_row.addWidget(btn)
+            cats_flow.addWidget(btn)
             self._cat_buttons[cat] = btn
-        cat_row.addStretch(1)
-        root.addLayout(cat_row)
+        root.addWidget(cats_host)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -601,7 +611,8 @@ class AppLauncher(QWidget):
                 continue
             filtered.append(app)
 
-        cols = 5
+        cols = self._calc_cols()
+        self._cols = cols
         for i, app in enumerate(filtered):
             is_fav = app["label"] in self._favorites or app["name"] in self._favorites
             btn = AppButton(app, self._launch, self._toggle_fav, is_fav)
@@ -609,6 +620,12 @@ class AppLauncher(QWidget):
             self._grid_layout.addWidget(btn, row, col)
 
         self._count_label.setText(f"{len(filtered)} application(s)")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        new_cols = self._calc_cols()
+        if new_cols != self._cols:
+            self._populate()
 
     def _launch(self, app_info):
         args = app_info.get("args", [])

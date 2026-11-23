@@ -1,48 +1,48 @@
 #!/usr/bin/env python3
 """
-GTA VI OS (Vice OS) Bluetooth Manager
+GTA VI OS (Vice OS) Bluetooth Manager.
 Frontend for bluetoothctl: device scanning, pairing, connecting, and adapter status.
 """
 
-import sys
 import os
+import re
+import shutil
 import subprocess
-
-sys.path.insert(0, '/opt/vice-os/lib')
+import sys
+import time
 
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-    QAbstractItemView, QProgressBar, QGroupBox
+    QAbstractItemView, QProgressBar
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt5.QtGui import QFont, QColor, QBrush
+from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtGui import QColor, QBrush
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from python.vice_utils import log_error  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    make_button,
+    make_header,
+)
 
 WINDOW_WIDTH = 860
 WINDOW_HEIGHT = 580
 
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; text-align: center; color: #00ffff; }
-QProgressBar::chunk { background: #00ffff; }
-QGroupBox { border: 1px solid #00ffff; margin-top: 10px; padding: 8px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QLabel { color: #00ffff; }
-"""
-
 
 def btctl(*args):
+    if not shutil.which("bluetoothctl"):
+        return "bluetoothctl not installed", False
     try:
-        r = subprocess.run(["bluetoothctl"] + list(args),
-                           capture_output=True, text=True, timeout=10)
+        r = subprocess.run(
+            ["bluetoothctl"] + list(args),
+            capture_output=True, text=True, timeout=10
+        )
         return r.stdout.strip(), r.returncode == 0
     except Exception as e:
         return str(e), False
@@ -52,24 +52,64 @@ class ScanWorker(QThread):
     device_found = pyqtSignal(dict)
     finished = pyqtSignal()
 
+    def __init__(self):
+        super().__init__()
+        self._stopped = False
+        self._proc = None
+
+    def stop(self):
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+
     def run(self):
-        subprocess.run(["bluetoothctl", "power", "on"], capture_output=True, timeout=5)
-        proc = subprocess.Popen(
-            ["bluetoothctl", "scan", "on"],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-        )
-        import re, time
-        start = time.time()
-        while time.time() - start < 10:
-            line = proc.stdout.readline()
-            if not line:
-                break
-            m = re.search(r'\[NEW\] Device ([0-9A-F:]+) (.+)', line)
-            if m:
-                self.device_found.emit({"mac": m.group(1), "name": m.group(2).strip(), "paired": False, "connected": False})
-        proc.terminate()
-        subprocess.run(["bluetoothctl", "scan", "off"], capture_output=True, timeout=5)
-        self.finished.emit()
+        if not shutil.which("bluetoothctl"):
+            if not self._stopped:
+                self.finished.emit()
+            return
+        try:
+            subprocess.run(["bluetoothctl", "power", "on"], capture_output=True, timeout=5)
+            self._proc = subprocess.Popen(
+                ["bluetoothctl", "scan", "on"],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+            start = time.time()
+            while not self._stopped and time.time() - start < 10:
+                line = self._proc.stdout.readline()
+                if not line:
+                    break
+                m = re.search(r"\[NEW\] Device ([0-9A-F:]+) (.+)", line)
+                if m:
+                    self.device_found.emit({
+                        "mac": m.group(1),
+                        "name": m.group(2).strip(),
+                        "paired": False,
+                        "connected": False,
+                    })
+        except Exception:
+            pass
+        finally:
+            if self._proc is not None and self._proc.poll() is None:
+                self._proc.terminate()
+                try:
+                    self._proc.wait(timeout=0.5)
+                except Exception:
+                    self._proc.kill()
+            self._proc = None
+            try:
+                subprocess.run(["bluetoothctl", "scan", "off"], capture_output=True, timeout=3)
+            except Exception:
+                pass
+        if not self._stopped:
+            self.finished.emit()
 
 
 class BtWorker(QThread):
@@ -78,18 +118,24 @@ class BtWorker(QThread):
     def __init__(self, args):
         super().__init__()
         self.args = args
+        self._stopped = False
+
+    def stop(self):
+        self._stopped = True
 
     def run(self):
         out, ok = btctl(*self.args)
-        self.done.emit(ok, out)
+        if not self._stopped:
+            self.done.emit(ok, out)
 
 
 class BluetoothManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Bluetooth Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(700, 480)
+        apply_app_theme(self)
         self._scan_worker = None
         self._bt_worker = None
         self._init_ui()
@@ -97,26 +143,30 @@ class BluetoothManager(QWidget):
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 14)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — Bluetooth Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 14, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        header = make_header(
+            title="Bluetooth Manager",
+            subtitle="Scan nearby devices, pair peripherals, and manage adapter power",
+            icon_name="bluetooth",
+            badge_text="BLUETOOTH",
+            badge_variant="aqua",
+            parent=self,
+        )
+        root.addWidget(header)
 
-        # Power status
         status_row = QHBoxLayout()
         self._power_label = QLabel("Bluetooth: checking...")
-        self._power_label.setFont(QFont("monospace", 11))
+        self._power_label.setStyleSheet("font-weight: bold;")
         status_row.addWidget(self._power_label)
         status_row.addStretch()
-        self._power_btn = QPushButton("Turn On")
+        self._power_btn = make_button("Turn On", variant="secondary", parent=self)
         self._power_btn.clicked.connect(self._toggle_power)
         status_row.addWidget(self._power_btn)
         root.addLayout(status_row)
         self._refresh_power()
 
-        # Devices table
         self._table = QTableWidget()
         self._table.setColumnCount(4)
         self._table.setHorizontalHeaderLabels(["MAC Address", "Name", "Paired", "Connected"])
@@ -126,32 +176,30 @@ class BluetoothManager(QWidget):
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
-        root.addWidget(self._table)
+        root.addWidget(self._table, 1)
 
-        # Action buttons
         act_row = QHBoxLayout()
-        self._scan_btn = QPushButton("Scan (10s)")
+        self._scan_btn = make_button("Scan (10s)", variant="primary", parent=self)
         self._scan_btn.clicked.connect(self._start_scan)
         act_row.addWidget(self._scan_btn)
 
-        pair_btn = QPushButton("Pair")
+        pair_btn = make_button("Pair", variant="secondary", parent=self)
         pair_btn.clicked.connect(self._pair_selected)
         act_row.addWidget(pair_btn)
 
-        connect_btn = QPushButton("Connect")
+        connect_btn = make_button("Connect", variant="secondary", parent=self)
         connect_btn.clicked.connect(self._connect_selected)
         act_row.addWidget(connect_btn)
 
-        disconnect_btn = QPushButton("Disconnect")
+        disconnect_btn = make_button("Disconnect", variant="secondary", parent=self)
         disconnect_btn.clicked.connect(self._disconnect_selected)
         act_row.addWidget(disconnect_btn)
 
-        remove_btn = QPushButton("Remove")
-        remove_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        remove_btn = make_button("Remove", variant="danger", parent=self)
         remove_btn.clicked.connect(self._remove_selected)
         act_row.addWidget(remove_btn)
 
-        refresh_btn = QPushButton("Refresh")
+        refresh_btn = make_button("Refresh", variant="secondary", parent=self)
         refresh_btn.clicked.connect(self._load_paired)
         act_row.addWidget(refresh_btn)
         root.addLayout(act_row)
@@ -162,18 +210,18 @@ class BluetoothManager(QWidget):
         root.addWidget(self._progress)
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setObjectName("MutedLabel")
         root.addWidget(self._status)
 
     def _refresh_power(self):
         out, _ = btctl("show")
         if "Powered: yes" in out:
             self._power_label.setText("Bluetooth: ON")
-            self._power_label.setStyleSheet("color: #00ff88; font-weight: bold;")
+            self._power_label.setStyleSheet(f"color: {COLORS['success']}; font-weight: bold;")
             self._power_btn.setText("Turn Off")
         else:
             self._power_label.setText("Bluetooth: OFF")
-            self._power_label.setStyleSheet("color: #ff4444; font-weight: bold;")
+            self._power_label.setStyleSheet(f"color: {COLORS['danger']}; font-weight: bold;")
             self._power_btn.setText("Turn On")
 
     def _toggle_power(self):
@@ -211,10 +259,10 @@ class BluetoothManager(QWidget):
         self._table.setItem(row, 0, QTableWidgetItem(mac))
         self._table.setItem(row, 1, QTableWidgetItem(name))
         p_item = QTableWidgetItem("Yes" if paired else "No")
-        p_item.setForeground(QBrush(QColor("#00ff88" if paired else "#888")))
+        p_item.setForeground(QBrush(QColor(COLORS["success"] if paired else COLORS["text_muted"])))
         self._table.setItem(row, 2, p_item)
         c_item = QTableWidgetItem("Yes" if connected else "No")
-        c_item.setForeground(QBrush(QColor("#00ff88" if connected else "#888")))
+        c_item.setForeground(QBrush(QColor(COLORS["success"] if connected else COLORS["text_muted"])))
         self._table.setItem(row, 3, c_item)
 
     def _selected_mac(self):
@@ -226,6 +274,8 @@ class BluetoothManager(QWidget):
         return item.text() if item else None
 
     def _start_scan(self):
+        if self._scan_worker is not None and self._scan_worker.isRunning():
+            return
         self._scan_btn.setEnabled(False)
         self._progress.setVisible(True)
         self._status.setText("Scanning for devices...")
@@ -260,12 +310,17 @@ class BluetoothManager(QWidget):
         mac = self._selected_mac()
         if not mac:
             return
-        if QMessageBox.question(self, "Remove Device", f"Remove {mac}?",
-                                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+        if QMessageBox.question(
+            self, "Remove Device", f"Remove {mac}?",
+            QMessageBox.Yes | QMessageBox.No
+        ) != QMessageBox.Yes:
             return
         self._run_bt(["remove", mac], f"Removing {mac}")
 
     def _run_bt(self, args, msg):
+        if self._bt_worker is not None and self._bt_worker.isRunning():
+            self._status.setText("Another Bluetooth command is running...")
+            return
         self._progress.setVisible(True)
         self._status.setText(msg)
         w = BtWorker(args)
@@ -279,6 +334,15 @@ class BluetoothManager(QWidget):
         if not ok:
             log_error(f"BT op failed: {out}")
         self._load_paired()
+
+    def closeEvent(self, event):
+        for w in (self._scan_worker, self._bt_worker):
+            if w is not None:
+                w.stop()
+        for w in (self._scan_worker, self._bt_worker):
+            if w is not None and w.isRunning():
+                w.wait(2500)
+        event.accept()
 
 
 def main():

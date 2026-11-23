@@ -1,45 +1,54 @@
 #!/usr/bin/env python3
 """Vice OS — Calculator. Basic + scientific modes with history tape."""
 
-import sys
-import os
 import math
+import os
+import sys
+
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import (
+    QApplication, QGridLayout, QLineEdit, QPushButton, QTabWidget,
+    QTextEdit, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QGridLayout, QTabWidget, QTextEdit, QLineEdit, QSplitter
-)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 560
-WINDOW_HEIGHT = 560
+WINDOW_HEIGHT = 600
 
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton {
-    background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff;
-    padding: 10px; font-size: 14px; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace;
-}
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:pressed { background: #ff00ff; color: #0a0a0a; }
-QPushButton#opBtn { color: #ff00ff; border-color: #ff00ff; }
-QPushButton#opBtn:hover { background: #ff00ff; color: #0a0a0a; }
-QPushButton#eqBtn { background: #003333; border-color: #00ffff; font-weight: bold; }
-QPushButton#eqBtn:hover { background: #00ffff; }
-QLineEdit {
-    background: #0d0d0d; color: #00ffff; border: 1px solid #00ffff;
-    padding: 8px; font-size: 18px; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace;
-}
-QTextEdit { background: #0d0d0d; color: #aaffff; border: 1px solid #1a4a4a; font-size: 11px; }
-QTabBar::tab { background: #1a1a1a; color: #00ffff; padding: 6px 14px; }
-QTabBar::tab:selected { background: #00ffff; color: #0a0a0a; }
-QTabWidget::pane { border: 1px solid #00ffff; }
-QLabel { color: #00ffff; }
+EXTRA_QSS = f"""
+QPushButton {{
+    padding: 10px;
+    font-size: 14px;
+}}
+QPushButton#opBtn {{
+    color: {vt.COLORS['accent_peach']};
+    border-color: {vt.COLORS['accent_peach']};
+}}
+QPushButton#opBtn:hover {{
+    background: {vt.COLORS['accent_peach']};
+    color: {vt.COLORS['bg_canvas']};
+}}
+QPushButton#eqBtn {{
+    background: {vt.COLORS['accent_coral']};
+    color: {vt.COLORS['bg_canvas']};
+    border-color: {vt.COLORS['accent_coral']};
+}}
+QPushButton#eqBtn:hover {{
+    background: {vt.COLORS['accent_peach']};
+    border-color: {vt.COLORS['accent_peach']};
+}}
+QLineEdit#calcDisplay {{
+    background: {vt.COLORS['bg_canvas']};
+    color: {vt.COLORS['text_primary']};
+    border: 1px solid {vt.COLORS['border_strong']};
+    border-radius: 6px;
+    padding: 8px 10px;
+}}
 """
 
 SAFE_NAMES = {
@@ -79,8 +88,10 @@ class BasicCalc(QWidget):
         root = QVBoxLayout(self)
 
         self._display = QLineEdit("0")
+        self._display.setObjectName("calcDisplay")
         self._display.setFont(QFont("monospace", 20))
         self._display.setAlignment(Qt.AlignRight)
+        self._display.returnPressed.connect(self._evaluate)
         root.addWidget(self._display)
 
         grid = QGridLayout()
@@ -108,6 +119,8 @@ class BasicCalc(QWidget):
 
     def _press(self, text, kind):
         current = self._display.text()
+        if current == "Error":
+            current = "0"
 
         if kind == "clear":
             self._display.setText("0")
@@ -115,7 +128,7 @@ class BasicCalc(QWidget):
             self._display.setText(current[:-1] or "0")
         elif kind == "sign":
             if current.startswith("-"):
-                self._display.setText(current[1:])
+                self._display.setText(current[1:] or "0")
             elif current != "0":
                 self._display.setText("-" + current)
         elif kind == "eq":
@@ -152,8 +165,10 @@ class SciCalc(QWidget):
         root = QVBoxLayout(self)
 
         self._display = QLineEdit("0")
+        self._display.setObjectName("calcDisplay")
         self._display.setFont(QFont("monospace", 18))
         self._display.setAlignment(Qt.AlignRight)
+        self._display.returnPressed.connect(self._evaluate)
         root.addWidget(self._display)
 
         grid = QGridLayout()
@@ -183,6 +198,8 @@ class SciCalc(QWidget):
 
     def _press(self, text, kind):
         current = self._display.text()
+        if current == "Error":
+            current = "0"
 
         if kind == "clear":
             self._display.setText("0")
@@ -214,6 +231,8 @@ class SciCalc(QWidget):
 
     def _insert(self, text):
         current = self._display.text()
+        if current == "Error":
+            current = "0"
         self._display.setText(current + text)
 
     def _evaluate(self):
@@ -233,19 +252,29 @@ class Calculator(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Calculator")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(460, 500)
+        vt.apply_app_theme(self, extra_qss=EXTRA_QSS)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(8)
+
+        root.addWidget(vt.make_header(
+            "Calculator",
+            "Basic arithmetic and scientific functions with calculation tape",
+            icon_name="accessories-calculator",
+            badge_text="Math",
+            badge_variant="aqua",
+            parent=self,
+        ))
 
         tabs = QTabWidget()
         root.addWidget(tabs, 1)
 
         self._tape = QTextEdit()
         self._tape.setReadOnly(True)
-        self._tape.setMaximumHeight(100)
+        self._tape.setMaximumHeight(105)
         root.addWidget(self._tape)
 
         tabs.addTab(BasicCalc(self._tape), "Basic")

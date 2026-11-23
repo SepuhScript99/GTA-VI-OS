@@ -6,10 +6,13 @@ Displays cyberpunk-themed notification popups and records history
 (compatible with vice_notif_history.py JSON store).
 """
 
-import sys
-import os
-import json
 import datetime
+import json
+import os
+import sys
+
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import QApplication, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
@@ -25,38 +28,36 @@ except ImportError as _imp_err:
     _HAS_DBUS = False
     _DBUS_ERR = str(_imp_err)
 
-from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont, QColor
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 HISTORY_FILE = os.path.expanduser("~/.local/share/vice-os/notification_history.json")
 MAX_HISTORY = 200
 MAX_VISIBLE = 4
 
-NOTIF_STYLE = """
-QWidget {
-    background-color: rgba(10, 10, 10, 235);
-    border: 1px solid #00ffff;
-    border-radius: 6px;
-}
-QLabel#summary {
-    color: #00ffff;
-    font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace;
+NOTIF_STYLE = f"""
+QWidget {{
+    background-color: {vt.COLORS['bg_surface']};
+    border: 1px solid {vt.COLORS['border_strong']};
+    border-radius: 8px;
+}}
+QLabel#summary {{
+    color: {vt.COLORS['text_primary']};
+    font-family: "Noto Sans", "Noto Sans CJK JP", sans-serif;
     font-size: 13px;
     font-weight: bold;
-}
-QLabel#body {
-    color: #aaffff;
-    font-family: "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans", monospace;
+}}
+QLabel#body {{
+    color: {vt.COLORS['text_secondary']};
+    font-family: "Noto Sans", "Noto Sans CJK JP", sans-serif;
     font-size: 11px;
-}
-QLabel#urgency {
-    color: #ff00ff;
-    font-family: "Noto Sans CJK JP", "Noto Sans CJK SC", monospace;
-    font-size: 9px;
-}
+}}
+QLabel#urgency {{
+    color: {vt.COLORS['accent_coral']};
+    font-family: "Noto Sans Mono", monospace;
+    font-size: 10px;
+    font-weight: bold;
+}}
 """
 
 
@@ -101,38 +102,45 @@ class NotificationPopup(QWidget):
         text_layout = QVBoxLayout()
         text_layout.setSpacing(2)
 
-        urgency_colors = {"critical": "#ff4444", "normal": "#00ffff", "low": "#888888"}
-        uc = urgency_colors.get(urgency, "#00ffff")
+        urgency_colors = {
+            "critical": vt.COLORS["danger"],
+            "normal": vt.COLORS["accent_aqua"],
+            "low": vt.COLORS["text_muted"],
+        }
+        uc = urgency_colors.get(urgency, vt.COLORS["accent_aqua"])
 
         app_label = QLabel(f"[ {app_name or 'Vice OS'} ]")
         app_label.setObjectName("urgency")
-        app_label.setStyleSheet(f"color: {uc}; background: transparent;")
+        app_label.setStyleSheet(f"color: {uc}; background: transparent; border: none;")
         text_layout.addWidget(app_label)
 
         sum_label = QLabel(summary or "Notification")
         sum_label.setObjectName("summary")
-        sum_label.setStyleSheet(f"color: {uc}; background: transparent;")
+        sum_label.setStyleSheet(f"color: {vt.COLORS['text_primary']}; background: transparent; border: none;")
         sum_label.setWordWrap(True)
         text_layout.addWidget(sum_label)
 
         if body:
             body_label = QLabel(body)
             body_label.setObjectName("body")
-            body_label.setStyleSheet("background: transparent;")
+            body_label.setStyleSheet("background: transparent; border: none;")
             body_label.setWordWrap(True)
             text_layout.addWidget(body_label)
 
         layout.addLayout(text_layout, 1)
 
-        screen = QApplication.primaryScreen().geometry()
-        self._target_x = screen.width() - self.width() - 20
-        self._slot_y = 60  # below the panel
+        screen = QApplication.primaryScreen().availableGeometry()
+        self._target_x = screen.right() - self.width() - 16
+        self._slot_y = screen.top() + 16
 
         self.move(self._target_x, self._slot_y)
         self.show()
 
         if timeout > 0:
-            QTimer.singleShot(timeout, self.close)
+            self._close_timer = QTimer(self)
+            self._close_timer.setSingleShot(True)
+            self._close_timer.timeout.connect(self.close)
+            self._close_timer.start(timeout)
 
 
 _DbusBase = dbus.service.Object if _HAS_DBUS else object
@@ -197,11 +205,11 @@ class ViceNotificationDaemon(_DbusBase):
 
     def _reposition(self):
         """Stack active popups from top to bottom on the right edge."""
-        screen = QApplication.primaryScreen().geometry()
-        y = 60
+        screen = QApplication.primaryScreen().availableGeometry()
+        y = screen.top() + 16
         for popup in self._active.values():
             if popup.isVisible():
-                popup.move(screen.width() - popup.width() - 20, y)
+                popup.move(screen.right() - popup.width() - 16, y)
                 y += popup.height() + 8
 
     @(dbus.service.method("org.freedesktop.Notifications",
@@ -250,13 +258,13 @@ def main():
     except dbus.exceptions.DBusException:
         pass  # name unowned — we can take it
 
-    daemon = ViceNotificationDaemon(session_bus, qt_app)
+    qt_app._vice_daemon = ViceNotificationDaemon(session_bus, qt_app)
     log_info("Vice notification daemon started on org.freedesktop.Notifications")
     print("Vice OS notification daemon running (org.freedesktop.Notifications)")
 
     # Pump GLib main context inside Qt event loop so both DBus signals and Qt popups work cleanly
     glib_ctx = GLib.MainContext.default()
-    pump = QTimer()
+    pump = QTimer(qt_app)
     pump.setInterval(50)
     pump.timeout.connect(lambda: [glib_ctx.iteration(False) for _ in range(5) if glib_ctx.pending()])
     pump.start()

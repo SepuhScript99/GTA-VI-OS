@@ -4,105 +4,105 @@ GTA VI OS (Vice OS) Log Viewer
 System log explorer for systemd journald and /var/log with real-time tail and regex filtering.
 """
 
-import sys
+import datetime
 import os
+import re
 import subprocess
-import glob
+import sys
+
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtGui import QColor, QTextCharFormat, QTextCursor
+from PyQt5.QtWidgets import (
+    QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel,
+    QLineEdit, QMessageBox, QProgressBar, QTextEdit, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QTextEdit, QLineEdit, QComboBox, QCheckBox, QSplitter, QListWidget,
-    QListWidgetItem, QFileDialog, QProgressBar, QGroupBox, QMessageBox
-)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt5.QtGui import QFont, QColor, QTextCharFormat, QTextCursor
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 1100
 WINDOW_HEIGHT = 700
 
 LOG_SOURCES = {
-    "Journal (all)":     ["journalctl", "-n", "500", "--no-pager", "--output=short"],
-    "Journal (errors)":  ["journalctl", "-p", "err", "-n", "200", "--no-pager", "--output=short"],
-    "Journal (kernel)":  ["journalctl", "-k", "-n", "200", "--no-pager", "--output=short"],
-    "Journal (boot)":    ["journalctl", "-b", "-n", "300", "--no-pager", "--output=short"],
-    "syslog":            ["tail", "-n", "500", "/var/log/syslog"],
-    "auth.log":          ["tail", "-n", "300", "/var/log/auth.log"],
-    "dpkg.log":          ["tail", "-n", "300", "/var/log/dpkg.log"],
-    "Xorg.0.log":        ["tail", "-n", "300", "/var/log/Xorg.0.log"],
-    "dmesg":             ["dmesg", "--human", "-T"],
+    "Journal (all)": ["journalctl", "-n", "500", "--no-pager", "--output=short"],
+    "Journal (errors)": ["journalctl", "-p", "err", "-n", "200", "--no-pager", "--output=short"],
+    "Journal (kernel)": ["journalctl", "-k", "-n", "200", "--no-pager", "--output=short"],
+    "Journal (boot)": ["journalctl", "-b", "-n", "300", "--no-pager", "--output=short"],
+    "syslog": ["tail", "-n", "500", "/var/log/syslog"],
+    "auth.log": ["tail", "-n", "300", "/var/log/auth.log"],
+    "dpkg.log": ["tail", "-n", "300", "/var/log/dpkg.log"],
+    "Xorg.0.log": ["tail", "-n", "300", "/var/log/Xorg.0.log"],
+    "dmesg": ["dmesg", "--human", "-T"],
 }
 
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QTextEdit { background: #0d0d0d; color: #aaffff; border: 1px solid #1a4a4a; font-size: 11px; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QListWidget { background: #0d0d0d; color: #00ffff; border: 1px solid #00ffff; }
-QListWidget::item:selected { background: #00ffff; color: #0a0a0a; }
-QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; }
-QProgressBar::chunk { background: #00ffff; }
-QGroupBox { border: 1px solid #333; margin-top: 8px; padding: 4px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QCheckBox { color: #00ffff; }
-QCheckBox::indicator { width: 13px; height: 13px; background: #1a1a1a; border: 1px solid #00ffff; }
-QCheckBox::indicator:checked { background: #00ffff; }
-QLabel { color: #00ffff; }
-QSplitter::handle { background: #00ffff; width: 1px; }
-"""
 
-LEVEL_COLORS = {
-    "error":   "#ff4444",
-    "err":     "#ff4444",
-    "crit":    "#ff0000",
-    "alert":   "#ff0000",
-    "emerg":   "#ff0000",
-    "warn":    "#ffaa00",
-    "warning": "#ffaa00",
-    "notice":  "#ffff00",
-    "info":    "#00ffff",
-    "debug":   "#888888",
-}
+def _level_colors():
+    return {
+        "error": vt.COLORS["danger"],
+        "err": vt.COLORS["danger"],
+        "crit": "#FF3D5A",
+        "alert": "#FF3D5A",
+        "emerg": "#FF3D5A",
+        "warn": vt.COLORS["warning"],
+        "warning": vt.COLORS["warning"],
+        "notice": vt.COLORS["accent_gold"],
+        "info": vt.COLORS["accent_aqua"],
+        "debug": vt.COLORS["text_muted"],
+    }
 
 
 class LogWorker(QThread):
     lines_ready = pyqtSignal(list)
-    finished    = pyqtSignal()
+    finished = pyqtSignal()
 
-    def __init__(self, cmd):
-        super().__init__()
-        self.cmd = cmd
+    def __init__(self, cmd, parent=None):
+        super().__init__(parent)
+        self.cmd = list(cmd)
+        self._proc = None
+        self._cancelled = False
+
+    def stop(self):
+        self._cancelled = True
+        if self._proc is not None and self._proc.poll() is None:
+            try:
+                self._proc.terminate()
+            except OSError:
+                pass
 
     def run(self):
         try:
-            proc = subprocess.Popen(
+            self._proc = subprocess.Popen(
                 self.cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
             )
             lines = []
-            for line in proc.stdout:
-                lines.append(line.rstrip())
-            proc.wait()
-            self.lines_ready.emit(lines)
+            if self._proc.stdout:
+                for line in self._proc.stdout:
+                    if self._cancelled:
+                        break
+                    lines.append(line.rstrip())
+            self._proc.wait()
+            if not self._cancelled:
+                self.lines_ready.emit(lines)
         except Exception as e:
-            self.lines_ready.emit([f"Error: {e}"])
-        self.finished.emit()
+            if not self._cancelled:
+                self.lines_ready.emit([f"Error: {e}"])
+        if not self._cancelled:
+            self.finished.emit()
 
 
 class LogViewer(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Log Viewer")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(820, 540)
+        vt.apply_app_theme(self)
         self._all_lines = []
         self._worker = None
-        self._follow_timer = QTimer()
+        self._sources = dict(LOG_SOURCES)
+        self._follow_timer = QTimer(self)
         self._follow_timer.setInterval(5000)
         self._follow_timer.timeout.connect(self._load_log)
         self._init_ui()
@@ -111,23 +111,24 @@ class LogViewer(QWidget):
     def _init_ui(self):
         root = QVBoxLayout(self)
 
-        title = QLabel("Vice OS — Log Viewer")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 4px;")
-        root.addWidget(title)
+        root.addWidget(vt.make_header(
+            "Log Viewer",
+            "Explore systemd journald and /var/log streams with regex & severity filters",
+            icon_name="utilities-log-viewer",
+            badge_text="LOGS",
+            badge_variant="aqua",
+            parent=self,
+        ))
 
-        # Controls
         ctrl = QHBoxLayout()
-
         ctrl.addWidget(QLabel("Source:"))
         self._source_combo = QComboBox()
-        for name in LOG_SOURCES:
+        for name in self._sources:
             self._source_combo.addItem(name)
         self._source_combo.currentIndexChanged.connect(self._load_log)
         ctrl.addWidget(self._source_combo)
 
-        self._open_btn = QPushButton("Open File")
+        self._open_btn = vt.make_button("Open File", "secondary", parent=self)
         self._open_btn.clicked.connect(self._open_file)
         ctrl.addWidget(self._open_btn)
 
@@ -144,10 +145,8 @@ class LogViewer(QWidget):
             )
         )
         ctrl.addWidget(self._wrap_cb)
-
         root.addLayout(ctrl)
 
-        # Search bar
         search_row = QHBoxLayout()
         search_row.addWidget(QLabel("Search:"))
         self._search = QLineEdit()
@@ -163,16 +162,13 @@ class LogViewer(QWidget):
         self._level_combo.addItems(["All levels", "error/crit", "warning", "info", "debug"])
         self._level_combo.currentIndexChanged.connect(self._apply_filter)
         search_row.addWidget(self._level_combo)
-
         root.addLayout(search_row)
 
-        # Log view
         self._log_view = QTextEdit()
         self._log_view.setReadOnly(True)
         self._log_view.setLineWrapMode(QTextEdit.NoWrap)
         root.addWidget(self._log_view)
 
-        # Bottom bar
         bottom = QHBoxLayout()
         self._progress = QProgressBar()
         self._progress.setRange(0, 0)
@@ -180,33 +176,35 @@ class LogViewer(QWidget):
         bottom.addWidget(self._progress)
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         bottom.addWidget(self._status)
 
         bottom.addStretch()
 
-        clear_btn = QPushButton("Clear")
+        clear_btn = vt.make_button("Clear", "secondary", parent=self)
         clear_btn.clicked.connect(self._log_view.clear)
         bottom.addWidget(clear_btn)
 
-        export_btn = QPushButton("Export")
+        export_btn = vt.make_button("Export", "primary", parent=self)
         export_btn.clicked.connect(self._export)
         bottom.addWidget(export_btn)
-
         root.addLayout(bottom)
 
     def _load_log(self):
         name = self._source_combo.currentText()
-        cmd = LOG_SOURCES.get(name)
+        cmd = self._sources.get(name)
         if not cmd:
             return
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(1000)
         self._progress.setVisible(True)
         self._status.setText(f"Loading: {name}")
-        w = LogWorker(cmd)
+        w = LogWorker(cmd, parent=self)
         w.lines_ready.connect(self._on_lines)
         w.finished.connect(lambda: self._progress.setVisible(False))
-        w.start()
         self._worker = w
+        w.start()
 
     def _on_lines(self, lines):
         self._all_lines = lines
@@ -214,33 +212,31 @@ class LogViewer(QWidget):
         self._status.setText(f"{len(lines)} lines loaded")
 
     def _apply_filter(self):
-        import re
         search = self._search.text()
         level_filter = self._level_combo.currentText()
         flags = 0 if self._case_cb.isChecked() else re.IGNORECASE
 
         level_keywords = {
             "error/crit": ["error", "err", "crit", "alert", "emerg"],
-            "warning":    ["warn", "warning"],
-            "info":       ["info", "notice"],
-            "debug":      ["debug"],
+            "warning": ["warn", "warning"],
+            "info": ["info", "notice"],
+            "debug": ["debug"],
         }
 
         filtered = self._all_lines
-
         if level_filter != "All levels":
             keywords = level_keywords.get(level_filter, [])
-            filtered = [l for l in filtered
-                        if any(k in l.lower() for k in keywords)]
+            filtered = [line for line in filtered if any(k in line.lower() for k in keywords)]
 
         if search:
             try:
                 pat = re.compile(search, flags)
-                filtered = [l for l in filtered if pat.search(l)]
+                filtered = [line for line in filtered if pat.search(line)]
             except re.error:
-                filtered = [l for l in filtered
-                            if (search in l if self._case_cb.isChecked()
-                                else search.lower() in l.lower())]
+                filtered = [
+                    line for line in filtered
+                    if (search in line if self._case_cb.isChecked() else search.lower() in line.lower())
+                ]
 
         self._render(filtered)
 
@@ -248,12 +244,13 @@ class LogViewer(QWidget):
         self._log_view.clear()
         cursor = self._log_view.textCursor()
         fmt_default = QTextCharFormat()
-        fmt_default.setForeground(QColor("#aaffff"))
+        fmt_default.setForeground(QColor(vt.COLORS["text_primary"]))
+        colors = _level_colors()
 
         for line in lines:
             fmt = QTextCharFormat(fmt_default)
             lower = line.lower()
-            for keyword, color in LEVEL_COLORS.items():
+            for keyword, color in colors.items():
                 if keyword in lower:
                     fmt.setForeground(QColor(color))
                     break
@@ -272,26 +269,35 @@ class LogViewer(QWidget):
             self._follow_timer.stop()
 
     def _open_file(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Open Log File", "/var/log", "Log files (*.log *.txt *);;All files (*)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Log File", "/var/log", "Log files (*.log *.txt *);;All files (*)"
+        )
         if not path:
             return
-        name = os.path.basename(path)
-        LOG_SOURCES[f"File: {name}"] = ["tail", "-n", "1000", path]
-        self._source_combo.addItem(f"File: {name}")
-        self._source_combo.setCurrentText(f"File: {name}")
+        name = f"File: {os.path.basename(path)}"
+        self._sources[name] = ["tail", "-n", "1000", path]
+        if self._source_combo.findText(name) < 0:
+            self._source_combo.addItem(name)
+        self._source_combo.setCurrentText(name)
 
     def _export(self):
-        import datetime
         path = os.path.expanduser(
             f"~/vice_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         )
         try:
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(self._log_view.toPlainText())
             log_info(f"Log exported to {path}")
             QMessageBox.information(self, "Exported", f"Saved to:\n{path}")
         except Exception as e:
             log_error(f"Export failed: {e}")
+
+    def closeEvent(self, event):
+        self._follow_timer.stop()
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(2000)
+        super().closeEvent(event)
 
 
 def main():

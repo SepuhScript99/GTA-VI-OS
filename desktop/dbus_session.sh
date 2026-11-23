@@ -16,6 +16,21 @@ else
     log_error() { echo "[ERROR] $1" >&2; }
 fi
 
+unmute_alsa_unity() {
+    # Set ALSA hardware playback controls to 0dB unity gain (prevents AC97 +60dB clipping)
+    if command -v amixer > /dev/null 2>&1 && [ -r /proc/asound/cards ]; then
+        local card
+        for card in $(awk '/^[[:space:]]*[0-9]+/ {print $1}' /proc/asound/cards 2>/dev/null || true); do
+            local ctrl
+            for ctrl in Master PCM Front Surround Center LFE Side Headphone Speaker; do
+                if ! amixer -c "$card" sset "$ctrl" 0dB unmute > /dev/null 2>&1; then
+                    amixer -c "$card" sset "$ctrl" unmute > /dev/null 2>&1 || true
+                fi
+            done
+        done
+    fi
+}
+
 start_audio_stack() {
     # Prefer systemd --user when active (started via PAM/logind)
     if command -v systemctl > /dev/null 2>&1 && timeout 3 systemctl --user show-environment > /dev/null 2>&1; then
@@ -47,16 +62,8 @@ start_audio_stack() {
         fi
     fi
 
-    # Immediately unmute ALSA hardware playback controls across detected cards
-    if command -v amixer > /dev/null 2>&1 && [ -r /proc/asound/cards ]; then
-        local card
-        for card in $(awk '/^[[:space:]]*[0-9]+/ {print $1}' /proc/asound/cards 2>/dev/null || true); do
-            local ctrl
-            for ctrl in Master PCM Front Surround Center LFE Side Headphone Speaker; do
-                amixer -c "$card" sset "$ctrl" 85% unmute > /dev/null 2>&1 || true
-            done
-        done
-    fi
+    # Immediately unmute ALSA hardware playback controls at 0dB unity gain
+    unmute_alsa_unity
 
     # Set default Pulse/PipeWire sink unmuted at 85% once a real audio sink appears
     (
@@ -67,6 +74,7 @@ start_audio_stack() {
                     local sink
                     sink=$(timeout 2 pactl get-default-sink 2>/dev/null || true)
                     if [ -n "$sink" ] && [ "$sink" != "auto_null" ] && [ "$sink" != "@DEFAULT_SINK@" ]; then
+                        unmute_alsa_unity
                         timeout 2 pactl set-sink-mute "$sink" 0 > /dev/null 2>&1 || true
                         timeout 2 pactl set-sink-volume "$sink" 85% > /dev/null 2>&1 || true
                         exit 0
@@ -74,6 +82,7 @@ start_audio_stack() {
                 fi
             elif command -v wpctl > /dev/null 2>&1; then
                 if timeout 2 wpctl get-volume @DEFAULT_AUDIO_SINK@ > /dev/null 2>&1; then
+                    unmute_alsa_unity
                     timeout 2 wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 > /dev/null 2>&1 || true
                     timeout 2 wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.85 > /dev/null 2>&1 || true
                     exit 0

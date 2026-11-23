@@ -1,42 +1,27 @@
 #!/usr/bin/env python3
 """Vice OS — Help Viewer. Browse docs, app reference, and keyboard shortcuts."""
 
-import sys
-import os
 import glob
-import subprocess
+import html as html_mod
 import json
+import os
+import sys
+
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QBrush, QColor
+from PyQt5.QtWidgets import (
+    QApplication, QHeaderView, QLabel, QListWidget, QListWidgetItem,
+    QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser,
+    QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QListWidget, QListWidgetItem, QTextBrowser, QSplitter, QTabWidget,
-    QTableWidget, QTableWidgetItem, QHeaderView
-)
-from PyQt5.QtCore import Qt, QUrl
-from PyQt5.QtGui import QFont
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 1100
 WINDOW_HEIGHT = 680
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QListWidget { background: #0d0d0d; color: #00ffff; border: 1px solid #00ffff; font-size: 12px; }
-QListWidget::item:selected { background: #00ffff; color: #0a0a0a; }
-QTextBrowser { background: #0d0d0d; color: #ccffff; border: 1px solid #1a4a4a; font-size: 12px; }
-QTabBar::tab { background: #1a1a1a; color: #00ffff; padding: 6px 14px; }
-QTabBar::tab:selected { background: #00ffff; color: #0a0a0a; }
-QTabWidget::pane { border: 1px solid #00ffff; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QLabel { color: #00ffff; }
-QSplitter::handle { background: #00ffff; width: 1px; }
-"""
 
 DOC_DIRS = [
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs"),
@@ -50,7 +35,6 @@ SHORTCUTS_FILE = os.path.expanduser("~/.config/vice-os/keyboard_shortcuts.json")
 
 def md_to_html(text):
     """Minimal Markdown -> HTML conversion for the built-in docs."""
-    import html as html_mod
     lines = html_mod.escape(text).splitlines()
     out = []
     in_code = False
@@ -105,12 +89,12 @@ def md_to_html(text):
     body = "\n".join(out)
     return f"""
     <html><head><style>
-        body {{ font-family: 'monospace'; color: #ccffff; background: #0d0d0d; padding: 16px; }}
-        h1 {{ color: #ff00ff; border-bottom: 1px solid #ff00ff; padding-bottom: 6px; }}
-        h2 {{ color: #00ffff; margin-top: 18px; }}
-        h3 {{ color: #aaffff; }}
-        code {{ color: #00ff88; }}
-        pre {{ background: #111; padding: 8px; border: 1px solid #1a4a4a; }}
+        body {{ font-family: 'Noto Sans Mono', monospace; color: {vt.COLORS['text_primary']}; background: {vt.COLORS['bg_surface']}; padding: 16px; }}
+        h1 {{ color: {vt.COLORS['accent_coral']}; border-bottom: 1px solid {vt.COLORS['border_strong']}; padding-bottom: 6px; }}
+        h2 {{ color: {vt.COLORS['accent_aqua']}; margin-top: 18px; }}
+        h3 {{ color: {vt.COLORS['accent_peach']}; }}
+        code {{ color: {vt.COLORS['accent_gold']}; }}
+        pre {{ background: {vt.COLORS['bg_canvas']}; padding: 10px; border: 1px solid {vt.COLORS['border']}; border-radius: 6px; }}
         ul {{ margin-left: 18px; }}
         li {{ margin: 4px 0; }}
     </style></head><body>{body}</body></html>
@@ -121,8 +105,9 @@ class HelpViewer(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Help")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(760, 520)
+        vt.apply_app_theme(self)
         self._docs = self._find_docs()
         self._init_ui()
 
@@ -140,17 +125,21 @@ class HelpViewer(QWidget):
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — Help & Documentation")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        root.addWidget(vt.make_header(
+            "Help & Documentation",
+            "Browse Vice OS documentation, desktop apps, and keyboard shortcuts",
+            icon_name="help-contents",
+            badge_text="Docs",
+            badge_variant="aqua",
+            parent=self,
+        ))
 
         tabs = QTabWidget()
         root.addWidget(tabs, 1)
 
-        # --- Docs tab ---
         docs_tab = QWidget()
         dl = QVBoxLayout(docs_tab)
         splitter = QSplitter(Qt.Horizontal)
@@ -168,7 +157,6 @@ class HelpViewer(QWidget):
         splitter.setSizes([240, 840])
         tabs.addTab(docs_tab, "Documentation")
 
-        # --- Apps tab ---
         apps_tab = QWidget()
         al = QVBoxLayout(apps_tab)
         self._apps_table = QTableWidget()
@@ -180,7 +168,6 @@ class HelpViewer(QWidget):
         al.addWidget(self._apps_table)
         tabs.addTab(apps_tab, "Applications")
 
-        # --- Shortcuts tab ---
         keys_tab = QWidget()
         kl = QVBoxLayout(keys_tab)
         self._keys_table = QTableWidget()
@@ -191,23 +178,27 @@ class HelpViewer(QWidget):
         kl.addWidget(self._keys_table)
         tabs.addTab(keys_tab, "Keyboard Shortcuts")
 
-        # --- About tab ---
         about_tab = QWidget()
         bl = QVBoxLayout(about_tab)
         bl.setAlignment(Qt.AlignCenter)
         logo = QLabel("VICE OS")
-        logo.setStyleSheet("color: #ff00ff; font-size: 48px; font-weight: bold; letter-spacing: 10px; border: none;")
+        logo.setStyleSheet(
+            f"color: {vt.COLORS['accent_coral']}; font-size: 48px; "
+            "font-weight: bold; letter-spacing: 10px; border: none;"
+        )
+        logo.setAlignment(Qt.AlignCenter)
         bl.addWidget(logo)
-        sub = QLabel("Cyberpunk Linux — Help Center")
-        sub.setStyleSheet("color: #888; font-size: 14px; border: none;")
+        sub = QLabel("Leonida Dark Slate Edition — Help Center")
+        sub.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 14px; border: none;")
+        sub.setAlignment(Qt.AlignCenter)
         bl.addWidget(sub)
         bl.addSpacing(20)
-        hint = QLabel("Press Win+Space for the Run Menu • Click 'vice' on the panel for all apps")
-        hint.setStyleSheet("color: #555; font-size: 11px; border: none;")
+        hint = QLabel("Press Win+Space for the Run Menu | Click 'VICE' on the taskbar for all apps")
+        hint.setStyleSheet(f"color: {vt.COLORS['text_muted']}; font-size: 11px; border: none;")
+        hint.setAlignment(Qt.AlignCenter)
         bl.addWidget(hint)
         tabs.addTab(about_tab, "About")
 
-        # Initial content
         if self._doc_list.count() > 0:
             self._doc_list.setCurrentRow(0)
         else:
@@ -216,12 +207,12 @@ class HelpViewer(QWidget):
         self._load_shortcuts_table()
 
     def _show_doc(self, row):
-        if row < 0:
+        if row < 0 or row >= self._doc_list.count():
             return
         name = self._doc_list.item(row).text()
         path = self._docs.get(name)
         if not path or not os.path.isfile(path):
-            self._doc_view.setHtml(f"<p>Cannot read {name}.</p>")
+            self._doc_view.setHtml(f"<p>Cannot read {html_mod.escape(name)}.</p>")
             return
         try:
             with open(path, encoding="utf-8", errors="replace") as f:
@@ -231,7 +222,7 @@ class HelpViewer(QWidget):
             else:
                 self._doc_view.setPlainText(text)
         except Exception as e:
-            self._doc_view.setHtml(f"<p>Error reading {name}: {e}</p>")
+            self._doc_view.setHtml(f"<p>Error reading {html_mod.escape(name)}: {html_mod.escape(str(e))}</p>")
 
     def _load_apps_table(self):
         """List all Vice OS apps with their launch commands."""
@@ -251,13 +242,14 @@ class HelpViewer(QWidget):
         shortcuts = None
         if os.path.exists(SHORTCUTS_FILE):
             try:
-                with open(SHORTCUTS_FILE) as f:
-                    shortcuts = json.load(f)
+                with open(SHORTCUTS_FILE, encoding="utf-8", errors="replace") as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    shortcuts = [item for item in data if isinstance(item, dict)]
             except Exception:
                 shortcuts = None
 
         if not shortcuts:
-            # Fallback: show reference defaults
             shortcuts = [
                 {"name": "Open Launcher", "key": "Super_L", "desc": "Open the app launcher"},
                 {"name": "Open Terminal", "key": "Ctrl+Alt+T", "desc": "Open terminal emulator"},
@@ -269,12 +261,11 @@ class HelpViewer(QWidget):
         for s in shortcuts:
             row = self._keys_table.rowCount()
             self._keys_table.insertRow(row)
-            self._keys_table.setItem(row, 0, QTableWidgetItem(s.get("name", "")))
-            key_item = QTableWidgetItem(s.get("key", ""))
-            from PyQt5.QtGui import QColor, QBrush
-            key_item.setForeground(QBrush(QColor("#ff00ff")))
+            self._keys_table.setItem(row, 0, QTableWidgetItem(str(s.get("name", ""))))
+            key_item = QTableWidgetItem(str(s.get("key", "")))
+            key_item.setForeground(QBrush(QColor(vt.COLORS["accent_peach"])))
             self._keys_table.setItem(row, 1, key_item)
-            self._keys_table.setItem(row, 2, QTableWidgetItem(s.get("desc", "")))
+            self._keys_table.setItem(row, 2, QTableWidgetItem(str(s.get("desc", ""))))
 
 
 def main():

@@ -1,46 +1,29 @@
 #!/usr/bin/env python3
 """Vice OS — SSH Sessions Manager. Saved hosts, quick connect, key management."""
 
-import sys
+import json
 import os
+import shlex
 import shutil
 import subprocess
-import json
+import sys
+
+from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor
+from PyQt5.QtWidgets import (
+    QAbstractItemView, QApplication, QComboBox, QDialog, QDialogButtonBox,
+    QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
+    QPlainTextEdit, QSpinBox, QTabWidget, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QMessageBox, QDialog, QFormLayout, QLineEdit, QSpinBox, QPlainTextEdit,
-    QCheckBox, QTabWidget, QComboBox, QDialogButtonBox
-)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QBrush
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 980
 WINDOW_HEIGHT = 620
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QSpinBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 3px; }
-QPlainTextEdit { background: #0d0d0d; color: #aaffff; border: 1px solid #1a4a4a; font-size: 11px; }
-QCheckBox { color: #00ffff; }
-QTabBar::tab { background: #1a1a1a; color: #00ffff; padding: 6px 14px; }
-QTabBar::tab:selected { background: #00ffff; color: #0a0a0a; }
-QTabWidget::pane { border: 1px solid #00ffff; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QLabel { color: #00ffff; }
-"""
 
 SESSIONS_FILE = os.path.expanduser("~/.config/vice-os/ssh_sessions.json")
 SSH_DIR = os.path.expanduser("~/.ssh")
@@ -49,8 +32,9 @@ SSH_DIR = os.path.expanduser("~/.ssh")
 def load_sessions():
     if os.path.exists(SESSIONS_FILE):
         try:
-            with open(SESSIONS_FILE) as f:
-                return json.load(f)
+            with open(SESSIONS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+                return data if isinstance(data, list) else []
         except Exception:
             return []
     return []
@@ -59,7 +43,7 @@ def load_sessions():
 def save_sessions(sessions):
     os.makedirs(os.path.dirname(SESSIONS_FILE), exist_ok=True)
     try:
-        with open(SESSIONS_FILE, "w") as f:
+        with open(SESSIONS_FILE, "w", encoding="utf-8") as f:
             json.dump(sessions, f, indent=2)
     except Exception as e:
         log_error(f"Session save failed: {e}")
@@ -69,8 +53,8 @@ class SessionDialog(QDialog):
     def __init__(self, session=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("SSH Session" + (" - Edit" if session else ""))
-        self.setFixedSize(480, 360)
-        self.setStyleSheet(STYLE)
+        self.setMinimumSize(480, 360)
+        vt.apply_app_theme(self)
         layout = QFormLayout(self)
 
         self._name = QLineEdit()
@@ -91,12 +75,11 @@ class SessionDialog(QDialog):
 
         self._key_combo = QComboBox()
         self._key_combo.setEditable(True)
-        self._key_combo.addItem("")  # none = password auth
-        key_dir = SSH_DIR
-        if os.path.isdir(key_dir):
-            for f in sorted(os.listdir(key_dir)):
-                if f.startswith("id_") and not f.endswith(".pub"):
-                    self._key_combo.addItem(os.path.join(key_dir, f))
+        self._key_combo.addItem("")
+        if os.path.isdir(SSH_DIR):
+            for fname in sorted(os.listdir(SSH_DIR)):
+                if fname.startswith("id_") and not fname.endswith(".pub"):
+                    self._key_combo.addItem(os.path.join(SSH_DIR, fname))
         layout.addRow("Identity Key:", self._key_combo)
 
         self._extra = QLineEdit()
@@ -107,7 +90,7 @@ class SessionDialog(QDialog):
             self._name.setText(session.get("name", ""))
             self._host.setText(session.get("host", ""))
             self._user.setText(session.get("user", ""))
-            self._port.setValue(session.get("port", 22))
+            self._port.setValue(int(session.get("port", 22) or 22))
             self._key_combo.setCurrentText(session.get("key", ""))
             self._extra.setText(session.get("extra", ""))
 
@@ -127,39 +110,71 @@ class SessionDialog(QDialog):
         }
 
 
-class SshWorker(QThread):
+class InteractiveSshWorker(QThread):
     line = pyqtSignal(str)
     finished = pyqtSignal(int)
 
-    def __init__(self, cmd):
-        super().__init__()
-        self._cmd = cmd
+    def __init__(self, cmd, parent=None):
+        super().__init__(parent)
+        self._cmd = list(cmd)
+        self._proc = None
+        self._cancelled = False
+
+    def send_input(self, text):
+        if self._proc is not None and self._proc.poll() is None and self._proc.stdin:
+            try:
+                self._proc.stdin.write(text + "\n")
+                self._proc.stdin.flush()
+                return True, ""
+            except Exception as e:
+                return False, str(e)
+        return False, "SSH process is not active"
+
+    def stop(self):
+        self._cancelled = True
+        if self._proc is not None and self._proc.poll() is None:
+            try:
+                self._proc.terminate()
+            except OSError:
+                pass
 
     def run(self):
         try:
-            proc = subprocess.Popen(
-                self._cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            self._proc = subprocess.Popen(
+                self._cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
             )
-            for line in proc.stdout:
-                self.line.emit(line.rstrip())
-            proc.wait()
-            self.finished.emit(proc.returncode)
+            if self._proc.stdout:
+                for line in self._proc.stdout:
+                    if self._cancelled:
+                        break
+                    self.line.emit(line.rstrip())
+            rc = self._proc.wait()
+            if not self._cancelled:
+                self.line.emit("[Disconnected]")
+                self.finished.emit(rc)
         except FileNotFoundError:
-            self.line.emit("ssh client not found. Install: apt install openssh-client")
-            self.finished.emit(1)
+            if not self._cancelled:
+                self.line.emit("ssh client not found. Install: apt install openssh-client")
+                self.finished.emit(1)
         except Exception as e:
-            self.line.emit(f"Error: {e}")
-            self.finished.emit(1)
+            if not self._cancelled:
+                self.line.emit(f"Error: {e}")
+                self.finished.emit(1)
 
 
 class SSHTerminalDialog(QDialog):
-    """Simple interactive SSH terminal dialog (stdin wired via write)."""
+    """Interactive SSH output/command dialog using a Qt signal-safe QThread."""
 
     def __init__(self, cmd, parent=None):
         super().__init__(parent)
         self.setWindowTitle("SSH Session")
         self.resize(820, 560)
-        self.setStyleSheet(STYLE)
+        vt.apply_app_theme(self)
         layout = QVBoxLayout(self)
 
         self._output = QPlainTextEdit()
@@ -167,56 +182,35 @@ class SSHTerminalDialog(QDialog):
         layout.addWidget(self._output)
 
         self._input = QLineEdit()
-        self._input.setPlaceholderText("Type a command and press Enter (password prompts also here)")
+        self._input.setPlaceholderText("Type a command and press Enter")
         self._input.returnPressed.connect(self._send)
         layout.addWidget(self._input)
 
-        self._proc = None
-        self._cmd = cmd
+        self._worker = InteractiveSshWorker(cmd, parent=self)
+        self._worker.line.connect(self._output.appendPlainText)
 
-        close_btn = QPushButton("Disconnect")
-        close_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        close_btn = vt.make_button("Disconnect", "danger", parent=self)
         close_btn.clicked.connect(self._disconnect)
         layout.addWidget(close_btn)
 
-        self._start()
-
-    def _start(self):
-        try:
-            self._proc = subprocess.Popen(
-                self._cmd,
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, text=True,
-                bufsize=1
-            )
-            import threading
-
-            def reader():
-                for line in self._proc.stdout:
-                    self._output.appendPlainText(line.rstrip())
-                self._output.appendPlainText("[Disconnected]")
-
-            t = threading.Thread(target=reader, daemon=True)
-            t.start()
-        except Exception as e:
-            self._output.appendPlainText(f"Failed to start SSH: {e}")
+        self._worker.start()
 
     def _send(self):
-        if self._proc and self._proc.poll() is None:
-            try:
-                self._proc.stdin.write(self._input.text() + "\n")
-                self._proc.stdin.flush()
-            except Exception as e:
-                self._output.appendPlainText(f"Write failed: {e}")
+        ok, err = self._worker.send_input(self._input.text())
+        if not ok:
+            self._output.appendPlainText(f"Write failed: {err}")
         self._input.clear()
 
     def _disconnect(self):
-        if self._proc and self._proc.poll() is None:
-            self._proc.terminate()
+        if self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(2000)
         self.accept()
 
     def closeEvent(self, event):
-        self._disconnect()
+        if self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(2000)
         super().closeEvent(event)
 
 
@@ -224,8 +218,9 @@ class SSHManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — SSH Sessions Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(780, 500)
+        vt.apply_app_theme(self)
         self._sessions = load_sessions()
         self._init_ui()
         self._refresh()
@@ -233,16 +228,18 @@ class SSHManager(QWidget):
     def _init_ui(self):
         root = QVBoxLayout(self)
 
-        title = QLabel("Vice OS — SSH Sessions Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        root.addWidget(vt.make_header(
+            "SSH Sessions Manager",
+            "Saved remote hosts, quick connect and ~/.ssh key management",
+            icon_name="utilities-terminal",
+            badge_text="SSH",
+            badge_variant="aqua",
+            parent=self,
+        ))
 
         tabs = QTabWidget()
         root.addWidget(tabs, 1)
 
-        # --- Sessions tab ---
         sess_tab = QWidget()
         sl = QVBoxLayout(sess_tab)
 
@@ -251,7 +248,7 @@ class SSHManager(QWidget):
         self._table.setHorizontalHeaderLabels(["Name", "Host", "User", "Port", "Auth"])
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        for i in [2, 3, 4]:
+        for i in (2, 3, 4):
             self._table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeToContents)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -259,30 +256,27 @@ class SSHManager(QWidget):
         sl.addWidget(self._table)
 
         btn_row = QHBoxLayout()
-        add_btn = QPushButton("+ Add Session")
+        add_btn = vt.make_button("+ Add Session", "secondary", parent=sess_tab)
         add_btn.clicked.connect(self._add_session)
         btn_row.addWidget(add_btn)
-        edit_btn = QPushButton("Edit")
+        edit_btn = vt.make_button("Edit", "secondary", parent=sess_tab)
         edit_btn.clicked.connect(self._edit_session)
         btn_row.addWidget(edit_btn)
-        del_btn = QPushButton("Delete")
-        del_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        del_btn = vt.make_button("Delete", "danger", parent=sess_tab)
         del_btn.clicked.connect(self._delete_session)
         btn_row.addWidget(del_btn)
 
-        connect_btn = QPushButton("⌨ Connect")
-        connect_btn.setStyleSheet("QPushButton { border-color: #ff00ff; color: #ff00ff; } QPushButton:hover { background: #ff00ff; color: #0a0a0a; }")
+        connect_btn = vt.make_button("Connect", "primary", parent=sess_tab)
         connect_btn.clicked.connect(self._connect)
         btn_row.addWidget(connect_btn)
 
-        term_btn = QPushButton("Open in Terminal")
+        term_btn = vt.make_button("Open in Terminal", "secondary", parent=sess_tab)
         term_btn.clicked.connect(self._connect_terminal)
         btn_row.addWidget(term_btn)
         btn_row.addStretch()
         sl.addLayout(btn_row)
         tabs.addTab(sess_tab, "Sessions")
 
-        # --- Keys tab ---
         keys_tab = QWidget()
         kl = QVBoxLayout(keys_tab)
 
@@ -292,10 +286,10 @@ class SSHManager(QWidget):
         kl.addWidget(self._key_output)
 
         key_btns = QHBoxLayout()
-        gen_btn = QPushButton("Generate New Key (ed25519)")
+        gen_btn = vt.make_button("Generate New Key (ed25519)", "primary", parent=keys_tab)
         gen_btn.clicked.connect(self._gen_key)
         key_btns.addWidget(gen_btn)
-        list_btn = QPushButton("Refresh")
+        list_btn = vt.make_button("Refresh", "secondary", parent=keys_tab)
         list_btn.clicked.connect(self._list_keys)
         key_btns.addWidget(list_btn)
         key_btns.addStretch()
@@ -303,7 +297,7 @@ class SSHManager(QWidget):
         tabs.addTab(keys_tab, "Keys")
 
         self._status = QLabel("Ready — double-click a session to connect")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         root.addWidget(self._status)
 
         self._list_keys()
@@ -320,7 +314,9 @@ class SSHManager(QWidget):
             self._table.setItem(row, 3, QTableWidgetItem(str(s.get("port", 22))))
             auth = "Key" if s.get("key") else "Password"
             auth_item = QTableWidgetItem(auth)
-            auth_item.setForeground(QBrush(QColor("#ff00ff" if s.get("key") else "#888888")))
+            auth_item.setForeground(QBrush(QColor(
+                vt.COLORS["accent_aqua"] if s.get("key") else vt.COLORS["text_muted"]
+            )))
             self._table.setItem(row, 4, auth_item)
         self._status.setText(f"{len(self._sessions)} session(s) saved")
 
@@ -338,8 +334,10 @@ class SSHManager(QWidget):
             if not vals["host"]:
                 QMessageBox.warning(self, "Missing Info", "Host is required.")
                 return
+            user = vals["user"] or "vice"
+            vals["user"] = user
             if not vals["name"]:
-                vals["name"] = f"{vals['user']}@{vals['host']}"
+                vals["name"] = f"{user}@{vals['host']}"
             self._sessions.append(vals)
             save_sessions(self._sessions)
             self._refresh()
@@ -351,6 +349,13 @@ class SSHManager(QWidget):
         dlg = SessionDialog(s, self)
         if dlg.exec_() == QDialog.Accepted:
             vals = dlg.values()
+            if not vals["host"]:
+                QMessageBox.warning(self, "Missing Info", "Host is required.")
+                return
+            user = vals["user"] or "vice"
+            vals["user"] = user
+            if not vals["name"]:
+                vals["name"] = f"{user}@{vals['host']}"
             idx = self._sessions.index(s)
             self._sessions[idx] = vals
             save_sessions(self._sessions)
@@ -360,21 +365,26 @@ class SSHManager(QWidget):
         s = self._selected_session()
         if not s:
             return
-        if QMessageBox.question(self, "Delete", f"Delete session '{s.get('name')}'?",
-                                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+        if QMessageBox.question(
+            self, "Delete", f"Delete session '{s.get('name')}'?",
+            QMessageBox.Yes | QMessageBox.No,
+        ) != QMessageBox.Yes:
             return
         self._sessions.remove(s)
         save_sessions(self._sessions)
         self._refresh()
 
     def _build_cmd(self, s):
-        cmd = ["ssh"]
-        cmd += ["-p", str(s.get("port", 22))]
+        cmd = ["ssh", "-p", str(s.get("port", 22))]
         if s.get("key"):
             cmd += ["-i", s["key"]]
         if s.get("extra"):
-            cmd += s["extra"].split()
-        cmd.append(f"{s.get('user', 'root')}@{s['host']}")
+            try:
+                cmd += shlex.split(s["extra"])
+            except ValueError:
+                cmd += s["extra"].split()
+        user = s.get("user") or "vice"
+        cmd.append(f"{user}@{s['host']}")
         return cmd
 
     def _connect(self):
@@ -388,21 +398,19 @@ class SSHManager(QWidget):
         s = self._selected_session()
         if not s:
             return
-        cmd_str = " ".join(self._build_cmd(s))
+        cmd = self._build_cmd(s)
         term = next(
             (t for t in ("x-terminal-emulator", "xfce4-terminal", "xterm") if shutil.which(t)),
             None,
         )
         if term:
-            subprocess.Popen(
-                [term, "-e", cmd_str],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
+            args = [term, "-e", shlex.join(cmd)] if term == "xfce4-terminal" else [term, "-e"] + cmd
+            subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self._status.setText(f"Opened terminal to {s['host']}")
         else:
             QMessageBox.information(
                 self, "No Terminal",
-                "No terminal emulator found.\nUse the built-in Connect instead."
+                "No terminal emulator found.\nUse the built-in Connect instead.",
             )
 
     def _list_keys(self):
@@ -410,20 +418,20 @@ class SSHManager(QWidget):
             self._key_output.setPlainText("~/.ssh does not exist")
             return
         lines = []
-        for f in sorted(os.listdir(SSH_DIR)):
-            path = os.path.join(SSH_DIR, f)
-            ftype = "DIR " if os.path.isdir(path) else "KEY" if f.endswith(".pub") else "PRIV"
+        for fname in sorted(os.listdir(SSH_DIR)):
+            path = os.path.join(SSH_DIR, fname)
+            ftype = "DIR " if os.path.isdir(path) else "KEY " if fname.endswith(".pub") else "PRIV"
             size = os.path.getsize(path) if os.path.isfile(path) else 0
-            lines.append(f"[{ftype}] {f}  ({size} bytes)")
+            lines.append(f"[{ftype}] {fname}  ({size} bytes)")
         self._key_output.setPlainText("\n".join(lines) if lines else "No keys found")
 
     def _gen_key(self):
-        name, ok = QMessageBox.question(
+        reply = QMessageBox.question(
             self, "Generate Key",
             "Generate a new ed25519 key at ~/.ssh/id_ed25519?\n(Existing key will NOT be overwritten.)",
-            QMessageBox.Yes | QMessageBox.No
+            QMessageBox.Yes | QMessageBox.No,
         )
-        if name != QMessageBox.Yes:
+        if reply != QMessageBox.Yes:
             return
         key_path = os.path.join(SSH_DIR, "id_ed25519")
         if os.path.exists(key_path):
@@ -433,15 +441,22 @@ class SSHManager(QWidget):
             os.makedirs(SSH_DIR, mode=0o700, exist_ok=True)
             r = subprocess.run(
                 ["ssh-keygen", "-t", "ed25519", "-f", key_path, "-N", "", "-q"],
-                capture_output=True, timeout=15
+                capture_output=True, text=True, timeout=15,
             )
             if r.returncode == 0:
-                QMessageBox.information(self, "Key Generated",
-                                        f"New key: {key_path}\nPublic key:\n"
-                                        f"{open(key_path + '.pub').read()}")
+                pub_text = ""
+                try:
+                    with open(key_path + ".pub", encoding="utf-8") as f:
+                        pub_text = f.read()
+                except OSError:
+                    pass
+                QMessageBox.information(
+                    self, "Key Generated",
+                    f"New key: {key_path}\nPublic key:\n{pub_text}",
+                )
                 log_info("SSH ed25519 key generated")
             else:
-                QMessageBox.warning(self, "Failed", r.stderr.decode()[:200])
+                QMessageBox.warning(self, "Failed", (r.stderr or "ssh-keygen failed")[:200])
         except Exception as e:
             QMessageBox.warning(self, "Error", str(e))
         self._list_keys()

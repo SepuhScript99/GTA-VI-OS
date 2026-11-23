@@ -23,7 +23,7 @@ from typing import Optional
 sys.path.insert(0, '/opt/vice-os/lib')
 sys.path.insert(0, '/opt/vice-os')
 
-from python.vice_utils import log_info, log_warn, log_error
+from python.vice_utils import log_error, log_info, log_warn  # noqa: E402
 
 _WALLPAPER_DIRS = [
     "/usr/share/backgrounds",
@@ -210,4 +210,3 @@ def apply_wallpaper():
 
 if __name__ == "__main__":
     apply_wallpaper()
-

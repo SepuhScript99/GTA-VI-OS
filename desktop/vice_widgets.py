@@ -1,38 +1,41 @@
 #!/usr/bin/env python3
 """Vice OS Desktop Widgets — draggable widgets: clock, system stats, weather placeholder."""
 
-import sys
+import json
 import os
 import subprocess
+import sys
 from datetime import datetime
+
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QColor
+from PyQt5.QtWidgets import (
+    QApplication, QDialog, QFrame, QGraphicsDropShadowEffect, QLabel,
+    QLineEdit, QPushButton, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QFrame, QGraphicsDropShadowEffect, QDialog, QLineEdit
-)
-from PyQt5.QtCore import Qt, QTimer, QPoint, QPointF, QMimeData, QDataStream, QByteArray
-from PyQt5.QtGui import QFont, QColor, QPainter, QPolygon
-
-from python.vice_utils import log_info
+from python.vice_utils import log_error  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WIDGET_WIDTH = 280
 WIDGET_HEIGHT = 180
+WEATHER_CFG_FILE = os.path.expanduser("~/.config/vice-os/weather_widget.json")
 
-STYLE_FRAME = """
-QFrame {
-    background: rgba(10, 10, 10, 220);
-    border: 1px solid #00ffff;
+STYLE_FRAME = f"""
+QFrame {{
+    background: rgba(20, 22, 33, 232);
+    border: 1px solid {vt.COLORS['border_strong']};
     border-radius: 8px;
-}
+}}
 """
 
-WIDGET_STYLE = """
-QLabel { color: #00ffff; background: transparent; }
-QLabel#title { color: #ff00ff; font-size: 12px; font-weight: bold; }
-QLabel#clock_time { font-size: 36px; font-weight: bold; color: #00ffff; }
-QLabel#clock_date { color: #888; font-size: 12px; }
+WIDGET_STYLE = f"""
+QLabel {{ color: {vt.COLORS['text_primary']}; background: transparent; border: none; }}
+QLabel#title {{ color: {vt.COLORS['accent_coral']}; font-size: 12px; font-weight: bold; }}
+QLabel#clock_time {{ font-size: 34px; font-weight: bold; color: {vt.COLORS['text_primary']}; }}
+QLabel#clock_date {{ color: {vt.COLORS['text_secondary']}; font-size: 12px; }}
 """
 
 
@@ -41,8 +44,11 @@ class DragWidget(QFrame):
         super().__init__()
         self.setFixedSize(WIDGET_WIDTH, WIDGET_HEIGHT)
         self.setFrameShape(QFrame.Box)
-        self.setStyleSheet(STYLE_FRAME)
-        shadow = QGraphicsDropShadowEffect(blurRadius=15, color=QColor("#ff00ff"), offset=QPointF(3, 3))
+        self.setStyleSheet(STYLE_FRAME + WIDGET_STYLE)
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(15)
+        shadow.setColor(QColor(vt.COLORS["accent_coral"]))
+        shadow.setOffset(3, 3)
         self.setGraphicsEffect(shadow)
 
         if x is not None:
@@ -88,7 +94,7 @@ class ClockWidget(DragWidget):
 
         layout.addStretch()
 
-        self._timer = QTimer()
+        self._timer = QTimer(self)
         self._timer.setInterval(500)
         self._timer.timeout.connect(self._update)
         self._timer.start()
@@ -99,13 +105,17 @@ class ClockWidget(DragWidget):
         self._time_label.setText(now.strftime("%H:%M:%S"))
         self._date_label.setText(now.strftime("%A, %d %B %Y"))
 
+    def closeEvent(self, event):
+        self._timer.stop()
+        super().closeEvent(event)
+
 
 class SystemStatsWidget(DragWidget):
     def __init__(self, x=None, y=None):
         super().__init__(x, y)
         self.setFixedSize(WIDGET_WIDTH, 200)
         self._init_ui()
-        self._timer = QTimer()
+        self._timer = QTimer(self)
         self._timer.setInterval(2000)
         self._timer.timeout.connect(self._refresh)
         self._timer.start()
@@ -156,7 +166,7 @@ class SystemStatsWidget(DragWidget):
             avail = info.get("MemAvailable", 0)
             used = total - avail
             pct = int(used / total * 100)
-            lines.append(f"RAM: {pct}%  ({used//1024}/{total//1024} MB)")
+            lines.append(f"RAM: {pct}%  ({used // 1024}/{total // 1024} MB)")
         except Exception:
             lines.append("RAM: N/A")
 
@@ -186,12 +196,17 @@ class SystemStatsWidget(DragWidget):
 
         self._content.setText("\n".join(lines))
 
+    def closeEvent(self, event):
+        self._timer.stop()
+        super().closeEvent(event)
+
 
 class WeatherWidget(DragWidget):
     def __init__(self, x=None, y=None):
         super().__init__(x, y)
         self.setFixedSize(WIDGET_WIDTH, 160)
         self._init_ui()
+        self._load_config()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
@@ -202,31 +217,45 @@ class WeatherWidget(DragWidget):
         layout.addWidget(title)
 
         self._temp_label = QLabel("--°C")
-        self._temp_label.setStyleSheet("font-size: 32px; font-weight: bold; color: #00ffff;")
+        self._temp_label.setStyleSheet(
+            f"font-size: 32px; font-weight: bold; color: {vt.COLORS['accent_aqua']}; border: none;"
+        )
         self._temp_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._temp_label)
 
         self._desc_label = QLabel("Weather data unavailable\nConfigure API key or location")
         self._desc_label.setAlignment(Qt.AlignCenter)
-        self._desc_label.setStyleSheet("font-size: 11px; color: #888;")
+        self._desc_label.setStyleSheet(f"font-size: 11px; color: {vt.COLORS['text_secondary']}; border: none;")
         layout.addWidget(self._desc_label)
 
         hint = QLabel("(Double-click to configure)")
         hint.setAlignment(Qt.AlignCenter)
-        hint.setStyleSheet("font-size: 10px; color: #555;")
+        hint.setStyleSheet(f"font-size: 10px; color: {vt.COLORS['text_muted']}; border: none;")
         layout.addWidget(hint)
+
+    def _load_config(self):
+        if os.path.isfile(WEATHER_CFG_FILE):
+            try:
+                with open(WEATHER_CFG_FILE, encoding="utf-8") as fp:
+                    cfg = json.load(fp)
+                city = cfg.get("city", "").strip()
+                if city:
+                    self._desc_label.setText(f"{city}\nOffline / pending weather sync")
+            except Exception:
+                pass
 
     def mouseDoubleClickEvent(self, e):
         dlg = WeatherConfigDialog(self)
-        dlg.exec_()
+        if dlg.exec_() == QDialog.Accepted:
+            self._load_config()
 
 
 class WeatherConfigDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Weather Widget Config")
-        self.setFixedSize(360, 200)
-        self.setStyleSheet("background: #0a0a0a; color: #00ffff; font-family: 'Noto Sans Mono CJK JP', 'Noto Sans CJK JP', 'Noto Sans CJK SC', monospace;")
+        self.setFixedSize(360, 210)
+        vt.apply_app_theme(self)
         layout = QVBoxLayout(self)
 
         layout.addWidget(QLabel("Weather Widget Configuration"))
@@ -240,9 +269,30 @@ class WeatherConfigDialog(QDialog):
         self._city_edit.setPlaceholderText("e.g. London, UK")
         layout.addWidget(self._city_edit)
 
-        ok_btn = QPushButton("Save")
-        ok_btn.clicked.connect(self.accept)
+        if os.path.isfile(WEATHER_CFG_FILE):
+            try:
+                with open(WEATHER_CFG_FILE, encoding="utf-8") as fp:
+                    cfg = json.load(fp)
+                self._api_edit.setText(cfg.get("api_key", ""))
+                self._city_edit.setText(cfg.get("city", ""))
+            except Exception:
+                pass
+
+        ok_btn = vt.make_button("Save", variant="primary", parent=self)
+        ok_btn.clicked.connect(self._save_and_accept)
         layout.addWidget(ok_btn)
+
+    def _save_and_accept(self):
+        try:
+            os.makedirs(os.path.dirname(WEATHER_CFG_FILE), exist_ok=True)
+            with open(WEATHER_CFG_FILE, "w", encoding="utf-8") as fp:
+                json.dump({
+                    "api_key": self._api_edit.text().strip(),
+                    "city": self._city_edit.text().strip(),
+                }, fp, indent=2)
+        except Exception as e:
+            log_error(f"Weather widget config save failed: {e}")
+        self.accept()
 
 
 class WidgetHost(QWidget):
@@ -267,10 +317,18 @@ class WidgetHost(QWidget):
         self._weather = WeatherWidget(x - WIDGET_WIDTH - 10, 70)
         self._weather.setParent(self)
 
-        info = QLabel("Double-click widgets to remove  •  Drag to reposition")
-        info.setStyleSheet("background: rgba(10,10,10,180); color: #444; font-size: 10px; padding: 4px;")
+        info = QLabel("Double-click widgets to remove  |  Drag to reposition")
+        info.setStyleSheet(
+            f"background: rgba(13, 14, 21, 195); color: {vt.COLORS['text_muted']}; "
+            "font-size: 10px; padding: 4px 8px; border-radius: 4px;"
+        )
         info.setAttribute(Qt.WA_TransparentForMouseEvents)
         info.setParent(self)
+
+    def closeEvent(self, event):
+        for w in (self._clock, self._stats, self._weather):
+            w.close()
+        super().closeEvent(event)
 
 
 def main():

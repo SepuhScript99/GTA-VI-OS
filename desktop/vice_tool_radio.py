@@ -271,6 +271,11 @@ class LeonidaRadioApp(QMainWindow):
             self._proc = None
         self._cleanup_socket()
         self._paused = False
+        self._current_station = ""
+        self._current_genre = ""
+        self._station_lbl.setText("No Station Selected")
+        self._track_lbl.setText("Select a station or paste a stream URL to begin.")
+        self._track_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 13px;")
         self._pause_btn.setText("Pause")
         self._pause_btn.setEnabled(False)
         self._stop_btn.setEnabled(False)

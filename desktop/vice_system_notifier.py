@@ -9,25 +9,25 @@ Runs from the session; uses notify-send so it works with the Vice
 notification daemon (or any org.freedesktop.Notifications server).
 """
 
-import sys
+import datetime
+import json
 import os
 import shutil
 import subprocess
+import sys
 import time
-import json
-import datetime
 
 sys.path.insert(0, '/opt/vice-os/lib')
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
 
 POLL_INTERVAL = 60  # seconds
 STATE_FILE = os.path.expanduser("~/.local/share/vice-os/notifier_state.json")
 NOTIF_HISTORY = os.path.expanduser("~/.local/share/vice-os/notification_history.json")
 
 BATTERY_THRESHOLDS = [
-    (20, "low", "Battery Low", "Battery at {pct}%. Consider plugging in."),
+    (5, "danger", "Battery Danger", "Battery at {pct}%. System will suspend soon."),
     (10, "critical", "Battery Critical", "Battery at {pct}%. Plug in now!"),
-    (5,  "danger", "Battery Danger", "Battery at {pct}%. System will suspend soon."),
+    (20, "low", "Battery Low", "Battery at {pct}%. Consider plugging in."),
 ]
 
 DISK_WARN_PCT = 90

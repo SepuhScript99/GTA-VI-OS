@@ -232,17 +232,46 @@ class PrivActionWorker(QThread):
         super().__init__()
         self._cmd = cmd
         self._ok_msg = ok_msg
+        self._stopped = False
+        self._proc = None
+
+    def stop(self) -> None:
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def run(self) -> None:
         try:
-            res = subprocess.run(self._cmd, capture_output=True, text=True, timeout=30)
-            if res.returncode == 0:
+            self._proc = subprocess.Popen(
+                self._cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            )
+            stdout, stderr = self._proc.communicate(timeout=30)
+            if self._stopped:
+                return
+            if self._proc.returncode == 0:
                 self.finished_msg.emit(True, self._ok_msg)
             else:
-                err = res.stderr.strip() or res.stdout.strip() or f"Exit {res.returncode}"
+                err = (stderr or "").strip() or (stdout or "").strip() or f"Exit {self._proc.returncode}"
                 self.finished_msg.emit(False, err)
+        except subprocess.TimeoutExpired:
+            if self._proc is not None:
+                self._proc.kill()
+                self._proc.communicate()
+            if not self._stopped:
+                self.finished_msg.emit(False, "Privileged action timed out after 30s.")
         except Exception as exc:
-            self.finished_msg.emit(False, str(exc))
+            if not self._stopped:
+                self.finished_msg.emit(False, str(exc))
+        finally:
+            self._proc = None
 
 
 class ViceTurboApp(QMainWindow):
@@ -537,8 +566,10 @@ class ViceTurboApp(QMainWindow):
             self._worker.stop()
             if self._worker.isRunning():
                 self._worker.wait(1500)
-        if self._priv_worker is not None and self._priv_worker.isRunning():
-            self._priv_worker.wait(1500)
+        if self._priv_worker is not None:
+            self._priv_worker.stop()
+            if self._priv_worker.isRunning():
+                self._priv_worker.wait(2500)
         event.accept()
 
 

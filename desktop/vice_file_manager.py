@@ -4,71 +4,63 @@ GTA VI OS (Vice OS) File Manager
 Dual-pane file browser with bookmarks, file operations (copy/cut/paste), and mime-type handling.
 """
 
-import sys
+import datetime
 import os
 import shutil
 import subprocess
+import sys
+from urllib.parse import quote
+
+from PyQt5.QtCore import QDir, QSize, Qt, QThread, pyqtSignal
+from PyQt5.QtWidgets import (
+    QAbstractItemView, QApplication, QComboBox, QFileSystemModel, QInputDialog,
+    QLabel, QLineEdit, QListView, QMenu, QMessageBox, QPushButton, QSplitter,
+    QStatusBar, QToolBar, QTreeView, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QTreeView, QListView, QFileSystemModel, QSplitter, QLineEdit,
-    QMessageBox, QInputDialog, QMenu, QAction, QAbstractItemView,
-    QStatusBar, QToolBar, QComboBox
-)
-from PyQt5.QtCore import Qt, QDir, QModelIndex, QThread, pyqtSignal, QSize
-from PyQt5.QtGui import QFont, QIcon
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 1100
 WINDOW_HEIGHT = 700
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px 12px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QTreeView, QListView { background: #0d0d0d; color: #00ffff; border: 1px solid #00ffff; }
-QTreeView::item:selected, QListView::item:selected { background: #00ffff; color: #0a0a0a; }
-QTreeView::item:hover, QListView::item:hover { background: #003333; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QSplitter::handle { background: #00ffff; width: 1px; }
-QToolBar { background: #0a0a0a; border-bottom: 1px solid #1a1a1a; spacing: 4px; }
-QMenu { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; }
-QMenu::item:selected { background: #00ffff; color: #0a0a0a; }
-QStatusBar { background: #0a0a0a; color: #888; font-size: 11px; }
-QLabel { color: #00ffff; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-"""
 
 
 class CopyWorker(QThread):
     done = pyqtSignal(bool, str)
 
-    def __init__(self, src, dest, move=False):
-        super().__init__()
-        self.src = src
+    def __init__(self, srcs, dest, move=False, parent=None):
+        super().__init__(parent)
+        self.srcs = list(srcs)
         self.dest = dest
         self.move = move
+        self._cancelled = False
+
+    def stop(self):
+        self._cancelled = True
 
     def run(self):
         try:
-            if os.path.isdir(self.src):
-                dest_path = os.path.join(self.dest, os.path.basename(self.src))
-                if self.move:
-                    shutil.move(self.src, dest_path)
+            for src in self.srcs:
+                if self._cancelled:
+                    return
+                if os.path.isdir(src):
+                    dest_path = os.path.join(self.dest, os.path.basename(src))
+                    if self.move:
+                        shutil.move(src, dest_path)
+                    else:
+                        shutil.copytree(src, dest_path)
                 else:
-                    shutil.copytree(self.src, dest_path)
-            else:
-                if self.move:
-                    shutil.move(self.src, self.dest)
-                else:
-                    shutil.copy2(self.src, self.dest)
-            self.done.emit(True, "")
+                    if self.move:
+                        shutil.move(src, self.dest)
+                    else:
+                        shutil.copy2(src, self.dest)
+            if not self._cancelled:
+                self.done.emit(True, "")
         except Exception as e:
-            self.done.emit(False, str(e))
+            if not self._cancelled:
+                self.done.emit(False, str(e))
 
 
 class FileManager(QWidget):
@@ -76,33 +68,40 @@ class FileManager(QWidget):
         super().__init__()
         self.setWindowTitle("Vice OS — File Manager")
         self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.setMinimumSize(780, 500)
+        vt.apply_app_theme(self)
         self._clipboard = None
         self._clipboard_cut = False
         self._worker = None
+        self._history = []
         self._init_ui()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
+        root.setContentsMargins(6, 6, 6, 4)
+        root.setSpacing(6)
 
-        # Toolbar
+        root.addWidget(vt.make_header(
+            "File Manager",
+            "Browse local files, manage bookmarks and copy, move or trash items",
+            icon_name="system-file-manager",
+            badge_text="FILES",
+            badge_variant="aqua",
+            parent=self,
+        ))
+
         toolbar = QToolBar()
         toolbar.setIconSize(QSize(16, 16))
 
-        self._back_btn = QPushButton("◀")
-        self._back_btn.setFixedWidth(32)
+        self._back_btn = QPushButton("Back")
         self._back_btn.clicked.connect(self._go_back)
         toolbar.addWidget(self._back_btn)
 
-        self._up_btn = QPushButton("▲")
-        self._up_btn.setFixedWidth(32)
+        self._up_btn = QPushButton("Up")
         self._up_btn.clicked.connect(self._go_up)
         toolbar.addWidget(self._up_btn)
 
-        self._home_btn = QPushButton("⌂")
-        self._home_btn.setFixedWidth(32)
+        self._home_btn = QPushButton("Home")
         self._home_btn.clicked.connect(lambda: self._navigate(os.path.expanduser("~")))
         toolbar.addWidget(self._home_btn)
 
@@ -112,29 +111,26 @@ class FileManager(QWidget):
 
         self._search_edit = QLineEdit()
         self._search_edit.setPlaceholderText("Filter...")
-        self._search_edit.setFixedWidth(160)
+        self._search_edit.setFixedWidth(180)
         self._search_edit.textChanged.connect(self._apply_filter)
         toolbar.addWidget(self._search_edit)
 
         self._view_combo = QComboBox()
         self._view_combo.addItems(["List", "Icons"])
-        self._view_combo.setFixedWidth(80)
+        self._view_combo.setFixedWidth(90)
         self._view_combo.currentTextChanged.connect(self._switch_view)
         toolbar.addWidget(self._view_combo)
-
         root.addWidget(toolbar)
 
-        # Main splitter: bookmarks | file view
         splitter = QSplitter(Qt.Horizontal)
-        root.addWidget(splitter)
+        root.addWidget(splitter, 1)
 
-        # Bookmarks panel
         bm_widget = QWidget()
-        bm_widget.setFixedWidth(160)
+        bm_widget.setFixedWidth(170)
         bm_layout = QVBoxLayout(bm_widget)
         bm_layout.setContentsMargins(4, 4, 4, 4)
         bm_label = QLabel("Bookmarks")
-        bm_label.setStyleSheet("color: #ff00ff; font-weight: bold;")
+        bm_label.setStyleSheet(f"color: {vt.COLORS['accent_coral']}; font-weight: bold;")
         bm_layout.addWidget(bm_label)
 
         self._bookmarks = {
@@ -152,18 +148,16 @@ class FileManager(QWidget):
         }
         for name, path in self._bookmarks.items():
             btn = QPushButton(name)
-            btn.setStyleSheet("text-align: left; padding-left: 6px;")
+            btn.setStyleSheet("text-align: left; padding-left: 8px;")
             btn.clicked.connect(lambda _, p=path: self._navigate(p))
             bm_layout.addWidget(btn)
         bm_layout.addStretch()
         splitter.addWidget(bm_widget)
 
-        # File system model
         self._model = QFileSystemModel()
         self._model.setRootPath(QDir.rootPath())
         self._model.setFilter(QDir.AllEntries | QDir.NoDotAndDotDot | QDir.Hidden)
 
-        # List view (default)
         self._list_view = QListView()
         self._list_view.setModel(self._model)
         self._list_view.setViewMode(QListView.ListMode)
@@ -172,7 +166,6 @@ class FileManager(QWidget):
         self._list_view.setContextMenuPolicy(Qt.CustomContextMenu)
         self._list_view.customContextMenuRequested.connect(self._context_menu)
 
-        # Tree view (details)
         self._tree_view = QTreeView()
         self._tree_view.setModel(self._model)
         self._tree_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -186,35 +179,28 @@ class FileManager(QWidget):
         self._list_view.setVisible(False)
         splitter.addWidget(self._tree_view)
         splitter.addWidget(self._list_view)
-        splitter.setSizes([160, 920])
+        splitter.setSizes([170, 910])
 
-        # Status bar
         self._status = QStatusBar()
         root.addWidget(self._status)
 
-        self._history = []
         self._navigate(os.path.expanduser("~"))
 
-    def _navigate(self, path):
+    def _navigate(self, path, record_history=True):
         if not os.path.isdir(path):
             return
         self._path_edit.setText(path)
         idx = self._model.index(path)
         self._tree_view.setRootIndex(idx)
         self._list_view.setRootIndex(idx)
-        if self._history and self._history[-1] != path:
+        if record_history and (not self._history or self._history[-1] != path):
             self._history.append(path)
-        elif not self._history:
-            self._history.append(path)
-        count = len(self._model.rowCount.__func__(self._model, idx) if False else
-                    [self._model.index(r, 0, idx) for r in range(self._model.rowCount(idx))])
         self._status.showMessage(f"{path}  —  {self._model.rowCount(idx)} items")
 
     def _go_back(self):
         if len(self._history) > 1:
             self._history.pop()
-            self._navigate(self._history[-1])
-            self._history.pop()
+            self._navigate(self._history[-1], record_history=False)
 
     def _go_up(self):
         cur = self._path_edit.text()
@@ -243,18 +229,24 @@ class FileManager(QWidget):
         if os.path.isdir(path):
             self._navigate(path)
         else:
-            subprocess.Popen(["xdg-open", path])
+            subprocess.Popen(["xdg-open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def _selected_paths(self):
-        return [self._model.filePath(i) for i in self._current_view.selectedIndexes()
-                if i.column() == 0]
+        return [
+            self._model.filePath(i)
+            for i in self._current_view.selectedIndexes()
+            if i.column() == 0
+        ]
 
     def _context_menu(self, pos):
         paths = self._selected_paths()
         menu = QMenu(self)
 
         if paths:
-            menu.addAction("Open", lambda: [subprocess.Popen(["xdg-open", p]) for p in paths])
+            menu.addAction(
+                "Open",
+                lambda: [subprocess.Popen(["xdg-open", p], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for p in paths],
+            )
             menu.addSeparator()
             menu.addAction("Copy", lambda: self._copy(paths, cut=False))
             menu.addAction("Cut", lambda: self._copy(paths, cut=True))
@@ -272,28 +264,28 @@ class FileManager(QWidget):
         menu.exec_(self._current_view.viewport().mapToGlobal(pos))
 
     def _copy(self, paths, cut):
-        self._clipboard = paths
+        self._clipboard = list(paths)
         self._clipboard_cut = cut
         self._status.showMessage(f"{'Cut' if cut else 'Copied'} {len(paths)} item(s)")
 
     def _paste(self):
         if not self._clipboard:
             return
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.information(self, "Busy", "A file transfer is already running.")
+            return
         dest = self._path_edit.text()
-        for src in self._clipboard:
-            w = CopyWorker(src, dest, move=self._clipboard_cut)
-            w.done.connect(lambda ok, err: self._op_done(ok, err, "Paste"))
-            w.start()
-            self._worker = w
-        if self._clipboard_cut:
-            self._clipboard = None
+        was_cut = self._clipboard_cut
+        w = CopyWorker(self._clipboard, dest, move=was_cut, parent=self)
+        w.done.connect(lambda ok, err: self._op_done(ok, err, "Paste", clear_clip=ok and was_cut))
+        self._worker = w
+        w.start()
 
     def _trash(self, paths):
         """Move files to the XDG trash (~/.local/share/Trash)."""
         if QMessageBox.question(
-            self, "Move to Trash",
-            f"Move {len(paths)} item(s) to the Trash?",
-            QMessageBox.Yes | QMessageBox.No
+            self, "Move to Trash", f"Move {len(paths)} item(s) to the Trash?",
+            QMessageBox.Yes | QMessageBox.No,
         ) != QMessageBox.Yes:
             return
         trashed = 0
@@ -326,21 +318,18 @@ class FileManager(QWidget):
 
         shutil.move(path, dest)
 
-        # Write the .trashinfo metadata for restore tools
         info_name = os.path.basename(dest) + ".trashinfo"
         info_path = os.path.join(trash_info, info_name)
-        from urllib.parse import quote
-        with open(info_path, "w") as f:
+        with open(info_path, "w", encoding="utf-8") as f:
             f.write("[Trash Info]\n")
             f.write(f"Path={quote(os.path.abspath(path))}\n")
-            import datetime
             f.write(f"DeletionDate={datetime.datetime.now().isoformat(timespec='seconds')}\n")
 
     def _delete(self, paths):
         if QMessageBox.question(
             self, "Delete Permanently",
             f"Permanently delete {len(paths)} item(s)? This cannot be undone.",
-            QMessageBox.Yes | QMessageBox.No
+            QMessageBox.Yes | QMessageBox.No,
         ) != QMessageBox.Yes:
             return
         for p in paths:
@@ -375,7 +364,8 @@ class FileManager(QWidget):
         name, ok = QInputDialog.getText(self, "New File", "File name:")
         if ok and name:
             try:
-                open(os.path.join(self._path_edit.text(), name), "w").close()
+                with open(os.path.join(self._path_edit.text(), name), "w", encoding="utf-8"):
+                    pass
             except Exception as e:
                 QMessageBox.warning(self, "Error", str(e))
 
@@ -383,19 +373,29 @@ class FileManager(QWidget):
         try:
             stat = os.stat(path)
             size = stat.st_size
-            import datetime
             mtime = datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
             ftype = "Directory" if os.path.isdir(path) else "File"
-            QMessageBox.information(self, "Properties",
-                f"Path: {path}\nType: {ftype}\nSize: {size:,} bytes\nModified: {mtime}\nPermissions: {oct(stat.st_mode)[-3:]}")
+            QMessageBox.information(
+                self, "Properties",
+                f"Path: {path}\nType: {ftype}\nSize: {size:,} bytes\nModified: {mtime}\nPermissions: {oct(stat.st_mode)[-3:]}",
+            )
         except Exception as e:
             QMessageBox.warning(self, "Error", str(e))
 
-    def _op_done(self, ok, err, op):
+    def _op_done(self, ok, err, op, clear_clip=False):
         if ok:
+            if clear_clip:
+                self._clipboard = None
+                self._clipboard_cut = False
             self._status.showMessage(f"{op} complete")
         else:
             QMessageBox.warning(self, f"{op} failed", err)
+
+    def closeEvent(self, event):
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(2500)
+        super().closeEvent(event)
 
 
 def main():

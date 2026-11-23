@@ -1,57 +1,51 @@
 #!/usr/bin/env python3
 """Vice OS — Calendar & Clock. Month view with events, digital clock, world clocks."""
 
-import sys
-import os
-import json
-import datetime
 import calendar as cal
+import datetime
+import json
+import os
+import sys
 import zoneinfo
 
-sys.path.insert(0, '/opt/vice-os/lib')
-
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QGridLayout, QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget,
-    QMessageBox, QTextEdit, QLineEdit, QDialog, QFormLayout, QDialogButtonBox,
+    QTextEdit, QLineEdit, QDialog, QFormLayout, QDialogButtonBox,
     QComboBox, QTimeEdit
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QColor, QBrush
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from python.vice_utils import log_error  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    MONO_STACK,
+    apply_app_theme,
+    make_button,
+    make_header,
+)
 
 WINDOW_WIDTH = 1000
-WINDOW_HEIGHT = 640
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QTabBar::tab { background: #1a1a1a; color: #00ffff; padding: 6px 14px; }
-QTabBar::tab:selected { background: #00ffff; color: #0a0a0a; }
-QTabWidget::pane { border: 1px solid #00ffff; }
-QTextEdit { background: #0d0d0d; color: #aaffff; border: 1px solid #1a4a4a; font-size: 11px; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QTimeEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QLabel { color: #00ffff; }
-"""
+WINDOW_HEIGHT = 650
 
 EVENTS_FILE = os.path.expanduser("~/.local/share/vice-os/calendar_events.json")
 
-WORLD_CLOCKS = ["UTC", "America/New_York", "America/Los_Angeles", "Europe/London",
-                "Europe/Berlin", "Europe/Moscow", "Asia/Tokyo", "Asia/Shanghai",
-                "Asia/Kolkata", "Australia/Sydney"]
+WORLD_CLOCKS = [
+    "UTC", "America/New_York", "America/Los_Angeles", "Europe/London",
+    "Europe/Berlin", "Europe/Moscow", "Asia/Tokyo", "Asia/Shanghai",
+    "Asia/Kolkata", "Australia/Sydney",
+]
 
 
 def load_events():
     if os.path.exists(EVENTS_FILE):
         try:
-            with open(EVENTS_FILE) as f:
+            with open(EVENTS_FILE, encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return []
@@ -61,7 +55,7 @@ def load_events():
 def save_events(events):
     os.makedirs(os.path.dirname(EVENTS_FILE), exist_ok=True)
     try:
-        with open(EVENTS_FILE, "w") as f:
+        with open(EVENTS_FILE, "w", encoding="utf-8", newline="\n") as f:
             json.dump(events, f, indent=2)
     except Exception as e:
         log_error(f"Event save failed: {e}")
@@ -72,7 +66,7 @@ class EventDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Add Event")
         self.setFixedSize(420, 240)
-        self.setStyleSheet(STYLE)
+        apply_app_theme(self)
         layout = QFormLayout(self)
 
         self._title = QLineEdit(title)
@@ -121,27 +115,27 @@ class CalendarTab(QWidget):
         root = QVBoxLayout(self)
 
         nav_row = QHBoxLayout()
-        prev_btn = QPushButton("◀")
+        prev_btn = make_button("<", variant="secondary", parent=self)
         prev_btn.setFixedWidth(40)
         prev_btn.clicked.connect(self._prev_month)
         nav_row.addWidget(prev_btn)
 
         self._month_label = QLabel()
         self._month_label.setAlignment(Qt.AlignCenter)
-        self._month_label.setFont(QFont("monospace", 14, QFont.Bold))
-        self._month_label.setStyleSheet("color: #ff00ff;")
+        self._month_label.setFont(QFont("Noto Sans", 14, QFont.Bold))
+        self._month_label.setStyleSheet(f"color: {COLORS['accent_peach']};")
         nav_row.addWidget(self._month_label, 1)
 
-        next_btn = QPushButton("▶")
+        next_btn = make_button(">", variant="secondary", parent=self)
         next_btn.setFixedWidth(40)
         next_btn.clicked.connect(self._next_month)
         nav_row.addWidget(next_btn)
 
-        today_btn = QPushButton("Today")
+        today_btn = make_button("Today", variant="secondary", parent=self)
         today_btn.clicked.connect(self._go_today)
         nav_row.addWidget(today_btn)
 
-        add_btn = QPushButton("+ Add Event")
+        add_btn = make_button("+ Add Event", variant="primary", parent=self)
         add_btn.clicked.connect(self._add_event)
         nav_row.addWidget(add_btn)
         root.addLayout(nav_row)
@@ -211,12 +205,12 @@ class CalendarTab(QWidget):
                         text += "\n" + "\n".join("• " + e["title"][:10] for e in day_events[:2])
                     item.setText(text)
                     if day == today.day and self._month == today.month and self._year == today.year:
-                        item.setBackground(QBrush(QColor("#003333")))
-                        item.setForeground(QBrush(QColor("#00ffff")))
+                        item.setBackground(QBrush(QColor(COLORS["bg_active"])))
+                        item.setForeground(QBrush(QColor(COLORS["accent_aqua"])))
                     elif day_events:
-                        item.setForeground(QBrush(QColor("#ff00ff")))
-                    if day_idx >= 5:
-                        item.setForeground(QBrush(QColor("#668888")))
+                        item.setForeground(QBrush(QColor(COLORS["accent_coral"])))
+                    elif day_idx >= 5:
+                        item.setForeground(QBrush(QColor(COLORS["text_muted"])))
                 self._table.setItem(week_idx, day_idx, item)
 
         # Show this month's events
@@ -256,7 +250,7 @@ class WorldClockTab(QWidget):
     def __init__(self):
         super().__init__()
         self._init_ui()
-        self._timer = QTimer()
+        self._timer = QTimer(self)
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._tick)
         self._timer.start()
@@ -267,14 +261,16 @@ class WorldClockTab(QWidget):
 
         self._big_clock = QLabel()
         self._big_clock.setAlignment(Qt.AlignCenter)
-        self._big_clock.setFont(QFont("monospace", 44, QFont.Bold))
-        self._big_clock.setStyleSheet("color: #00ffff; margin: 10px;")
+        self._big_clock.setStyleSheet(
+            f"font-family: {MONO_STACK}; font-size: 44px; font-weight: bold; "
+            f"color: {COLORS['accent_aqua']}; margin: 10px;"
+        )
         root.addWidget(self._big_clock)
 
         self._date_label = QLabel()
         self._date_label.setAlignment(Qt.AlignCenter)
-        self._date_label.setFont(QFont("monospace", 14))
-        self._date_label.setStyleSheet("color: #888;")
+        self._date_label.setFont(QFont("Noto Sans", 14))
+        self._date_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
         root.addWidget(self._date_label)
 
         root.addSpacing(10)
@@ -287,9 +283,9 @@ class WorldClockTab(QWidget):
             box = QHBoxLayout()
             name = QLabel(tz)
             name.setFixedWidth(200)
-            name.setStyleSheet("color: #aaffff;")
+            name.setStyleSheet(f"color: {COLORS['text_secondary']};")
             time_lbl = QLabel("--:--:--")
-            time_lbl.setStyleSheet("color: #00ffff; font-weight: bold;")
+            time_lbl.setStyleSheet(f"color: {COLORS['accent_aqua']}; font-weight: bold;")
             box.addWidget(name)
             box.addWidget(time_lbl)
             self._zone_labels[tz] = time_lbl
@@ -311,21 +307,48 @@ class WorldClockTab(QWidget):
             except Exception:
                 label.setText("N/A")
 
+    def stop_timer(self):
+        self._timer.stop()
+
+    def closeEvent(self, event):
+        self.stop_timer()
+        event.accept()
+
 
 class CalendarApp(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Calendar & Clock")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(760, 520)
+        apply_app_theme(self)
+        self._clock_tab = None
         self._init_ui()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 14)
+        root.setSpacing(10)
+        header = make_header(
+            title="Calendar & World Clock",
+            subtitle="Monthly planner with recurring events and world timezones",
+            icon_name="x-office-calendar",
+            badge_text="CALENDAR",
+            badge_variant="aqua",
+            parent=self,
+        )
+        root.addWidget(header)
+
         tabs = QTabWidget()
         tabs.addTab(CalendarTab(), "Calendar")
-        tabs.addTab(WorldClockTab(), "Clock")
-        root.addWidget(tabs)
+        self._clock_tab = WorldClockTab()
+        tabs.addTab(self._clock_tab, "Clock")
+        root.addWidget(tabs, 1)
+
+    def closeEvent(self, event):
+        if self._clock_tab is not None:
+            self._clock_tab.stop_timer()
+        event.accept()
 
 
 def main():

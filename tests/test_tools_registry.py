@@ -264,6 +264,49 @@ class TestToolsRegistry(unittest.TestCase):
                 f"Tool {tool['id']} package '{pkg}' is missing from config/packages.list",
             )
 
+    def test_tool_exec_consistency_and_gui_launch_fixes(self):
+        import shlex
+        reg = _load_registry()
+        tools_by_id = {t["id"]: t for t in reg["tools"]}
+
+        expected_gui_fixes = {
+            "timeshift": "timeshift-launcher",
+            "feh": "feh --scale-down /usr/share/backgrounds",
+            "flameshot": "flameshot gui",
+            "gnome-screenshot": "gnome-screenshot --interactive",
+        }
+        for tid, expected_exec in expected_gui_fixes.items():
+            self.assertIn(tid, tools_by_id)
+            self.assertEqual(tools_by_id[tid]["exec"], expected_exec)
+            self.assertFalse(tools_by_id[tid]["terminal"])
+
+        gui_only_bins = {
+            "python3", "libreoffice", "firefox-esr", "gparted", "wireshark",
+            "qpdfview", "evince", "galculator", "mousepad", "geany",
+            "pavucontrol", "synaptic-pkexec", "timeshift-launcher", "flameshot",
+            "gnome-screenshot", "feh", "stacer", "bleachbit", "xfce4-taskmanager",
+            "xfce4-terminal", "arandr", "lxappearance", "keepassxc", "baobab",
+            "gufw", "ghex", "sqlitebrowser", "grsync", "celluloid", "ristretto",
+            "gcolor3", "easytag", "zim", "cherrytree", "speedcrunch",
+            "qalculate-gtk", "gnome-disks", "hardinfo", "simple-scan",
+            "system-config-printer", "blueman-manager", "meld", "file-roller",
+        }
+        for tool in reg["tools"]:
+            ex = tool["exec"]
+            parts = shlex.split(ex)
+            self.assertTrue(parts, f"Empty shlex tokens for {tool['id']}")
+            head = parts[0]
+            self.assertNotIn("vice-run-tool", head, f"Registry exec for {tool['id']} should not pre-wrap vice-run-tool")
+            for bad_tok in ("|", ";", "&&", "||", "`"):
+                self.assertNotIn(bad_tok, ex, f"Shell metacharacter '{bad_tok}' in {tool['id']} exec: {ex}")
+            if tool["terminal"]:
+                self.assertNotIn(head, gui_only_bins, f"GUI app '{head}' marked terminal=true for {tool['id']}")
+            else:
+                self.assertTrue(
+                    head in gui_only_bins or head == "mpv",
+                    f"Unexpected terminal=false head binary '{head}' for {tool['id']}",
+                )
+
 
 class TestToolIconGenerator(unittest.TestCase):
     """Validates assets/generate_tool_icons.py and runs live generation smoke test."""
@@ -466,6 +509,9 @@ class TestToolsIntegrationAndDeployment(unittest.TestCase):
             self.assertEqual(entry.get("Terminal"), "false")
             self.assertIn(script_name, entry.get("Exec", ""))
             self.assertTrue(os.path.isfile(os.path.join(DESKTOP_DIR, script_name)))
+            if fname == "vice-tool-hub.desktop":
+                self.assertIn("250/500", entry.get("Comment", ""))
+                self.assertNotIn("100/500", entry.get("Comment", ""))
 
     def test_tools_progress_markdown_matches_registry(self):
         doc_path = os.path.join(DOCS_DIR, "TOOLS_PROGRESS.md")

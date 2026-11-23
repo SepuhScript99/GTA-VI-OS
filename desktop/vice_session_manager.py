@@ -1,111 +1,105 @@
 #!/usr/bin/env python3
 """Vice OS Session Manager — logout, lock screen, switch user, shutdown/reboot."""
 
-import sys
+from datetime import datetime
 import os
 import pwd
 import shutil
 import subprocess
-from datetime import datetime
-
-sys.path.insert(0, '/opt/vice-os/lib')
+import sys
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QDialog, QDesktopWidget, QLineEdit, QFormLayout, QMessageBox
+    QMessageBox
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QPainter, QPixmap
+from PyQt5.QtCore import Qt, QTimer, QSize
+from PyQt5.QtGui import QFont
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-SCREEN_W = 1920
-SCREEN_H = 1080
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton {
-    background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff;
-    padding: 14px 20px; font-size: 13px;
-}
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 6px; }
-QLabel { color: #00ffff; }
-"""
+from python.vice_utils import log_info  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    make_button,
+    resolve_icon,
+)
 
 
-def run_cmd(cmd, sudo=False):
-    full = (["sudo"] if sudo else []) + cmd
-    try:
-        r = subprocess.run(full, capture_output=True, text=True, timeout=10)
-        return r.stdout.strip(), r.returncode == 0
-    except Exception as e:
-        return str(e), False
+def _screen_geometry():
+    screen = QApplication.primaryScreen()
+    if screen is not None:
+        return screen.geometry()
+    return None
 
 
 class SessionManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Session Manager")
-        screen = QApplication.primaryScreen().geometry()
-        self.setFixedSize(screen.width(), screen.height())
-        self.setStyleSheet(STYLE)
+        apply_app_theme(self)
+        rect = _screen_geometry()
+        if rect is not None:
+            self.setFixedSize(rect.width(), rect.height())
+        else:
+            self.resize(1280, 720)
+        self._lock_win = None
         self._init_ui()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
         root.setAlignment(Qt.AlignCenter)
 
-        title = QLabel("Vice OS")
-        title.setFont(QFont("monospace", 36, QFont.Bold))
+        title = QLabel("VICE OS")
+        title.setFont(QFont("Noto Sans", 34, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet("color: #ff00ff; margin-bottom: 20px;")
+        title.setStyleSheet(f"color: {COLORS['text_primary']}; letter-spacing: 6px; margin-bottom: 8px;")
         root.addWidget(title)
 
         subtitle = QLabel("Session Manager")
-        subtitle.setFont(QFont("monospace", 14))
+        subtitle.setFont(QFont("Noto Sans", 14))
         subtitle.setAlignment(Qt.AlignCenter)
-        subtitle.setStyleSheet("color: #888; margin-bottom: 40px;")
+        subtitle.setStyleSheet(f"color: {COLORS['accent_peach']}; margin-bottom: 36px;")
         root.addWidget(subtitle)
 
         btn_grid = QHBoxLayout()
-        btn_grid.setSpacing(20)
+        btn_grid.setSpacing(22)
         btn_grid.setAlignment(Qt.AlignCenter)
 
         actions = [
-            ("🔒", "Lock Screen",  self._lock,     "#00ffff"),
-            ("🚪", "Logout",       self._logout,   "#ff8800"),
-            ("👤", "Switch User",  self._switch,   "#00ff88"),
-            ("😴", "Suspend",      self._suspend,  "#8888ff"),
-            ("🔄", "Reboot",       self._reboot,   "#ffaa00"),
-            ("⏻", "Shutdown",     self._shutdown, "#ff4444"),
+            ("system-lock-screen", "Lock", "Lock Screen", self._lock, COLORS["accent_aqua"]),
+            ("system-log-out", "Exit", "Logout", self._logout, COLORS["accent_peach"]),
+            ("system-switch-user", "User", "Switch User", self._switch, COLORS["success"]),
+            ("system-suspend", "Sleep", "Suspend", self._suspend, COLORS["accent_gold"]),
+            ("system-reboot", "Reboot", "Reboot", self._reboot, COLORS["warning"]),
+            ("system-shutdown", "Power", "Shutdown", self._shutdown, COLORS["danger"]),
         ]
 
-        for icon, label, slot, color in actions:
+        for icon_name, short_txt, label, slot, color in actions:
             container = QVBoxLayout()
             container.setAlignment(Qt.AlignCenter)
 
-            btn = QPushButton(icon)
+            btn = QPushButton("")
+            ic = resolve_icon(icon_name)
+            if not ic.isNull():
+                btn.setIcon(ic)
+                btn.setIconSize(QSize(34, 34))
+            else:
+                btn.setText(short_txt)
             btn.setFixedSize(90, 90)
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    font-size: 32px;
-                    border: 2px solid {color};
-                    border-radius: 45px;
-                    background: #0d0d0d;
-                    color: {color};
-                }}
-                QPushButton:hover {{
-                    background: {color};
-                    color: #0a0a0a;
-                }}
-            """)
+            btn.setStyleSheet(
+                f"QPushButton {{ font-size: 13px; font-weight: 600; border: 2px solid {color}; "
+                f"border-radius: 45px; background: {COLORS['bg_surface']}; color: {color}; }}"
+                f"QPushButton:hover {{ background: {color}; color: {COLORS['bg_canvas']}; }}"
+            )
             btn.clicked.connect(slot)
             container.addWidget(btn)
 
             lbl = QLabel(label)
             lbl.setAlignment(Qt.AlignCenter)
-            lbl.setStyleSheet(f"color: {color}; font-size: 11px; margin-top: 4px;")
+            lbl.setStyleSheet(f"color: {COLORS['text_primary']}; font-size: 12px; font-weight: 600; margin-top: 6px;")
             container.addWidget(lbl)
 
             btn_grid.addLayout(container)
@@ -113,18 +107,16 @@ class SessionManager(QWidget):
         root.addLayout(btn_grid)
         root.addStretch()
 
-        # User info
         user = os.getenv("USER", os.getenv("LOGNAME", "user"))
         info_row = QHBoxLayout()
         info_row.setAlignment(Qt.AlignCenter)
 
         self._user_label = QLabel(f"Logged in as: {user}")
-        self._user_label.setStyleSheet("color: #888; font-size: 12px;")
+        self._user_label.setObjectName("MutedLabel")
         info_row.addWidget(self._user_label)
         root.addLayout(info_row)
 
-        # Back to desktop
-        back_btn = QPushButton("← Back to Desktop")
+        back_btn = make_button("Back to Desktop", variant="secondary", parent=self)
         back_btn.setFixedWidth(200)
         back_btn.clicked.connect(self.close)
         root.addWidget(back_btn, alignment=Qt.AlignCenter)
@@ -190,32 +182,44 @@ class SessionManager(QWidget):
             log_info("Shutdown requested")
             subprocess.Popen(["systemctl", "poweroff"])
 
+    def closeEvent(self, event):
+        if self._lock_win is not None:
+            self._lock_win.close()
+        event.accept()
+
 
 class LockScreen(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Locked")
-        screen = QApplication.primaryScreen().geometry()
-        self.setFixedSize(screen.width(), screen.height())
+        rect = _screen_geometry()
+        if rect is not None:
+            self.setFixedSize(rect.width(), rect.height())
+        else:
+            self.resize(1280, 720)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setStyleSheet("background: #0a0a0a;")
+        self.setStyleSheet(f"background: {COLORS['bg_canvas']};")
         self._init_ui()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
         root.setAlignment(Qt.AlignCenter)
 
-        lock_icon = QLabel("🔒")
-        lock_icon.setStyleSheet("font-size: 64px;")
-        lock_icon.setAlignment(Qt.AlignCenter)
-        root.addWidget(lock_icon)
+        lock_lbl = QLabel("LOCKED")
+        lock_lbl.setStyleSheet(
+            f"font-size: 16px; letter-spacing: 5px; font-weight: bold; color: {COLORS['accent_coral']};"
+        )
+        lock_lbl.setAlignment(Qt.AlignCenter)
+        root.addWidget(lock_lbl)
 
         time_label = QLabel()
-        time_label.setStyleSheet("font-size: 48px; color: #00ffff; font-weight: bold;")
+        time_label.setStyleSheet(
+            f"font-size: 52px; color: {COLORS['text_primary']}; font-weight: bold;"
+        )
         time_label.setAlignment(Qt.AlignCenter)
         root.addWidget(time_label)
 
-        self._timer = QTimer()
+        self._timer = QTimer(self)
         self._timer.setInterval(1000)
         self._timer.timeout.connect(lambda: time_label.setText(datetime.now().strftime("%H:%M:%S")))
         self._timer.start()
@@ -224,7 +228,7 @@ class LockScreen(QWidget):
         root.addSpacing(40)
 
         hint = QLabel("Press Enter or click to unlock")
-        hint.setStyleSheet("color: #888; font-size: 12px;")
+        hint.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 13px;")
         hint.setAlignment(Qt.AlignCenter)
         root.addWidget(hint)
 
@@ -234,6 +238,10 @@ class LockScreen(QWidget):
 
     def mousePressEvent(self, event):
         self.close()
+
+    def closeEvent(self, event):
+        self._timer.stop()
+        event.accept()
 
 
 def main():

@@ -1,54 +1,43 @@
 #!/usr/bin/env python3
 """
-GTA VI OS (Vice OS) Archive Manager
+GTA VI OS (Vice OS) Archive Manager.
 GUI tool for creating, extracting, and managing tar, gz, bz2, xz, zip, and 7z archives.
 """
 
-import sys
 import os
+import shutil
 import subprocess
-
-sys.path.insert(0, '/opt/vice-os/lib')
+import sys
 
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QFileDialog, QLineEdit, QComboBox, QGroupBox, QTextEdit, QProgressBar,
-    QTabWidget, QListWidget, QListWidgetItem, QMessageBox
+    QTabWidget, QListWidget, QMessageBox
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont
+from PyQt5.QtCore import QThread, pyqtSignal
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from python.vice_utils import log_info  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    make_button,
+    make_header,
+)
 
 WINDOW_WIDTH = 860
-WINDOW_HEIGHT = 620
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QTextEdit { background: #0d0d0d; color: #00e5ff; border: 1px solid #1a4a4a; font-size: 11px; }
-QGroupBox { border: 1px solid #00ffff; margin-top: 10px; padding: 8px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QTabBar::tab { background: #1a1a1a; color: #00ffff; padding: 6px 14px; }
-QTabBar::tab:selected { background: #00ffff; color: #0a0a0a; }
-QTabWidget::pane { border: 1px solid #00ffff; }
-QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; text-align: center; color: #00ffff; }
-QProgressBar::chunk { background: #00ffff; }
-QListWidget { background: #0d0d0d; color: #00ffff; border: 1px solid #00ffff; }
-QLabel { color: #00ffff; }
-"""
+WINDOW_HEIGHT = 640
 
 FORMATS = {
-    "zip":      ("zip", "-r", "{out}", "{src}"),
-    "tar.gz":   ("tar", "-czf", "{out}", "{src}"),
-    "tar.bz2":  ("tar", "-cjf", "{out}", "{src}"),
-    "tar.xz":   ("tar", "-cJf", "{out}", "{src}"),
-    "tar":      ("tar", "-cf",  "{out}", "{src}"),
-    "7z":       ("7z", "a", "{out}", "{src}"),
+    "zip": ("zip", "-r", "{out}", "{src}"),
+    "tar.gz": ("tar", "-czf", "{out}", "{src}"),
+    "tar.bz2": ("tar", "-cjf", "{out}", "{src}"),
+    "tar.xz": ("tar", "-cJf", "{out}", "{src}"),
+    "tar": ("tar", "-cf", "{out}", "{src}"),
+    "7z": ("7z", "a", "{out}", "{src}"),
 }
 
 
@@ -58,46 +47,72 @@ class ArchiveWorker(QThread):
 
     def __init__(self, cmd):
         super().__init__()
-        self.cmd = cmd
+        self.cmd = list(cmd)
+        self._stopped = False
+        self._proc = None
+
+    def stop(self):
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def run(self):
         try:
-            proc = subprocess.Popen(
-                self.cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True
+            self._proc = subprocess.Popen(
+                self.cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
             )
-            for line in proc.stdout:
+            for line in self._proc.stdout:
+                if self._stopped:
+                    break
                 self.line_out.emit(line.rstrip())
-            proc.wait()
-            self.finished.emit(proc.returncode == 0)
+            self._proc.wait()
+            if not self._stopped:
+                self.finished.emit(self._proc.returncode == 0)
         except Exception as e:
-            self.line_out.emit(f"Error: {e}")
-            self.finished.emit(False)
+            if not self._stopped:
+                self.line_out.emit(f"Error: {e}")
+                self.finished.emit(False)
+        finally:
+            self._proc = None
 
 
 class ArchiveManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Archive Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(720, 500)
+        apply_app_theme(self)
         self._worker = None
         self._create_files = []
         self._init_ui()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 14)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — Archive Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 14, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        header = make_header(
+            title="Archive Manager",
+            subtitle="Create and extract ZIP, TAR, GZ, BZ2, XZ, and 7Z archives",
+            icon_name="package-x-generic",
+            badge_text="ARCHIVES",
+            badge_variant="aqua",
+            parent=self,
+        )
+        root.addWidget(header)
 
         tabs = QTabWidget()
-        root.addWidget(tabs)
+        root.addWidget(tabs, 1)
 
-        # --- Create tab ---
         create_tab = QWidget()
         cl = QVBoxLayout(create_tab)
 
@@ -106,7 +121,7 @@ class ArchiveManager(QWidget):
         self._out_edit = QLineEdit()
         self._out_edit.setPlaceholderText("Output archive path...")
         ol.addWidget(self._out_edit)
-        browse_out = QPushButton("Browse")
+        browse_out = make_button("Browse", variant="secondary", parent=self)
         browse_out.clicked.connect(self._browse_output)
         ol.addWidget(browse_out)
         ol.addWidget(QLabel("Format:"))
@@ -120,24 +135,23 @@ class ArchiveManager(QWidget):
         self._files_list = QListWidget()
         fl.addWidget(self._files_list)
         files_btns = QHBoxLayout()
-        add_file_btn = QPushButton("Add Files")
+        add_file_btn = make_button("Add Files", variant="secondary", parent=self)
         add_file_btn.clicked.connect(self._add_files)
         files_btns.addWidget(add_file_btn)
-        add_dir_btn = QPushButton("Add Folder")
+        add_dir_btn = make_button("Add Folder", variant="secondary", parent=self)
         add_dir_btn.clicked.connect(self._add_dir)
         files_btns.addWidget(add_dir_btn)
-        remove_btn = QPushButton("Remove Selected")
+        remove_btn = make_button("Remove Selected", variant="danger", parent=self)
         remove_btn.clicked.connect(self._remove_file)
         files_btns.addWidget(remove_btn)
         fl.addLayout(files_btns)
         cl.addWidget(files_box)
 
-        self._create_btn = QPushButton("Create Archive")
+        self._create_btn = make_button("Create Archive", variant="primary", parent=self)
         self._create_btn.clicked.connect(self._create_archive)
         cl.addWidget(self._create_btn)
         tabs.addTab(create_tab, "Create")
 
-        # --- Extract tab ---
         extract_tab = QWidget()
         el = QVBoxLayout(extract_tab)
 
@@ -146,7 +160,7 @@ class ArchiveManager(QWidget):
         self._src_edit = QLineEdit()
         self._src_edit.setPlaceholderText("Select archive file...")
         sl.addWidget(self._src_edit)
-        browse_src = QPushButton("Browse")
+        browse_src = make_button("Browse", variant="secondary", parent=self)
         browse_src.clicked.connect(self._browse_src)
         sl.addWidget(browse_src)
         el.addWidget(src_box)
@@ -155,20 +169,20 @@ class ArchiveManager(QWidget):
         dl = QHBoxLayout(dest_box)
         self._dest_edit = QLineEdit(os.path.expanduser("~"))
         dl.addWidget(self._dest_edit)
-        browse_dest = QPushButton("Browse")
+        browse_dest = make_button("Browse", variant="secondary", parent=self)
         browse_dest.clicked.connect(self._browse_dest)
         dl.addWidget(browse_dest)
         el.addWidget(dest_box)
 
-        self._extract_btn = QPushButton("Extract Archive")
+        self._extract_btn = make_button("Extract Archive", variant="primary", parent=self)
         self._extract_btn.clicked.connect(self._extract_archive)
         el.addWidget(self._extract_btn)
+        el.addStretch()
         tabs.addTab(extract_tab, "Extract")
 
-        # Output log
         self._log = QTextEdit()
         self._log.setReadOnly(True)
-        self._log.setMaximumHeight(160)
+        self._log.setMaximumHeight(150)
         root.addWidget(self._log)
 
         self._progress = QProgressBar()
@@ -177,7 +191,7 @@ class ArchiveManager(QWidget):
         root.addWidget(self._progress)
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setObjectName("MutedLabel")
         root.addWidget(self._status)
 
     def _browse_output(self):
@@ -233,37 +247,43 @@ class ArchiveManager(QWidget):
             return
         fmt = self._fmt_combo.currentText()
         template = FORMATS[fmt]
-        cmd = list(template)
-        cmd = [c.replace("{out}", out) for c in cmd]
+        cmd = [c.replace("{out}", out) for c in template]
         src_idx = cmd.index("{src}") if "{src}" in cmd else -1
         if src_idx >= 0:
-            cmd = cmd[:src_idx] + self._create_files + cmd[src_idx+1:]
+            cmd = cmd[:src_idx] + self._create_files + cmd[src_idx + 1:]
         self._run(cmd, f"Creating {os.path.basename(out)}...")
 
     def _extract_archive(self):
         src = self._src_edit.text().strip()
         dest = self._dest_edit.text().strip()
-        if not src:
-            QMessageBox.warning(self, "No Archive", "Select an archive to extract.")
+        if not src or not os.path.isfile(src):
+            QMessageBox.warning(self, "No Archive", "Select an existing archive to extract.")
             return
+        if not dest:
+            dest = os.path.expanduser("~")
         os.makedirs(dest, exist_ok=True)
-        if src.endswith(".zip"):
+        low = src.lower()
+        if low.endswith(".zip"):
             cmd = ["unzip", "-o", src, "-d", dest]
-        elif src.endswith(".7z"):
+        elif low.endswith(".7z"):
             cmd = ["7z", "x", src, f"-o{dest}", "-y"]
-        elif any(src.endswith(e) for e in (".tar.gz", ".tgz")):
+        elif any(low.endswith(e) for e in (".tar.gz", ".tgz")):
             cmd = ["tar", "-xzf", src, "-C", dest]
-        elif src.endswith(".tar.bz2"):
+        elif low.endswith(".tar.bz2"):
             cmd = ["tar", "-xjf", src, "-C", dest]
-        elif src.endswith(".tar.xz"):
+        elif low.endswith(".tar.xz"):
             cmd = ["tar", "-xJf", src, "-C", dest]
-        elif src.endswith(".tar"):
-            cmd = ["tar", "-xf", src, "-C", dest]
         else:
             cmd = ["tar", "-xf", src, "-C", dest]
         self._run(cmd, f"Extracting to {dest}...")
 
     def _run(self, cmd, msg):
+        if self._worker is not None and self._worker.isRunning():
+            self._status.setText("Another archive task is already running...")
+            return
+        if not shutil.which(cmd[0]):
+            QMessageBox.warning(self, "Missing Tool", f"Archive utility '{cmd[0]}' is not installed.")
+            return
         self._create_btn.setEnabled(False)
         self._extract_btn.setEnabled(False)
         self._log.clear()
@@ -280,11 +300,18 @@ class ArchiveManager(QWidget):
         self._progress.setVisible(False)
         self._create_btn.setEnabled(True)
         self._extract_btn.setEnabled(True)
-        c = "#00ff88" if ok else "#ff4444"
+        c = COLORS["success"] if ok else COLORS["danger"]
         msg = "Done" if ok else "Failed"
         self._log.append(f'<span style="color:{c};">[{msg}]</span>')
         self._status.setText(msg)
         log_info(f"Archive operation: {msg}")
+
+    def closeEvent(self, event):
+        if self._worker is not None:
+            self._worker.stop()
+            if self._worker.isRunning():
+                self._worker.wait(2500)
+        event.accept()
 
 
 def main():

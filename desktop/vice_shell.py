@@ -323,6 +323,7 @@ class TaskbarWidget(QWidget):
         self._layout.addStretch(1)
         self._buttons = {}
         self._window_titles = {}
+        self._window_classes = {}
         self._last_windows = None
         self._last_active = None
         self._poll_busy = False
@@ -391,12 +392,12 @@ class TaskbarWidget(QWidget):
         super().closeEvent(event)
 
     def _get_windows(self) -> list:
-        """Return list of (window_id_int, title) via wmctrl -l."""
+        """Return list of (window_id_int, title, wm_class) via wmctrl -lx."""
         if os.environ.get("WAYLAND_DISPLAY") or not shutil.which("wmctrl"):
             return []
         try:
             out = subprocess.check_output(
-                ["wmctrl", "-l"], text=True, encoding="utf-8", errors="replace",
+                ["wmctrl", "-lx"], text=True, encoding="utf-8", errors="replace",
                 stderr=subprocess.DEVNULL, timeout=0.8
             )
         except Exception:
@@ -404,10 +405,10 @@ class TaskbarWidget(QWidget):
 
         windows = []
         for line in out.splitlines():
-            parts = line.split(None, 3)
-            if len(parts) < 4:
+            parts = line.split(None, 4)
+            if len(parts) < 5:
                 continue
-            wid_hex, desk, title = parts[0], parts[1], parts[3]
+            wid_hex, desk, wm_class, _host, title = parts
             if desk == "-1":
                 continue
             clean_title = title.strip()
@@ -415,7 +416,7 @@ class TaskbarWidget(QWidget):
             if not clean_title or low in _SKIP_TASKBAR_TITLES or low == "pcmanfm":
                 continue
             try:
-                windows.append((int(wid_hex, 16), clean_title))
+                windows.append((int(wid_hex, 16), clean_title, wm_class))
             except ValueError:
                 continue
         return windows
@@ -466,8 +467,14 @@ class TaskbarWidget(QWidget):
         threading.Thread(target=_worker, daemon=True).start()
 
     @staticmethod
-    def _icon_for_title(title: str) -> QIcon:
-        low = (title or "").lower()
+    def _icon_for_title(title: str, wm_class: str = "") -> QIcon:
+        low_title = (title or "").lower()
+        low_class = (wm_class or "").lower()
+        if any(k in low_class for k in ("xfce4-terminal", "xterm")) or "vice os - " in low_title:
+            ic = _theme_icon("utilities-terminal", "terminal")
+            if not ic.isNull():
+                return ic
+        low = f"{low_title} {low_class}"
         rules = (
             (("vice tool hub", "tool hub"), ("vice-tool-hub", "view-app-grid")),
             (("leonida fm radio",), ("vice-tool-radio", "audio-x-generic")),
@@ -484,16 +491,16 @@ class TaskbarWidget(QWidget):
             (("vice privacy", "identity cloak", "mac cloak"), ("vice-tool-mac-cloak", "changes-prevent")),
             (("vice office", "office studio"), ("vice-tool-office-hub", "x-office-document")),
             (("vice world clock", "clock sync"), ("vice-tool-clock-sync", "preferences-system-time")),
-            (("libreoffice writer", "writer"), ("vice-tool-libreoffice-writer", "libreoffice-writer", "x-office-document")),
-            (("libreoffice calc", "calc"), ("vice-tool-libreoffice-calc", "libreoffice-calc", "x-office-spreadsheet")),
-            (("libreoffice impress", "impress"), ("vice-tool-libreoffice-impress", "libreoffice-impress", "x-office-presentation")),
-            (("libreoffice draw",), ("vice-tool-libreoffice-draw", "libreoffice-draw", "x-office-drawing")),
-            (("libreoffice math",), ("vice-tool-libreoffice-math", "libreoffice-math", "accessories-calculator")),
             (("galculator", "calculator"), ("vice-tool-galculator", "galculator", "accessories-calculator")),
+            (("libreoffice writer", "libreoffice-writer"), ("vice-tool-libreoffice-writer", "libreoffice-writer", "x-office-document")),
+            (("libreoffice calc", "libreoffice-calc"), ("vice-tool-libreoffice-calc", "libreoffice-calc", "x-office-spreadsheet")),
+            (("libreoffice impress", "libreoffice-impress"), ("vice-tool-libreoffice-impress", "libreoffice-impress", "x-office-presentation")),
+            (("libreoffice draw", "libreoffice-draw"), ("vice-tool-libreoffice-draw", "libreoffice-draw", "x-office-drawing")),
+            (("libreoffice math", "libreoffice-math"), ("vice-tool-libreoffice-math", "libreoffice-math", "accessories-calculator")),
             (("vice os settings",), ("preferences-system", "settings")),
             (("firefox",), ("firefox-esr", "firefox", "web-browser")),
             (("thunar",), ("system-file-manager", "folder")),
-            (("terminal", "xfce4-terminal"), ("utilities-terminal", "terminal")),
+            (("terminal",), ("utilities-terminal", "terminal")),
             (("mousepad", "geany"), ("accessories-text-editor", "text-editor")),
             (("pavucontrol", "audio manager"), ("audio-volume-high", "multimedia-volume-control")),
         )
@@ -508,15 +515,19 @@ class TaskbarWidget(QWidget):
         count = len(self._buttons)
         if count <= 0:
             return
-        avail = max(240, self.width() - 16)
-        per_btn_max = max(72, min(230, (avail // count) - 6))
+        avail = max(120, self.width() - 12)
+        spacing = max(0, count - 1) * 6
+        per_btn_max = max(34, min(220, (avail - spacing) // count))
         for wid, btn in self._buttons.items():
             title = self._window_titles.get(wid, btn.toolTip() or btn.text())
             btn.setMaximumWidth(per_btn_max)
-            bold_font = QFont(btn.font())
-            bold_font.setBold(True)
-            text_budget = max(32, per_btn_max - 52)
-            label = QFontMetrics(bold_font).elidedText(title, Qt.ElideRight, text_budget)
+            text_budget = per_btn_max - 42
+            if text_budget < 16:
+                label = ""
+            else:
+                bold_font = QFont(btn.font())
+                bold_font.setBold(True)
+                label = QFontMetrics(bold_font).elidedText(title, Qt.ElideRight, text_budget)
             if btn.text() != label:
                 btn.setText(label)
 
@@ -531,18 +542,23 @@ class TaskbarWidget(QWidget):
         self._last_windows = list(windows)
         self._last_active = active_wid
 
-        current_ids = {wid for wid, _ in windows}
+        current_ids = {entry[0] for entry in windows}
 
         for wid in list(self._buttons.keys()):
             if wid not in current_ids:
                 btn = self._buttons.pop(wid)
                 self._window_titles.pop(wid, None)
+                self._window_classes.pop(wid, None)
                 self._layout.removeWidget(btn)
                 btn.deleteLater()
 
         stretch_idx = max(0, self._layout.count() - 1)
-        for wid, title in windows:
+        for entry in windows:
+            wid = entry[0]
+            title = entry[1]
+            wm_class = entry[2] if len(entry) > 2 else ""
             self._window_titles[wid] = title
+            self._window_classes[wid] = wm_class
             btn = self._buttons.get(wid)
             if btn is None:
                 btn = QPushButton(self)
@@ -560,7 +576,7 @@ class TaskbarWidget(QWidget):
                 self._layout.insertWidget(stretch_idx, btn)
                 stretch_idx += 1
 
-            ic = self._icon_for_title(title)
+            ic = self._icon_for_title(title, wm_class)
             if not ic.isNull():
                 btn.setIcon(ic)
             if btn.toolTip() != title:
@@ -1146,7 +1162,7 @@ def _get_audio_state() -> tuple:
             m = re.search(r"(\d+)%", vol_out)
             vol = int(m.group(1)) if m else 85
             muted = "yes" in mute_out.lower()
-            _AUDIO_CACHE = (min(max(vol, 0), 150), muted, True)
+            _AUDIO_CACHE = (min(max(vol, 0), 100), muted, True)
             return _AUDIO_CACHE
         except Exception:
             pass
@@ -1170,26 +1186,25 @@ def _get_audio_state() -> tuple:
 def _set_audio_volume(pct: int) -> None:
     """Set default sink volume percentage via pactl with amixer fallback."""
     global _AUDIO_CACHE
-    pct = min(max(int(pct), 0), 150)
+    pct = min(max(int(pct), 0), 100)
     _, muted, avail = _AUDIO_CACHE
     _AUDIO_CACHE = (pct, muted, avail)
     if shutil.which("pactl"):
         _run_audio_cmd_async(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{pct}%"])
     elif shutil.which("amixer"):
-        _run_audio_cmd_async(["amixer", "sset", "Master", f"{min(pct, 100)}%", "unmute"])
+        _run_audio_cmd_async(["amixer", "sset", "Master", f"{pct}%", "unmute"])
 
 
 def _adjust_audio_volume(delta: int) -> None:
     """Adjust default sink volume by signed *delta* percent via pactl/amixer."""
     global _AUDIO_CACHE
-    sign = "+" if delta >= 0 else "-"
-    step = abs(int(delta))
     vol, muted, avail = _AUDIO_CACHE
-    _AUDIO_CACHE = (min(max(vol + int(delta), 0), 150), muted, avail)
+    target = min(max(vol + int(delta), 0), 100)
+    _AUDIO_CACHE = (target, muted, avail)
     if shutil.which("pactl"):
-        _run_audio_cmd_async(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{sign}{step}%"])
+        _run_audio_cmd_async(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{target}%"])
     elif shutil.which("amixer"):
-        _run_audio_cmd_async(["amixer", "sset", "Master", f"{step}%{sign}"])
+        _run_audio_cmd_async(["amixer", "sset", "Master", f"{target}%", "unmute"])
 
 
 def _toggle_audio_mute() -> None:
@@ -1283,7 +1298,7 @@ class VolumePopup(_StyledWidget):
         slider_row.addWidget(self._mute_btn)
 
         self._slider = QSlider(Qt.Horizontal, self)
-        self._slider.setRange(0, 150)
+        self._slider.setRange(0, 100)
         self._slider.setValue(85)
         self._slider.valueChanged.connect(self._handle_slider)
         slider_row.addWidget(self._slider, 1)
@@ -1327,7 +1342,7 @@ class VolumePopup(_StyledWidget):
         self._sync_busy = False
         self._updating_ui = True
         try:
-            self._slider.setValue(min(vol, 150))
+            self._slider.setValue(min(vol, 100))
             self._mute_btn.setChecked(muted)
             self._mute_btn.setText("Unmute" if muted else "Mute")
             if not avail:
@@ -1747,6 +1762,7 @@ class BottomTaskbar(_StyledWidget):
         geo = screen.geometry()
         pc = _pc()
         h = getattr(pc, "DOCK_HEIGHT", 44)
+        self.setFixedWidth(geo.width())
         self.setFixedHeight(h)
         self.setGeometry(geo.x(), geo.y() + geo.height() - h, geo.width(), h)
 

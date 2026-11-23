@@ -1297,7 +1297,7 @@
       "description": "Incremental rsync and Btrfs system snapshot backup and restore GUI",
       "category": "System",
       "package": "timeshift",
-      "exec": "timeshift-gtk",
+      "exec": "timeshift-launcher",
       "terminal": false,
       "gta_themed": false,
       "icon_glyph": "backup"
@@ -2562,7 +2562,7 @@
       "description": "Lightweight X11 image viewer, montage creator, and wallpaper setter",
       "category": "Media",
       "package": "feh",
-      "exec": "feh",
+      "exec": "feh --scale-down /usr/share/backgrounds",
       "terminal": false,
       "gta_themed": false,
       "icon_glyph": "camera"
@@ -2573,7 +2573,7 @@
       "description": "Feature-rich screenshot utility with on-screen arrows, blur, text, and copy",
       "category": "Media",
       "package": "flameshot",
-      "exec": "flameshot",
+      "exec": "flameshot gui",
       "terminal": false,
       "gta_themed": false,
       "icon_glyph": "camera"
@@ -2584,7 +2584,7 @@
       "description": "Simple window, region, and full-screen screenshot capture utility",
       "category": "Media",
       "package": "gnome-screenshot",
-      "exec": "gnome-screenshot",
+      "exec": "gnome-screenshot --interactive",
       "terminal": false,
       "gta_themed": false,
       "icon_glyph": "camera"

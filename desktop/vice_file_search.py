@@ -1,55 +1,40 @@
 #!/usr/bin/env python3
 """Vice OS — File Content Search. Recursive grep with regex, filters, and result preview."""
 
-import sys
+import fnmatch
 import os
-import subprocess
+import re
+import sys
+
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor
+from PyQt5.QtWidgets import (
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QFileDialog,
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QSplitter,
+    QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit, QTextEdit,
-    QComboBox, QCheckBox, QSplitter, QFileDialog, QMessageBox, QAbstractItemView
-)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QBrush
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 1100
 WINDOW_HEIGHT = 680
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QCheckBox { color: #00ffff; }
-QCheckBox::indicator { width: 14px; height: 14px; background: #1a1a1a; border: 1px solid #00ffff; }
-QCheckBox::indicator:checked { background: #00ffff; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QTextEdit { background: #0d0d0d; color: #aaffff; border: 1px solid #1a4a4a; font-size: 11px; }
-QLabel { color: #00ffff; }
-QSplitter::handle { background: #00ffff; width: 1px; }
-"""
 
 MAX_FILE_SIZE = 5 * 1024 * 1024  # skip files > 5MB
 
 
 class SearchWorker(QThread):
     """Searches files directly in Python (no grep dependency)."""
-    result = pyqtSignal(str, int, str)   # path, line number, line
+
+    result = pyqtSignal(str, int, str)
     progress = pyqtSignal(int)
-    finished = pyqtSignal(int, int)       # matches, files scanned
+    finished = pyqtSignal(int, int)
     cancelled = pyqtSignal()
 
-    def __init__(self, root, pattern, regex, case_sensitive, file_glob, max_depth, include_hidden):
-        super().__init__()
+    def __init__(self, root, pattern, regex, case_sensitive, file_glob, max_depth, include_hidden, parent=None):
+        super().__init__(parent)
         self._root = root
         self._pattern = pattern
         self._regex = regex
@@ -58,27 +43,29 @@ class SearchWorker(QThread):
         self._max_depth = max_depth
         self._hidden = include_hidden
         self._stop = False
+        self._compiled = None
+        if self._regex:
+            try:
+                flags = 0 if self._case else re.IGNORECASE
+                self._compiled = re.compile(self._pattern, flags)
+            except re.error:
+                self._compiled = None
 
     def stop(self):
         self._stop = True
 
     def _matches(self, text):
-        try:
-            if self._regex:
-                import re
-                flags = 0 if self._case else re.IGNORECASE
-                return bool(re.search(self._pattern, text, flags))
-            if self._case:
-                return self._pattern in text
-            return self._pattern.lower() in text.lower()
-        except re.error:
-            return False
+        if self._regex:
+            return bool(self._compiled.search(text)) if self._compiled else False
+        if self._case:
+            return self._pattern in text
+        return self._pattern.lower() in text.lower()
 
     def _glob_matches(self, filename):
         if not self._glob:
             return True
-        import fnmatch
-        return fnmatch.fnmatch(filename, self._glob)
+        patterns = [p.strip() for p in self._glob.split(",") if p.strip()]
+        return any(fnmatch.fnmatch(filename, pat) for pat in patterns)
 
     def run(self):
         matches = 0
@@ -122,6 +109,8 @@ class SearchWorker(QThread):
                 except (OSError, PermissionError):
                     continue
 
+        if self._stop:
+            self.cancelled.emit()
         self.finished.emit(matches, scanned)
 
 
@@ -130,22 +119,24 @@ class FileSearch(QWidget):
         super().__init__()
         self.setWindowTitle("Vice OS — File Content Search")
         self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.setMinimumSize(820, 520)
+        vt.apply_app_theme(self)
         self._worker = None
         self._init_ui()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
 
-        title = QLabel("Vice OS — File Content Search")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        root.addWidget(vt.make_header(
+            "File Content Search",
+            "Recursive text & regex search with extension filters and live preview",
+            icon_name="edit-find",
+            badge_text="SEARCH",
+            badge_variant="aqua",
+            parent=self,
+        ))
 
-        # Search params
         grid = QHBoxLayout()
-
         grid.addWidget(QLabel("Search:"))
         self._search_edit = QLineEdit()
         self._search_edit.setPlaceholderText("Text or regex to find...")
@@ -155,7 +146,7 @@ class FileSearch(QWidget):
         grid.addWidget(QLabel("In:"))
         self._dir_edit = QLineEdit(os.path.expanduser("~"))
         grid.addWidget(self._dir_edit)
-        browse_btn = QPushButton("Browse")
+        browse_btn = vt.make_button("Browse", "secondary", parent=self)
         browse_btn.clicked.connect(self._browse)
         grid.addWidget(browse_btn)
         root.addLayout(grid)
@@ -182,26 +173,22 @@ class FileSearch(QWidget):
         opts_row.addStretch()
         root.addLayout(opts_row)
 
-        # Buttons
         btn_row = QHBoxLayout()
-        self._start_btn = QPushButton("Search")
-        self._start_btn.setStyleSheet("QPushButton { border-color: #ff00ff; color: #ff00ff; } QPushButton:hover { background: #ff00ff; color: #0a0a0a; }")
+        self._start_btn = vt.make_button("Search", "primary", parent=self)
         self._start_btn.clicked.connect(self._start_search)
         btn_row.addWidget(self._start_btn)
 
-        self._stop_btn = QPushButton("Stop")
+        self._stop_btn = vt.make_button("Stop", "danger", parent=self)
         self._stop_btn.setEnabled(False)
-        self._stop_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
         self._stop_btn.clicked.connect(self._stop_search)
         btn_row.addWidget(self._stop_btn)
 
-        export_btn = QPushButton("Export Results")
+        export_btn = vt.make_button("Export Results", "secondary", parent=self)
         export_btn.clicked.connect(self._export)
         btn_row.addWidget(export_btn)
         btn_row.addStretch()
         root.addLayout(btn_row)
 
-        # Results + preview
         splitter = QSplitter(Qt.Vertical)
         root.addWidget(splitter, 1)
 
@@ -228,7 +215,7 @@ class FileSearch(QWidget):
         splitter.setSizes([420, 220])
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         root.addWidget(self._status)
 
     def _browse(self):
@@ -237,6 +224,10 @@ class FileSearch(QWidget):
             self._dir_edit.setText(path)
 
     def _start_search(self):
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(1500)
+
         pattern = self._search_edit.text().strip()
         root_dir = self._dir_edit.text().strip()
         if not pattern:
@@ -245,6 +236,12 @@ class FileSearch(QWidget):
         if not os.path.isdir(root_dir):
             QMessageBox.warning(self, "Invalid Directory", f"'{root_dir}' is not a directory.")
             return
+        if self._regex_cb.isChecked():
+            try:
+                re.compile(pattern)
+            except re.error as e:
+                QMessageBox.warning(self, "Invalid Regex", str(e))
+                return
 
         depth_text = self._depth_combo.currentText()
         max_depth = int(depth_text) if depth_text != "Unlimited" else -1
@@ -262,6 +259,7 @@ class FileSearch(QWidget):
             self._glob_edit.text().strip(),
             max_depth,
             self._hidden_cb.isChecked(),
+            parent=self,
         )
         self._worker.result.connect(self._add_result)
         self._worker.progress.connect(lambda n: self._status.setText(f"Searching... {n} files scanned"))
@@ -269,7 +267,7 @@ class FileSearch(QWidget):
         self._worker.start()
 
     def _stop_search(self):
-        if self._worker:
+        if self._worker is not None:
             self._worker.stop()
 
     def _add_result(self, path, lineno, content):
@@ -277,7 +275,7 @@ class FileSearch(QWidget):
         self._table.insertRow(row)
         self._table.setItem(row, 0, QTableWidgetItem(path))
         line_item = QTableWidgetItem(str(lineno))
-        line_item.setForeground(QBrush(QColor("#ff00ff")))
+        line_item.setForeground(QBrush(QColor(vt.COLORS["accent_coral"])))
         self._table.setItem(row, 1, line_item)
         self._table.setItem(row, 2, QTableWidgetItem(content[:200]))
 
@@ -288,14 +286,16 @@ class FileSearch(QWidget):
         log_info(f"Content search: {matches} matches in {scanned} files")
 
     def _preview_file(self, row, _col):
-        path = self._table.item(row, 0).text()
+        item = self._table.item(row, 0)
+        if not item:
+            return
+        path = item.text()
         if not os.path.exists(path):
             self._preview.setPlainText("File no longer exists.")
             return
         try:
             with open(path, encoding="utf-8", errors="ignore") as f:
-                content = f.read(100000)
-            self._preview.setPlainText(content)
+                self._preview.setPlainText(f.read(100000))
         except Exception as e:
             self._preview.setPlainText(f"Cannot read file: {e}")
 
@@ -304,18 +304,27 @@ class FileSearch(QWidget):
             QMessageBox.information(self, "No Results", "Nothing to export.")
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export Search Results",
-            os.path.expanduser("~/vice_search_results.txt"), "Text (*.txt)"
+            self, "Export Search Results", os.path.expanduser("~/vice_search_results.txt"), "Text (*.txt)"
         )
         if not path:
             return
         try:
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 for row in range(self._table.rowCount()):
-                    f.write(f"{self._table.item(row, 0).text()}:{self._table.item(row, 1).text()}: {self._table.item(row, 2).text()}\n")
+                    c0 = self._table.item(row, 0)
+                    c1 = self._table.item(row, 1)
+                    c2 = self._table.item(row, 2)
+                    if c0 and c1 and c2:
+                        f.write(f"{c0.text()}:{c1.text()}: {c2.text()}\n")
             self._status.setText(f"Exported to {path}")
         except Exception as e:
             QMessageBox.warning(self, "Export Failed", str(e))
+
+    def closeEvent(self, event):
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(2000)
+        super().closeEvent(event)
 
 
 def main():

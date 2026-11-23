@@ -21,7 +21,7 @@ import time
 sys.path.insert(0, '/opt/vice-os/lib')
 sys.path.insert(0, '/opt/vice-os')
 
-from python.vice_utils import launch_command, log_info, log_warn, log_error
+from python.vice_utils import launch_command, log_error, log_info, log_warn  # noqa: E402
 
 try:
     import panel_config as _pc

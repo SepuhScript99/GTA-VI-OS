@@ -4,46 +4,24 @@ GTA VI OS (Vice OS) Text Editor
 Tabbed code and text editor with syntax highlighting for Python, Bash, QSS, JSON, and Markdown.
 """
 
-import sys
 import os
-import subprocess
+import re
+import sys
+
+from PyQt5.QtCore import QRegExp
+from PyQt5.QtGui import (
+    QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QTextDocument,
+)
+from PyQt5.QtWidgets import (
+    QAction, QApplication, QCheckBox, QDialog, QFileDialog, QHBoxLayout,
+    QInputDialog, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
+    QPushButton, QStatusBar, QTabWidget, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QLabel, QPushButton, QVBoxLayout,
-    QHBoxLayout, QTabWidget, QTextEdit, QPlainTextEdit, QFileDialog,
-    QMessageBox, QInputDialog, QAction, QMenuBar, QStatusBar, QDialog,
-    QLineEdit, QCheckBox, QDialogButtonBox
-)
-from PyQt5.QtCore import Qt, QRegExp, QThread, pyqtSignal
-from PyQt5.QtGui import (
-    QFont, QColor, QTextCharFormat, QSyntaxHighlighter,
-    QTextCursor, QKeySequence, QTextDocument
-)
-
-from python.vice_utils import log_info, log_error
-
-STYLE = """
-QMainWindow, QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QMenuBar { background: #0a0a0a; color: #00ffff; border-bottom: 1px solid #1a1a1a; }
-QMenuBar::item:selected { background: #00ffff; color: #0a0a0a; }
-QMenu { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; }
-QMenu::item:selected { background: #00ffff; color: #0a0a0a; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px 12px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QTabBar::tab { background: #1a1a1a; color: #00ffff; padding: 5px 14px; }
-QTabBar::tab:selected { background: #00ffff; color: #0a0a0a; }
-QTabWidget::pane { border: 1px solid #00ffff; }
-QPlainTextEdit { background: #0a0a0a; color: #ccffff; border: none; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; font-size: 13px; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QCheckBox { color: #00ffff; }
-QCheckBox::indicator { width: 13px; height: 13px; background: #1a1a1a; border: 1px solid #00ffff; }
-QCheckBox::indicator:checked { background: #00ffff; }
-QStatusBar { background: #0a0a0a; color: #888; font-size: 11px; }
-QLabel { color: #00ffff; }
-QDialog { background: #0a0a0a; color: #00ffff; }
-"""
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 KEYWORDS = {
     "python": [
@@ -77,26 +55,22 @@ class SyntaxHighlighter(QSyntaxHighlighter):
         self._rules.clear()
         kws = KEYWORDS.get(lang, KEYWORDS["python"])
         for kw in kws:
-            self._rules.append((QRegExp(r'\b' + kw + r'\b'), self._fmt("#ff00ff", bold=True)))
-        # Strings
-        self._rules.append((QRegExp(r'"[^"\\]*(\\.[^"\\]*)*"'), self._fmt("#ffdd88")))
-        self._rules.append((QRegExp(r"'[^'\\]*(\\.[^'\\]*)*'"), self._fmt("#ffdd88")))
-        # Numbers
-        self._rules.append((QRegExp(r'\b\d+\.?\d*\b'), self._fmt("#88ffaa")))
-        # Comments
-        if lang == "python":
-            self._rules.append((QRegExp(r'#[^\n]*'), self._fmt("#555555")))
-        elif lang == "bash":
-            self._rules.append((QRegExp(r'#[^\n]*'), self._fmt("#555555")))
-        # Functions/defs
-        self._rules.append((QRegExp(r'\bdef\s+\w+'), self._fmt("#00ffff", bold=True)))
-        self._rules.append((QRegExp(r'\bclass\s+\w+'), self._fmt("#ff8844", bold=True)))
+            self._rules.append((QRegExp(r'\b' + kw + r'\b'), self._fmt(vt.COLORS["accent_coral"], bold=True)))
+        self._rules.append((QRegExp(r'"[^"\\]*(\\.[^"\\]*)*"'), self._fmt(vt.COLORS["accent_gold"])))
+        self._rules.append((QRegExp(r"'[^'\\]*(\\.[^'\\]*)*'"), self._fmt(vt.COLORS["accent_gold"])))
+        self._rules.append((QRegExp(r'\b\d+\.?\d*\b'), self._fmt(vt.COLORS["success"])))
+        if lang in ("python", "bash"):
+            self._rules.append((QRegExp(r'#[^\n]*'), self._fmt(vt.COLORS["text_muted"])))
+        self._rules.append((QRegExp(r'\bdef\s+\w+'), self._fmt(vt.COLORS["accent_aqua"], bold=True)))
+        self._rules.append((QRegExp(r'\bclass\s+\w+'), self._fmt(vt.COLORS["accent_peach"], bold=True)))
 
     def highlightBlock(self, text):
         for pattern, fmt in self._rules:
             idx = pattern.indexIn(text)
             while idx >= 0:
                 length = pattern.matchedLength()
+                if length <= 0:
+                    break
                 self.setFormat(idx, length, fmt)
                 idx = pattern.indexIn(text, idx + length)
 
@@ -105,8 +79,8 @@ class FindDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Find / Replace")
-        self.setFixedSize(420, 180)
-        self.setStyleSheet(STYLE)
+        self.setMinimumSize(420, 180)
+        vt.apply_app_theme(self)
         layout = QVBoxLayout(self)
 
         self.find_edit = QLineEdit()
@@ -127,10 +101,10 @@ class FindDialog(QDialog):
         layout.addLayout(opts)
 
         btns = QHBoxLayout()
-        find_btn = QPushButton("Find Next")
+        find_btn = vt.make_button("Find Next", "primary", parent=self)
         find_btn.clicked.connect(self.accept)
         btns.addWidget(find_btn)
-        replace_btn = QPushButton("Replace All")
+        replace_btn = vt.make_button("Replace All", "secondary", parent=self)
         replace_btn.clicked.connect(lambda: self.done(2))
         btns.addWidget(replace_btn)
         close_btn = QPushButton("Close")
@@ -149,7 +123,10 @@ class EditorTab(QWidget):
 
         self.editor = QPlainTextEdit()
         self.editor.setFont(QFont("monospace", 12))
-        self.editor.setTabStopWidth(32)
+        if hasattr(self.editor, "setTabStopDistance"):
+            self.editor.setTabStopDistance(32)
+        else:
+            self.editor.setTabStopWidth(32)
         layout.addWidget(self.editor)
 
         self._hl = None
@@ -195,7 +172,7 @@ class TextEditor(QMainWindow):
         super().__init__()
         self.setWindowTitle("Vice OS — Text Editor")
         self.resize(1100, 700)
-        self.setStyleSheet(STYLE)
+        vt.apply_app_theme(self)
         self._init_ui()
         self._new_tab()
 
@@ -214,7 +191,10 @@ class TextEditor(QMainWindow):
         file_menu.addAction(QAction("Save", self, shortcut="Ctrl+S", triggered=self._save))
         file_menu.addAction(QAction("Save As", self, shortcut="Ctrl+Shift+S", triggered=self._save_as))
         file_menu.addSeparator()
-        file_menu.addAction(QAction("Close Tab", self, shortcut="Ctrl+W", triggered=lambda: self._close_tab(self._tabs.currentIndex())))
+        file_menu.addAction(QAction(
+            "Close Tab", self, shortcut="Ctrl+W",
+            triggered=lambda: self._close_tab(self._tabs.currentIndex()),
+        ))
 
         edit_menu = mb.addMenu("Edit")
         edit_menu.addAction(QAction("Find / Replace", self, shortcut="Ctrl+F", triggered=self._find_replace))
@@ -232,7 +212,10 @@ class TextEditor(QMainWindow):
         idx = self._tabs.addTab(tab, name)
         self._tabs.setCurrentIndex(idx)
         tab.editor.modificationChanged.connect(
-            lambda mod: self._tabs.setTabText(idx, ("* " if mod else "") + (os.path.basename(tab.path) if tab.path else "Untitled"))
+            lambda mod, t=tab: self._tabs.setTabText(
+                self._tabs.indexOf(t),
+                ("* " if mod else "") + (os.path.basename(t.path) if t.path else "Untitled"),
+            )
         )
 
     def _open(self):
@@ -243,30 +226,38 @@ class TextEditor(QMainWindow):
     def _save(self):
         tab = self._current_tab()
         if not tab:
-            return
+            return False
         if not tab.path:
-            self._save_as()
-            return
-        tab.save()
+            return self._save_as()
+        ok = tab.save()
         self._update_status()
+        return ok
 
     def _save_as(self):
         tab = self._current_tab()
         if not tab:
-            return
+            return False
         path, _ = QFileDialog.getSaveFileName(self, "Save As", os.path.expanduser("~"), "All files (*)")
         if path:
             tab.path = path
-            tab.save()
+            tab._set_highlighter(path)
+            ok = tab.save()
             self._tabs.setTabText(self._tabs.currentIndex(), os.path.basename(path))
+            self._update_status()
+            return ok
+        return False
 
     def _close_tab(self, idx):
         tab = self._tabs.widget(idx)
         if tab and tab.modified:
-            r = QMessageBox.question(self, "Unsaved Changes", "Save before closing?",
-                                     QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+            r = QMessageBox.question(
+                self, "Unsaved Changes", "Save before closing?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+            )
             if r == QMessageBox.Save:
-                tab.save()
+                self._tabs.setCurrentIndex(idx)
+                if not self._save():
+                    return
             elif r == QMessageBox.Cancel:
                 return
         self._tabs.removeTab(idx)
@@ -279,22 +270,22 @@ class TextEditor(QMainWindow):
             return
         dlg = FindDialog(self)
         result = dlg.exec_()
-        if result == 1:  # Find next
+        find = dlg.find_edit.text()
+        if not find:
+            return
+        if result == 1:
             flags = QTextDocument.FindFlags()
             if dlg.case_cb.isChecked():
                 flags |= QTextDocument.FindCaseSensitively
             if dlg.whole_cb.isChecked():
                 flags |= QTextDocument.FindWholeWords
-            found = tab.editor.find(dlg.find_edit.text(), flags)
-            if not found:
+            if not tab.editor.find(find, flags):
                 self._status.showMessage("Not found")
-        elif result == 2:  # Replace all
+        elif result == 2:
             text = tab.editor.toPlainText()
-            find = dlg.find_edit.text()
             replace = dlg.replace_edit.text()
             if not dlg.case_cb.isChecked():
-                import re
-                new_text, count = re.subn(re.escape(find), replace, text, flags=re.IGNORECASE)
+                new_text, count = re.subn(re.escape(find), lambda _m: replace, text, flags=re.IGNORECASE)
             else:
                 count = text.count(find)
                 new_text = text.replace(find, replace)
@@ -321,6 +312,25 @@ class TextEditor(QMainWindow):
             col = cursor.columnNumber() + 1
             path = tab.path or "Untitled"
             self._status.showMessage(f"{path}  |  Line {line}, Col {col}")
+
+    def closeEvent(self, event):
+        for i in range(self._tabs.count()):
+            tab = self._tabs.widget(i)
+            if tab and tab.modified:
+                name = os.path.basename(tab.path) if tab.path else "Untitled"
+                r = QMessageBox.question(
+                    self, "Unsaved Changes", f"Save changes to '{name}' before closing?",
+                    QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                )
+                if r == QMessageBox.Save:
+                    self._tabs.setCurrentIndex(i)
+                    if not self._save():
+                        event.ignore()
+                        return
+                elif r == QMessageBox.Cancel:
+                    event.ignore()
+                    return
+        super().closeEvent(event)
 
 
 def main():

@@ -1,47 +1,28 @@
 #!/usr/bin/env python3
 """Vice OS — Screen Recorder. ffmpeg-based fullscreen/window capture with audio."""
 
-import sys
-import os
-import subprocess
 import datetime
+import os
+import re
+import subprocess
+import sys
+
+from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import (
+    QApplication, QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel,
+    QLineEdit, QMessageBox, QPlainTextEdit, QProgressBar, QSpinBox,
+    QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QComboBox, QSpinBox, QLineEdit, QGroupBox, QFileDialog, QMessageBox,
-    QProgressBar, QPlainTextEdit, QCheckBox
-)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 720
 WINDOW_HEIGHT = 560
 SAVE_DIR = os.path.expanduser("~/Videos/Recordings")
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 6px 16px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QPushButton#recBtn { border-color: #ff4444; color: #ff4444; font-weight: bold; }
-QPushButton#recBtn:hover { background: #ff4444; color: #0a0a0a; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QSpinBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 3px; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QGroupBox { border: 1px solid #00ffff; margin-top: 10px; padding: 8px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QCheckBox { color: #00ffff; }
-QCheckBox::indicator { width: 14px; height: 14px; background: #1a1a1a; border: 1px solid #00ffff; }
-QCheckBox::indicator:checked { background: #00ffff; }
-QPlainTextEdit { background: #0d0d0d; color: #aaffff; border: 1px solid #1a4a4a; font-size: 11px; }
-QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; text-align: center; color: #00ffff; }
-QProgressBar::chunk { background: #ff4444; }
-QLabel { color: #00ffff; }
-"""
 
 
 def get_display_size():
@@ -67,6 +48,24 @@ def get_display_size():
     return "1920", "1080"
 
 
+def get_active_window_geometry():
+    """Return (x, y, w, h) of focused X11 window via xdotool, or None."""
+    try:
+        wid = subprocess.check_output(["xdotool", "getactivewindow"], text=True, timeout=2).strip()
+        geo = subprocess.check_output(["xdotool", "getwindowgeometry", wid], text=True, timeout=2)
+        pos_m = re.search(r"Position:\s*(-?\d+),(-?\d+)", geo)
+        geo_m = re.search(r"Geometry:\s*(\d+)x(\d+)", geo)
+        if pos_m and geo_m:
+            w = max(2, int(geo_m.group(1)) & ~1)
+            h = max(2, int(geo_m.group(2)) & ~1)
+            x = max(0, int(pos_m.group(1)))
+            y = max(0, int(pos_m.group(2)))
+            return x, y, w, h
+    except Exception:
+        pass
+    return None
+
+
 def get_audio_source():
     """Detect PulseAudio/PipeWire monitor source name for desktop audio capture."""
     try:
@@ -82,40 +81,49 @@ class RecordWorker(QThread):
     line = pyqtSignal(str)
     finished = pyqtSignal(bool)
 
-    def __init__(self, cmd):
-        super().__init__()
-        self._cmd = cmd
+    def __init__(self, cmd, parent=None):
+        super().__init__(parent)
+        self._cmd = list(cmd)
         self._proc = None
 
     def run(self):
-        self._proc = subprocess.Popen(
-            self._cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        for line in self._proc.stdout:
-            self.line.emit(line.rstrip())
-        self._proc.wait()
-        self.finished.emit(self._proc.returncode == 0)
+        try:
+            self._proc = subprocess.Popen(
+                self._cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            if self._proc.stdout:
+                for line in self._proc.stdout:
+                    self.line.emit(line.rstrip())
+            rc = self._proc.wait()
+            self.finished.emit(rc == 0)
+        except Exception as e:
+            self.line.emit(f"Error: {e}")
+            self.finished.emit(False)
 
     def stop(self):
-        if self._proc and self._proc.poll() is None:
-            # Send 'q' to stdin for clean ffmpeg shutdown (finalizes container)
+        if self._proc is not None and self._proc.poll() is None:
             try:
-                self._proc.stdin.write("q")
-                self._proc.stdin.flush()
+                if self._proc.stdin:
+                    self._proc.stdin.write("q")
+                    self._proc.stdin.flush()
             except Exception:
-                self._proc.terminate()
+                try:
+                    self._proc.terminate()
+                except OSError:
+                    pass
 
 
 class ScreenRecorder(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Screen Recorder")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(640, 480)
+        vt.apply_app_theme(self)
         self._worker = None
         self._recording = False
         self._output_path = None
@@ -125,13 +133,15 @@ class ScreenRecorder(QWidget):
     def _init_ui(self):
         root = QVBoxLayout(self)
 
-        title = QLabel("Vice OS — Screen Recorder")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 14, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        root.addWidget(vt.make_header(
+            "Screen Recorder",
+            "Record fullscreen, active window or custom region via ffmpeg + PipeWire",
+            icon_name="media-record",
+            badge_text="REC",
+            badge_variant="coral",
+            parent=self,
+        ))
 
-        # Source settings
         src_box = QGroupBox("Capture Source")
         sl = QHBoxLayout(src_box)
 
@@ -145,10 +155,10 @@ class ScreenRecorder(QWidget):
         self._region_edit = QLineEdit("0,0,1920,1080")
         self._region_edit.setToolTip("x,y,width,height — used in Region mode")
         self._region_edit.setFixedWidth(150)
+        self._region_edit.setEnabled(False)
         sl.addWidget(self._region_edit)
         root.addWidget(src_box)
 
-        # Output settings
         out_box = QGroupBox("Output")
         ol = QHBoxLayout(out_box)
 
@@ -168,7 +178,6 @@ class ScreenRecorder(QWidget):
         ol.addWidget(self._audio_cb)
         root.addWidget(out_box)
 
-        # Quality settings
         qual_box = QGroupBox("Quality")
         ql = QHBoxLayout(qual_box)
         ql.addWidget(QLabel("Preset:"))
@@ -179,36 +188,35 @@ class ScreenRecorder(QWidget):
         ql.addStretch()
         root.addWidget(qual_box)
 
-        # Record button + status
         rec_row = QHBoxLayout()
-        self._rec_btn = QPushButton("● Start Recording")
-        self._rec_btn.setObjectName("recBtn")
+        self._rec_btn = vt.make_button("Start Recording", "danger", parent=self)
         self._rec_btn.clicked.connect(self._toggle_recording)
         rec_row.addWidget(self._rec_btn)
 
-        open_dir_btn = QPushButton("Open Save Folder")
-        open_dir_btn.clicked.connect(lambda: subprocess.Popen(["xdg-open", SAVE_DIR]))
+        open_dir_btn = vt.make_button("Open Save Folder", "secondary", parent=self)
+        open_dir_btn.clicked.connect(
+            lambda: subprocess.Popen(["xdg-open", SAVE_DIR], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        )
         rec_row.addWidget(open_dir_btn)
         rec_row.addStretch()
 
         self._rec_label = QLabel("IDLE")
         self._rec_label.setFont(QFont("monospace", 12, QFont.Bold))
+        self._rec_label.setStyleSheet(f"color: {vt.COLORS['accent_aqua']};")
         rec_row.addWidget(self._rec_label)
         root.addLayout(rec_row)
 
-        # Progress (indeterminate while recording)
         self._progress = QProgressBar()
         self._progress.setRange(0, 0)
         self._progress.setVisible(False)
         root.addWidget(self._progress)
 
-        # Log
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
         root.addWidget(self._log)
 
         self._status = QLabel(f"Output directory: {SAVE_DIR}")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         root.addWidget(self._status)
 
     def _source_changed(self, source):
@@ -226,27 +234,33 @@ class ScreenRecorder(QWidget):
         source = self._source_combo.currentText()
         with_audio = self._audio_cb.isChecked()
 
+        os.makedirs(SAVE_DIR, exist_ok=True)
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         self._output_path = os.path.join(SAVE_DIR, f"vice_rec_{ts}.{fmt}")
 
         video_codec = "libx264" if fmt != "webm" else "libvpx"
         audio_codec = "aac" if fmt != "webm" else "libvorbis"
 
-        cmd = ["ffmpeg", "-y", "-f", "x11grab",
-               "-framerate", str(fps)]
+        cmd = ["ffmpeg", "-y", "-f", "x11grab", "-framerate", str(fps)]
+        disp = os.environ.get("DISPLAY", ":0")
 
         if source.startswith("Fullscreen"):
             w, h = get_display_size()
-            cmd += ["-video_size", f"{w}x{h}", "-i", os.environ.get("DISPLAY", ":0")]
+            cmd += ["-video_size", f"{w}x{h}", "-i", disp]
         elif source.startswith("Window"):
-            cmd += ["-i", os.environ.get("DISPLAY", ":0") + "+0,0"]
-        else:  # Region
+            geom = get_active_window_geometry()
+            if geom:
+                x, y, w, h = geom
+                cmd += ["-video_size", f"{w}x{h}", "-i", f"{disp}+{x},{y}"]
+            else:
+                w, h = get_display_size()
+                cmd += ["-video_size", f"{w}x{h}", "-i", disp]
+        else:
             try:
                 x, y, w, h = [int(v.strip()) for v in self._region_edit.text().split(",")]
-            except ValueError:
-                raise ValueError("Region must be x,y,width,height (integers)")
-            cmd += ["-video_size", f"{w}x{h}", "-i",
-                    f"{os.environ.get('DISPLAY', ':0')}+{x},{y}"]
+            except ValueError as e:
+                raise ValueError("Region must be x,y,width,height (integers)") from e
+            cmd += ["-video_size", f"{w}x{h}", "-i", f"{disp}+{x},{y}"]
 
         if with_audio:
             audio_src = get_audio_source() or "default"
@@ -274,31 +288,31 @@ class ScreenRecorder(QWidget):
         self._log.clear()
         self._log.appendPlainText("$ " + " ".join(cmd))
         self._recording = True
-        self._rec_btn.setText("■ Stop Recording")
-        self._rec_label.setText("● RECORDING")
-        self._rec_label.setStyleSheet("color: #ff4444;")
+        self._rec_btn.setText("Stop Recording")
+        self._rec_label.setText("RECORDING")
+        self._rec_label.setStyleSheet(f"color: {vt.COLORS['danger']};")
         self._progress.setVisible(True)
         self._source_combo.setEnabled(False)
         self._format_combo.setEnabled(False)
 
-        self._worker = RecordWorker(cmd)
+        self._worker = RecordWorker(cmd, parent=self)
         self._worker.line.connect(self._log.appendPlainText)
         self._worker.finished.connect(self._rec_done)
         self._worker.start()
         log_info(f"Recording started: {self._output_path}")
 
     def _stop_recording(self):
-        if self._worker:
+        if self._worker is not None:
             self._worker.stop()
         self._rec_btn.setText("Stopping...")
         self._rec_btn.setEnabled(False)
 
     def _rec_done(self, ok):
         self._recording = False
-        self._rec_btn.setText("● Start Recording")
+        self._rec_btn.setText("Start Recording")
         self._rec_btn.setEnabled(True)
         self._rec_label.setText("IDLE")
-        self._rec_label.setStyleSheet("color: #00ffff;")
+        self._rec_label.setStyleSheet(f"color: {vt.COLORS['accent_aqua']};")
         self._progress.setVisible(False)
         self._source_combo.setEnabled(True)
         self._format_combo.setEnabled(True)
@@ -311,6 +325,12 @@ class ScreenRecorder(QWidget):
         else:
             self._log.appendPlainText("[WARN] ffmpeg exited non-zero; file may be incomplete")
             self._status.setText("Recording stopped (check log)")
+
+    def closeEvent(self, event):
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(3000)
+        super().closeEvent(event)
 
 
 def main():

@@ -1,93 +1,98 @@
 #!/usr/bin/env python3
 """Vice OS Panel — top taskbar with app launcher, clock, system tray, quick actions."""
 
-import sys
 import os
 import pwd
 import shutil
 import subprocess
+import sys
 from datetime import datetime
+
+from PyQt5.QtCore import QProcess, Qt, QTimer
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import (
+    QApplication, QFrame, QHBoxLayout, QLabel, QMenu, QMessageBox,
+    QPushButton, QSystemTrayIcon, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QSystemTrayIcon, QMenu, QAction, QFrame, QGraphicsDropShadowEffect,
-    QMessageBox
-)
-from PyQt5.QtCore import Qt, QTimer, QPoint, QPropertyAnimation, QProcess
-from PyQt5.QtGui import QFont, QColor, QIcon, QPixmap, QPainter
-
-from python.vice_utils import log_info
+from python.vice_utils import log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 PANEL_HEIGHT = 36
 PANEL_WIDTH = 1920
 
-STYLE = """
-QWidget#panel {
-    background-color: #0a0a0a;
-    border-bottom: 1px solid #00ffff;
-}
-QPushButton#launcherBtn {
+STYLE = f"""
+QWidget#panel {{
+    background-color: {vt.COLORS['bg_canvas']};
+    border-bottom: 1px solid {vt.COLORS['border_strong']};
+}}
+QPushButton#launcherBtn {{
     background: transparent;
-    color: #ff00ff;
+    color: {vt.COLORS['accent_coral']};
     border: none;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: bold;
     padding: 4px 12px;
-}
-QPushButton#launcherBtn:hover {
-    background: #1a1a1a;
-}
-QPushButton#sysBtn {
+}}
+QPushButton#launcherBtn:hover {{
+    background: {vt.COLORS['bg_hover']};
+}}
+QPushButton#sysBtn {{
     background: transparent;
-    color: #00ffff;
+    color: {vt.COLORS['text_primary']};
     border: none;
     padding: 4px 8px;
     font-size: 12px;
-}
-QPushButton#sysBtn:hover {
-    background: #1a1a1a;
-}
-QLabel#clockLabel {
-    color: #00ffff;
+}}
+QPushButton#sysBtn:hover {{
+    background: {vt.COLORS['bg_hover']};
+    color: {vt.COLORS['accent_aqua']};
+}}
+QLabel#clockLabel {{
+    color: {vt.COLORS['text_primary']};
     font-size: 12px;
     padding: 4px 10px;
-}
-QLabel#titleLabel {
-    color: #ff00ff;
+}}
+QLabel#titleLabel {{
+    color: {vt.COLORS['accent_coral']};
     font-size: 14px;
     font-weight: bold;
     padding: 4px 8px;
-}
-QMenu {
-    background: #1a1a1a;
-    color: #00ffff;
-    border: 1px solid #00ffff;
+}}
+QMenu {{
+    background: {vt.COLORS['bg_surface']};
+    color: {vt.COLORS['text_primary']};
+    border: 1px solid {vt.COLORS['border_strong']};
     padding: 4px;
-}
-QMenu::item:selected {
-    background: #00ffff;
-    color: #0a0a0a;
-}
-QFrame#divider {
-    background: #1a1a1a;
+}}
+QMenu::item:selected {{
+    background: {vt.COLORS['accent_coral']};
+    color: {vt.COLORS['bg_canvas']};
+}}
+QFrame#divider {{
+    background: {vt.COLORS['border']};
     max-width: 1px;
     min-width: 1px;
     margin: 6px 2px;
-}
+}}
 """
 
 DESKTOP_DIR = os.path.join(os.path.dirname(__file__))
 
-WINDOW_BTN_STYLE = """
-QPushButton {
-    background: #1a1a1a; color: #aaffff; border: 1px solid #1a4a4a;
+WINDOW_BTN_STYLE = f"""
+QPushButton {{
+    background: {vt.COLORS['bg_surface']}; color: {vt.COLORS['text_secondary']};
+    border: 1px solid {vt.COLORS['border']};
     padding: 2px 10px; max-width: 160px; min-width: 40px;
-    font-size: 11px; text-align: left;
-}
-QPushButton:hover { border-color: #00ffff; color: #00ffff; }
-QPushButton:checked { background: #003333; color: #00ffff; border-color: #00ffff; }
+    font-size: 11px; text-align: left; border-radius: 4px;
+}}
+QPushButton:hover {{ border-color: {vt.COLORS['accent_aqua']}; color: {vt.COLORS['text_primary']}; }}
+QPushButton:checked {{
+    background: {vt.COLORS['bg_active']}; color: {vt.COLORS['text_primary']};
+    border-color: {vt.COLORS['accent_coral']};
+}}
 """
 
 SKIP_TITLES = {"vice panel", "desktop", "stalonetray", "nm-applet",
@@ -103,7 +108,7 @@ class WindowList(QWidget):
         self._layout.setContentsMargins(4, 0, 4, 0)
         self._layout.setSpacing(2)
         self._buttons = {}  # window id (int) -> button
-        self._timer = QTimer()
+        self._timer = QTimer(self)
         self._timer.setInterval(2000)
         self._timer.timeout.connect(self._refresh)
         self._timer.start()
@@ -120,7 +125,7 @@ class WindowList(QWidget):
             parts = line.split(None, 3)
             if len(parts) < 4:
                 continue
-            wid_hex, _host, desk, title = parts[0], parts[1], parts[2], parts[3]
+            wid_hex, _, desk, title = parts[0], parts[1], parts[2], parts[3]
             if desk == "-1":  # dock/desktop layer windows
                 continue
             if title.strip().lower() in SKIP_TITLES:
@@ -188,7 +193,7 @@ class ClockWidget(QLabel):
     def __init__(self):
         super().__init__()
         self.setObjectName("clockLabel")
-        self._timer = QTimer()
+        self._timer = QTimer(self)
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._update)
         self._timer.start()
@@ -202,23 +207,30 @@ class ClockWidget(QLabel):
 class QuickActionsMenu(QMenu):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.addAction("🔊 Volume", self._volume)
-        self.addAction("📶 Network", self._network)
-        self.addAction("🔋 Battery", self._battery)
+        self.addAction(QIcon.fromTheme("audio-volume-high"), "Volume", self._volume)
+        self.addAction(QIcon.fromTheme("network-wired"), "Network", self._network)
+        self.addAction(QIcon.fromTheme("battery"), "Battery", self._battery)
         self.addSeparator()
-        self.addAction("📸 Screenshot", self._screenshot)
+        self.addAction(QIcon.fromTheme("applets-screenshooter"), "Screenshot", self._screenshot)
         self.addSeparator()
-        self.addAction("⏻ Shutdown", self._shutdown)
-        self.addAction("🔄 Reboot", self._reboot)
-        self.addAction("😴 Suspend", self._suspend)
+        self.addAction(QIcon.fromTheme("system-shutdown"), "Shutdown", self._shutdown)
+        self.addAction(QIcon.fromTheme("system-reboot"), "Reboot", self._reboot)
+        self.addAction(QIcon.fromTheme("system-suspend"), "Suspend", self._suspend)
         self.addSeparator()
-        self.addAction("🔒 Lock", self._lock)
-        self.addAction("🚪 Logout", self._logout)
+        self.addAction(QIcon.fromTheme("system-lock-screen"), "Lock", self._lock)
+        self.addAction(QIcon.fromTheme("system-log-out"), "Logout", self._logout)
 
-    def _volume(self): self._open("vice_audio_manager.py")
-    def _network(self): self._open("vice_network_monitor.py")
-    def _battery(self): self._open("vice_power_manager.py")
-    def _screenshot(self): self._open("vice_screenshot.py")
+    def _volume(self):
+        self._open("vice_audio_manager.py")
+
+    def _network(self):
+        self._open("vice_network_monitor.py")
+
+    def _battery(self):
+        self._open("vice_power_manager.py")
+
+    def _screenshot(self):
+        self._open("vice_screenshot.py")
 
     def _lock(self):
         locker = next((c for c in ("swaylock", "i3lock", "slock", "xdg-screensaver") if shutil.which(c)), None)
@@ -239,9 +251,15 @@ class QuickActionsMenu(QMenu):
         else:
             user = os.environ.get("USER") or pwd.getpwuid(os.getuid()).pw_name
             subprocess.Popen(["pkill", "-u", user])
-    def _shutdown(self): subprocess.Popen(["systemctl", "poweroff"])
-    def _reboot(self): subprocess.Popen(["systemctl", "reboot"])
-    def _suspend(self): subprocess.Popen(["systemctl", "suspend"])
+
+    def _shutdown(self):
+        subprocess.Popen(["systemctl", "poweroff"])
+
+    def _reboot(self):
+        subprocess.Popen(["systemctl", "reboot"])
+
+    def _suspend(self):
+        subprocess.Popen(["systemctl", "suspend"])
 
     def _open(self, script):
         path = os.path.join(DESKTOP_DIR, script)
@@ -285,13 +303,17 @@ class Panel(QWidget):
         root.addWidget(self._window_list, 1)
 
         # Quick action buttons
-        for label, script in [
-            ("💻", "vice_terminal.py"),
-            ("📁", "vice_file_manager.py"),
-            ("📝", "vice_text_editor.py"),
-            ("⚙", "vice_settings.py"),
+        for label, icon_name, tip, script in [
+            ("Term", "utilities-terminal", "Terminal", "vice_terminal.py"),
+            ("Files", "system-file-manager", "File Manager", "vice_file_manager.py"),
+            ("Edit", "accessories-text-editor", "Text Editor", "vice_text_editor.py"),
+            ("Prefs", "preferences-system", "Settings", "vice_settings.py"),
         ]:
-            btn = QPushButton(label)
+            icon = QIcon.fromTheme(icon_name)
+            btn = QPushButton("" if not icon.isNull() else label)
+            if not icon.isNull():
+                btn.setIcon(icon)
+            btn.setToolTip(tip)
             btn.setObjectName("sysBtn")
             btn.setFixedHeight(PANEL_HEIGHT - 4)
             btn.clicked.connect(lambda _, s=script: self._launch_app(s))
@@ -300,8 +322,8 @@ class Panel(QWidget):
         self._divider()
 
         # System tray
-        self._tray_icon = QSystemTrayIcon()
-        tray_menu = QMenu()
+        self._tray_icon = QSystemTrayIcon(self)
+        tray_menu = QMenu(self)
         tray_menu.addAction("Vice OS", lambda: self._launch_app("vice_launcher.py"))
         tray_menu.addSeparator()
         tray_menu.addAction("Settings", lambda: self._launch_app("vice_settings.py"))
@@ -315,10 +337,14 @@ class Panel(QWidget):
         self._tray_icon.show()
 
         # Quick actions button
-        self._qa_btn = QPushButton("⚡")
+        qa_icon = QIcon.fromTheme("system-shutdown")
+        self._qa_btn = QPushButton("" if not qa_icon.isNull() else "Menu")
+        if not qa_icon.isNull():
+            self._qa_btn.setIcon(qa_icon)
+        self._qa_btn.setToolTip("Quick Actions & Session")
         self._qa_btn.setObjectName("sysBtn")
         self._qa_btn.setFixedHeight(PANEL_HEIGHT - 4)
-        self._qa_menu = QuickActionsMenu()
+        self._qa_menu = QuickActionsMenu(self)
         self._qa_btn.clicked.connect(self._qa_menu.exec_)
         root.addWidget(self._qa_btn)
 
@@ -332,7 +358,6 @@ class Panel(QWidget):
         d.setFrameShape(QFrame.VLine)
         d.setFrameShadow(QFrame.Sunken)
         root = self.layout()
-        # safe add — won't crash if layout is None
         if root:
             root.addWidget(d)
 
@@ -367,10 +392,20 @@ class Panel(QWidget):
             self._toggle_launcher()
 
     def _about(self):
-        QMessageBox.information(self, "About Vice OS",
-            "Vice OS — A cyberpunk-themed Linux distribution\n"
+        QMessageBox.information(
+            self,
+            "About Vice OS",
+            "Vice OS — Leonida Dark Slate Edition\n"
             "Built with Python + PyQt5\n"
-            "Based on Debian Bookworm")
+            "Based on Debian Bookworm",
+        )
+
+    def closeEvent(self, event):
+        if hasattr(self, "_window_list"):
+            self._window_list._timer.stop()
+        if hasattr(self, "_clock"):
+            self._clock._timer.stop()
+        super().closeEvent(event)
 
 
 def main():

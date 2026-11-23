@@ -4,42 +4,55 @@ GTA VI OS (Vice OS) Task Manager
 Process explorer with CPU/memory usage bars, process filtering, priority renice, and signal termination.
 """
 
-import sys
 import os
 import subprocess
+import sys
+
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor
+from PyQt5.QtWidgets import (
+    QAbstractItemView, QApplication, QGroupBox, QHBoxLayout, QHeaderView,
+    QLabel, QLineEdit, QMessageBox, QProgressBar, QSpinBox, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QLineEdit,
-    QSpinBox, QGroupBox, QProgressBar, QAbstractItemView
-)
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QBrush
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 660
 REFRESH_MS = 2000
 
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; text-align: center; color: #00ffff; }
-QProgressBar::chunk { background: #00ffff; }
-QGroupBox { border: 1px solid #333; margin-top: 8px; padding: 4px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QSpinBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 3px; }
-QLabel { color: #00ffff; }
-"""
+
+def _read_proc_cpu():
+    try:
+        with open("/proc/stat", encoding="utf-8") as f:
+            parts = [int(x) for x in f.readline().split()[1:]]
+        idle = parts[3] + (parts[4] if len(parts) > 4 else 0)
+        return sum(parts), idle
+    except OSError:
+        return 0, 0
+
+
+def _read_mem_pct():
+    info = {}
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as f:
+            for line in f:
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    vals = v.split()
+                    if vals:
+                        info[k.strip()] = int(vals[0])
+        total = info.get("MemTotal", 0)
+        avail = info.get("MemAvailable", info.get("MemFree", 0))
+        if total > 0:
+            return int((total - avail) * 100 / total)
+    except (OSError, ValueError):
+        pass
+    return 0
 
 
 def get_processes(search=""):
@@ -47,14 +60,15 @@ def get_processes(search=""):
     try:
         out = subprocess.check_output(
             ["ps", "aux", "--sort=-%cpu"],
-            text=True, timeout=5
+            text=True, timeout=5,
         ).splitlines()[1:]
+        low_search = search.lower()
         for line in out:
             parts = line.split(None, 10)
             if len(parts) < 11:
                 continue
-            user, pid, cpu, mem, vsz, rss, tty, stat, start, time_, cmd = parts
-            if search and search.lower() not in cmd.lower() and search.lower() not in user.lower():
+            user, pid, cpu, mem, _vsz, rss, _tty, stat, _start, _time, cmd = parts
+            if low_search and low_search not in cmd.lower() and low_search not in user.lower():
                 continue
             procs.append({
                 "user": user, "pid": pid, "cpu": cpu,
@@ -69,25 +83,33 @@ def get_processes(search=""):
 class ProcWorker(QThread):
     data_ready = pyqtSignal(list)
 
-    def __init__(self, search=""):
-        super().__init__()
+    def __init__(self, search="", parent=None):
+        super().__init__(parent)
         self.search = search
+        self._cancelled = False
+
+    def stop(self):
+        self._cancelled = True
 
     def run(self):
-        self.data_ready.emit(get_processes(self.search))
+        procs = get_processes(self.search)
+        if not self._cancelled:
+            self.data_ready.emit(procs)
 
 
 class TaskManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Task Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(780, 500)
+        vt.apply_app_theme(self)
         self._worker = None
         self._paused = False
+        self._prev_cpu = _read_proc_cpu()
         self._init_ui()
         self._refresh()
-        self._timer = QTimer()
+        self._timer = QTimer(self)
         self._timer.setInterval(REFRESH_MS)
         self._timer.timeout.connect(self._refresh)
         self._timer.start()
@@ -95,13 +117,15 @@ class TaskManager(QWidget):
     def _init_ui(self):
         root = QVBoxLayout(self)
 
-        title = QLabel("Vice OS — Task Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 14, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 4px;")
-        root.addWidget(title)
+        root.addWidget(vt.make_header(
+            "Task Manager",
+            "Live process explorer with CPU/memory meters, signals and priority renice",
+            icon_name="utilities-system-monitor",
+            badge_text="PROCS",
+            badge_variant="coral",
+            parent=self,
+        ))
 
-        # Summary bars
         summary = QHBoxLayout()
         cpu_box = QGroupBox("CPU")
         cl = QVBoxLayout(cpu_box)
@@ -118,11 +142,10 @@ class TaskManager(QWidget):
         summary.addWidget(mem_box)
 
         self._proc_count = QLabel("Processes: 0")
-        self._proc_count.setStyleSheet("color: #888; font-size: 11px;")
+        self._proc_count.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         summary.addWidget(self._proc_count)
         root.addLayout(summary)
 
-        # Search
         search_row = QHBoxLayout()
         search_row.addWidget(QLabel("Filter:"))
         self._search = QLineEdit()
@@ -130,45 +153,38 @@ class TaskManager(QWidget):
         self._search.textChanged.connect(self._refresh)
         search_row.addWidget(self._search)
 
-        self._pause_btn = QPushButton("Pause")
+        self._pause_btn = vt.make_button("Pause", "secondary", parent=self)
         self._pause_btn.setCheckable(True)
         self._pause_btn.toggled.connect(self._toggle_pause)
         search_row.addWidget(self._pause_btn)
         root.addLayout(search_row)
 
-        # Process table
         self._table = QTableWidget()
         self._table.setColumnCount(7)
         self._table.setHorizontalHeaderLabels(["PID", "User", "CPU%", "MEM%", "RSS(kB)", "Stat", "Command"])
         self._table.horizontalHeader().setSectionResizeMode(6, QHeaderView.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        for col in range(6):
+            self._table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeToContents)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._table.setSortingEnabled(True)
         root.addWidget(self._table)
 
-        # Actions
         act_row = QHBoxLayout()
 
-        kill_btn = QPushButton("Kill (SIGKILL)")
-        kill_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        kill_btn = vt.make_button("Kill (SIGKILL)", "danger", parent=self)
         kill_btn.clicked.connect(lambda: self._signal_selected("KILL"))
         act_row.addWidget(kill_btn)
 
-        term_btn = QPushButton("Terminate (SIGTERM)")
+        term_btn = vt.make_button("Terminate (SIGTERM)", "secondary", parent=self)
         term_btn.clicked.connect(lambda: self._signal_selected("TERM"))
         act_row.addWidget(term_btn)
 
-        stop_btn = QPushButton("Stop (SIGSTOP)")
+        stop_btn = vt.make_button("Stop (SIGSTOP)", "secondary", parent=self)
         stop_btn.clicked.connect(lambda: self._signal_selected("STOP"))
         act_row.addWidget(stop_btn)
 
-        cont_btn = QPushButton("Continue (SIGCONT)")
+        cont_btn = vt.make_button("Continue (SIGCONT)", "secondary", parent=self)
         cont_btn.clicked.connect(lambda: self._signal_selected("CONT"))
         act_row.addWidget(cont_btn)
 
@@ -180,14 +196,13 @@ class TaskManager(QWidget):
         self._nice_spin.setValue(0)
         act_row.addWidget(self._nice_spin)
 
-        renice_btn = QPushButton("Renice")
+        renice_btn = vt.make_button("Renice", "primary", parent=self)
         renice_btn.clicked.connect(self._renice_selected)
         act_row.addWidget(renice_btn)
-
         root.addLayout(act_row)
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         root.addWidget(self._status)
 
     def _toggle_pause(self, paused):
@@ -200,30 +215,24 @@ class TaskManager(QWidget):
         if self._paused:
             return
         self._update_summary()
+        if self._worker is not None and self._worker.isRunning():
+            return
         search = self._search.text().strip()
-        w = ProcWorker(search)
+        w = ProcWorker(search, parent=self)
         w.data_ready.connect(self._populate)
-        w.start()
         self._worker = w
+        w.start()
 
     def _update_summary(self):
-        try:
-            cpu_out = subprocess.check_output(
-                "top -bn1 | grep 'Cpu(s)' | awk '{print $2+$4}'",
-                shell=True, text=True, timeout=3
-            ).strip()
-            self._cpu_bar.setValue(int(float(cpu_out or 0)))
-        except Exception:
-            pass
-
-        try:
-            mem_out = subprocess.check_output(
-                "free | awk '/^Mem:/{printf \"%.0f\", $3/$2*100}'",
-                shell=True, text=True, timeout=3
-            ).strip()
-            self._mem_bar.setValue(int(mem_out or 0))
-        except Exception:
-            pass
+        total, idle = _read_proc_cpu()
+        prev_total, prev_idle = self._prev_cpu
+        diff_total = total - prev_total
+        diff_idle = idle - prev_idle
+        if diff_total > 0:
+            cpu_pct = max(0, min(100, int((1.0 - diff_idle / diff_total) * 100)))
+            self._cpu_bar.setValue(cpu_pct)
+        self._prev_cpu = (total, idle)
+        self._mem_bar.setValue(_read_mem_pct())
 
     def _populate(self, procs):
         selected_pid = None
@@ -237,28 +246,31 @@ class TaskManager(QWidget):
         self._table.setSortingEnabled(False)
         self._table.setRowCount(0)
 
+        restore_row = -1
         for p in procs:
             row = self._table.rowCount()
             self._table.insertRow(row)
-            vals = [p["pid"], p["user"], p["cpu"], p["mem"], p["rss"], p["stat"], p["cmd"]]
+            vals = (p["pid"], p["user"], p["cpu"], p["mem"], p["rss"], p["stat"], p["cmd"])
             for col, val in enumerate(vals):
                 item = QTableWidgetItem(val)
                 item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
                 try:
                     cpu = float(p["cpu"])
                     if cpu > 50:
-                        item.setForeground(QBrush(QColor("#ff4444")))
+                        item.setForeground(QBrush(QColor(vt.COLORS["danger"])))
                     elif cpu > 20:
-                        item.setForeground(QBrush(QColor("#ffaa00")))
-                except Exception:
+                        item.setForeground(QBrush(QColor(vt.COLORS["warning"])))
+                except ValueError:
                     pass
                 if p["stat"].startswith("Z"):
-                    item.setForeground(QBrush(QColor("#888888")))
+                    item.setForeground(QBrush(QColor(vt.COLORS["text_muted"])))
                 self._table.setItem(row, col, item)
-                if col == 0 and val == selected_pid:
-                    self._table.selectRow(row)
+            if p["pid"] == selected_pid:
+                restore_row = row
 
         self._table.setSortingEnabled(True)
+        if restore_row >= 0:
+            self._table.selectRow(restore_row)
         self._proc_count.setText(f"Processes: {len(procs)}")
 
     def _selected_pid(self):
@@ -277,9 +289,8 @@ class TaskManager(QWidget):
         cmd = cmd_item.text() if cmd_item else pid
         if sig == "KILL":
             if QMessageBox.question(
-                self, "Kill Process",
-                f"Force kill PID {pid} ({cmd})?",
-                QMessageBox.Yes | QMessageBox.No
+                self, "Kill Process", f"Force kill PID {pid} ({cmd})?",
+                QMessageBox.Yes | QMessageBox.No,
             ) != QMessageBox.Yes:
                 return
         try:
@@ -296,13 +307,27 @@ class TaskManager(QWidget):
         if not pid:
             return
         nice = self._nice_spin.value()
+        is_root = os.geteuid() == 0 if hasattr(os, "geteuid") else False
+        cmd = ["renice", "-n", str(nice), "-p", pid]
         try:
-            subprocess.run(["sudo", "renice", str(nice), "-p", pid], check=True)
-            self._status.setText(f"Reniced PID {pid} to {nice}")
-            log_info(f"renice {nice} PID {pid}")
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            if r.returncode != 0 and not is_root:
+                r = subprocess.run(["pkexec"] + cmd, capture_output=True, text=True, timeout=15)
+            if r.returncode == 0:
+                self._status.setText(f"Reniced PID {pid} to {nice}")
+                log_info(f"renice {nice} PID {pid}")
+            else:
+                raise RuntimeError((r.stderr or r.stdout or "renice failed").strip())
         except Exception as e:
             self._status.setText(f"Renice failed: {e}")
             log_error(f"Renice failed: {e}")
+
+    def closeEvent(self, event):
+        self._timer.stop()
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(2000)
+        super().closeEvent(event)
 
 
 def main():

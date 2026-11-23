@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Vice OS — Startup Apps Manager. Enable/disable XDG autostart entries, add custom."""
 
-import sys
-import os
 import glob
-import subprocess
+import os
+import re
 import shutil
-
-sys.path.insert(0, '/opt/vice-os/lib')
+import sys
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
@@ -16,31 +14,26 @@ from PyQt5.QtWidgets import (
     QCheckBox, QFileDialog
 )
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QBrush, QColor
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from python.vice_utils import log_info, log_error  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    make_button,
+    make_header,
+)
 
 WINDOW_WIDTH = 900
-WINDOW_HEIGHT = 560
+WINDOW_HEIGHT = 580
 
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QCheckBox { color: #00ffff; }
-QCheckBox::indicator { width: 16px; height: 16px; background: #1a1a1a; border: 1px solid #00ffff; border-radius: 3px; }
-QCheckBox::indicator:checked { background: #00ffff; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QLabel { color: #00ffff; }
-"""
-
-AUTOSTART_DIRS = [
-    os.path.expanduser("~/.config/autostart"),
-    "/etc/xdg/autostart",
-]
+USER_AUTOSTART_DIR = os.path.expanduser("~/.config/autostart")
+SYSTEM_AUTOSTART_DIR = "/etc/xdg/autostart"
+AUTOSTART_DIRS = [USER_AUTOSTART_DIR, SYSTEM_AUTOSTART_DIR]
 
 
 def parse_desktop_file(path):
@@ -49,7 +42,7 @@ def parse_desktop_file(path):
     exec_cmd = ""
     enabled = True
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             in_main = False
             for line in f:
                 line = line.strip()
@@ -64,39 +57,53 @@ def parse_desktop_file(path):
                         exec_cmd = line.split("=", 1)[1]
                     elif line.startswith("X-GNOME-Autostart-enabled="):
                         enabled = line.split("=", 1)[1].strip().lower() == "true"
+                    elif line.startswith("Hidden="):
+                        if line.split("=", 1)[1].strip().lower() == "true":
+                            enabled = False
     except Exception as e:
         log_error(f"Parse failed {path}: {e}")
     return name, exec_cmd, enabled
 
 
 def set_enabled(path, enabled):
-    """Set X-GNOME-Autostart-enabled in a .desktop file."""
+    """Set X-GNOME-Autostart-enabled in a .desktop file, creating a user override if system-owned."""
+    target_path = path
+    if os.path.dirname(os.path.abspath(path)) == os.path.abspath(SYSTEM_AUTOSTART_DIR):
+        os.makedirs(USER_AUTOSTART_DIR, exist_ok=True)
+        user_override = os.path.join(USER_AUTOSTART_DIR, os.path.basename(path))
+        if not os.path.exists(user_override):
+            try:
+                shutil.copy2(path, user_override)
+            except OSError as e:
+                log_error(f"Copy override failed {path}: {e}")
+                return False
+        target_path = user_override
+
     try:
-        with open(path) as f:
+        with open(target_path, encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
-        found = False
+        found_auto = False
         new_lines = []
         for line in lines:
             if line.strip().startswith("X-GNOME-Autostart-enabled="):
                 new_lines.append(f"X-GNOME-Autostart-enabled={'true' if enabled else 'false'}\n")
-                found = True
+                found_auto = True
+            elif line.strip().startswith("Hidden="):
+                new_lines.append(f"Hidden={'false' if enabled else 'true'}\n")
             else:
                 new_lines.append(line)
-        if not found:
-            # Insert before first section end (just append to [Desktop Entry])
-            insert_at = 0
-            for i, line in enumerate(lines):
+        if not found_auto:
+            insert_at = len(new_lines)
+            for i, line in enumerate(new_lines):
                 if line.strip().startswith("[") and i > 0:
                     insert_at = i
                     break
-            else:
-                insert_at = len(new_lines)
             new_lines.insert(insert_at, f"X-GNOME-Autostart-enabled={'true' if enabled else 'false'}\n")
-        with open(path, "w") as f:
+        with open(target_path, "w", encoding="utf-8", newline="\n") as f:
             f.writelines(new_lines)
         return True
     except Exception as e:
-        log_error(f"Toggle failed {path}: {e}")
+        log_error(f"Toggle failed {target_path}: {e}")
         return False
 
 
@@ -105,7 +112,7 @@ class AddStartupDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Add Startup Application")
         self.setFixedSize(460, 280)
-        self.setStyleSheet(STYLE)
+        apply_app_theme(self)
         layout = QFormLayout(self)
 
         self._name = QLineEdit()
@@ -137,34 +144,46 @@ class AddStartupDialog(QDialog):
         layout.addRow(btns)
 
     def _browse(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Select Executable",
-                                              "/usr/bin", "All files (*)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Executable", "/usr/bin", "All files (*)"
+        )
         if path:
             self._exec.setText(path)
 
     def values(self):
-        return (self._name.text().strip(), self._exec.text().strip(),
-                self._comment.text().strip(), self._delay.text().strip() or "0")
+        return (
+            self._name.text().strip(),
+            self._exec.text().strip(),
+            self._comment.text().strip(),
+            self._delay.text().strip() or "0",
+        )
 
 
 class StartupAppsManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Startup Apps Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(700, 460)
+        apply_app_theme(self)
         self._entries = []  # (path, name, exec, enabled, system)
         self._init_ui()
         self._refresh()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 14)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — Startup Applications")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        header = make_header(
+            title="Startup Applications",
+            subtitle="Enable, disable, or add XDG autostart entries for your session",
+            icon_name="preferences-system",
+            badge_text="XDG AUTOSTART",
+            badge_variant="aqua",
+            parent=self,
+        )
+        root.addWidget(header)
 
         self._table = QTableWidget()
         self._table.setColumnCount(4)
@@ -174,40 +193,44 @@ class StartupAppsManager(QWidget):
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self._table.cellClicked.connect(self._on_cell_clicked)
-        root.addWidget(self._table)
+        root.addWidget(self._table, 1)
 
         btn_row = QHBoxLayout()
-        add_btn = QPushButton("+ Add Startup App")
+        add_btn = make_button("+ Add Startup App", variant="primary", parent=self)
         add_btn.clicked.connect(self._add_app)
         btn_row.addWidget(add_btn)
 
-        del_btn = QPushButton("Delete Selected")
-        del_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        del_btn = make_button("Delete Selected", variant="danger", parent=self)
         del_btn.clicked.connect(self._delete_app)
         btn_row.addWidget(del_btn)
 
-        refresh_btn = QPushButton("Refresh")
+        refresh_btn = make_button("Refresh", variant="secondary", parent=self)
         refresh_btn.clicked.connect(self._refresh)
         btn_row.addWidget(refresh_btn)
         btn_row.addStretch()
         root.addLayout(btn_row)
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setObjectName("MutedLabel")
         root.addWidget(self._status)
 
     def _refresh(self):
         self._entries.clear()
         self._table.setRowCount(0)
 
+        seen_files = set()
         for d in AUTOSTART_DIRS:
             if not os.path.isdir(d):
                 continue
-            is_system = d == "/etc/xdg/autostart"
+            is_system = os.path.abspath(d) == os.path.abspath(SYSTEM_AUTOSTART_DIR)
             for path in sorted(glob.glob(os.path.join(d, "*.desktop"))):
+                fname = os.path.basename(path)
+                if fname in seen_files:
+                    continue
+                seen_files.add(fname)
+                has_sys = os.path.exists(os.path.join(SYSTEM_AUTOSTART_DIR, fname))
                 name, exec_cmd, enabled = parse_desktop_file(path)
-                self._entries.append((path, name, exec_cmd, enabled, is_system))
+                self._entries.append((path, name, exec_cmd, enabled, is_system or has_sys))
 
         for path, name, exec_cmd, enabled, is_system in self._entries:
             row = self._table.rowCount()
@@ -225,16 +248,13 @@ class StartupAppsManager(QWidget):
 
             self._table.setItem(row, 1, QTableWidgetItem(name))
             self._table.setItem(row, 2, QTableWidgetItem(exec_cmd))
-            src_item = QTableWidgetItem("System" if is_system else "User")
+            label_src = "System" if is_system else "User"
+            src_item = QTableWidgetItem(label_src)
             if is_system:
-                from PyQt5.QtGui import QColor, QBrush
-                src_item.setForeground(QBrush(QColor("#888888")))
+                src_item.setForeground(QBrush(QColor(COLORS["text_muted"])))
             self._table.setItem(row, 3, src_item)
 
         self._status.setText(f"{len(self._entries)} autostart entries")
-
-    def _on_cell_clicked(self, row, col):
-        pass  # checkbox handles toggling directly
 
     def _toggle(self, path, enabled):
         ok = set_enabled(path, enabled)
@@ -244,6 +264,7 @@ class StartupAppsManager(QWidget):
             log_info(f"Autostart {'enabled' if enabled else 'disabled'}: {name}")
         else:
             self._status.setText("Toggle failed")
+            self._refresh()
 
     def _selected_entry(self):
         row = self._table.currentRow()
@@ -260,23 +281,23 @@ class StartupAppsManager(QWidget):
             QMessageBox.warning(self, "Missing Info", "Name and command required.")
             return
 
-        user_dir = AUTOSTART_DIRS[0]
-        os.makedirs(user_dir, exist_ok=True)
-        safe_name = name.replace(" ", "-").lower()
-        path = os.path.join(user_dir, f"{safe_name}.desktop")
+        os.makedirs(USER_AUTOSTART_DIR, exist_ok=True)
+        safe_name = re.sub(r"[^a-z0-9_-]+", "-", name.lower()).strip("-") or "startup-app"
+        path = os.path.join(USER_AUTOSTART_DIR, f"{safe_name}.desktop")
 
-        content = f"""[Desktop Entry]
-Type=Application
-Name={name}
-Comment={comment}
-Exec={exec_cmd}
-X-GNOME-Autostart-enabled=true
-"""
-        if delay != "0":
+        content = (
+            "[Desktop Entry]\n"
+            "Type=Application\n"
+            f"Name={name}\n"
+            f"Comment={comment}\n"
+            f"Exec={exec_cmd}\n"
+            "X-GNOME-Autostart-enabled=true\n"
+        )
+        if delay.isdigit() and int(delay) > 0:
             content += f"X-GNOME-Autostart-Delay={delay}\n"
 
         try:
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(content)
             self._status.setText(f"Added: {name}")
             log_info(f"Startup app added: {name} ({exec_cmd})")
@@ -290,14 +311,16 @@ X-GNOME-Autostart-enabled=true
             QMessageBox.warning(self, "No Selection", "Select an entry first.")
             return
         path, name, _, _, is_system = entry
-        if is_system:
+        if is_system and os.path.dirname(os.path.abspath(path)) == os.path.abspath(SYSTEM_AUTOSTART_DIR):
             QMessageBox.information(
                 self, "System Entry",
                 "This is a system-wide entry. Disable it with the checkbox instead of deleting."
             )
             return
-        if QMessageBox.question(self, "Delete", f"Delete startup app '{name}'?",
-                                 QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+        if QMessageBox.question(
+            self, "Delete", f"Remove entry '{name}'?",
+            QMessageBox.Yes | QMessageBox.No
+        ) != QMessageBox.Yes:
             return
         try:
             os.remove(path)

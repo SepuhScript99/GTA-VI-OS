@@ -76,6 +76,13 @@ def _find_timesync_bin() -> str:
 
 
 def _read_active_timezone() -> str:
+    try:
+        target = os.path.realpath("/etc/localtime")
+        marker = "/usr/share/zoneinfo/"
+        if marker in target:
+            return target.split(marker, 1)[1]
+    except OSError:
+        pass
     if os.path.isfile("/etc/timezone"):
         try:
             with open("/etc/timezone", "r", encoding="utf-8", errors="replace") as fp:
@@ -84,13 +91,6 @@ def _read_active_timezone() -> str:
                 return tz
         except OSError:
             pass
-    try:
-        target = os.path.realpath("/etc/localtime")
-        marker = "/usr/share/zoneinfo/"
-        if marker in target:
-            return target.split(marker, 1)[1]
-    except OSError:
-        pass
     return time.tzname[0] or "UTC"
 
 
@@ -129,42 +129,63 @@ class ClockDiagnosticsWorker(QThread):
         super().__init__()
         self._bin = timesync_bin
         self._stopped = False
+        self._proc = None
 
     def stop(self) -> None:
         self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def _run(self, cmd: list) -> str:
+        if self._stopped:
+            return "[cancelled]"
         if not cmd or (not os.path.isfile(cmd[0]) and not shutil.which(cmd[0])):
             return f"[{cmd[0]} not found]"
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=4)
-            out = res.stdout.strip() or res.stderr.strip()
+            self._proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            )
+            try:
+                stdout, stderr = self._proc.communicate(timeout=4)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+                self._proc.communicate()
+                return "[timed out]"
+            out = (stdout or "").strip() or (stderr or "").strip()
             return out or "(no output)"
         except Exception as exc:
             return f"Error: {exc}"
+        finally:
+            self._proc = None
 
     def run(self) -> None:
         sections = []
-        if os.path.isfile(self._bin) or shutil.which(self._bin):
+        if not self._stopped and (os.path.isfile(self._bin) or shutil.which(self._bin)):
             cmd = [self._bin, "--status"]
             if self._bin.endswith(".sh") and shutil.which("bash"):
                 cmd = ["bash", self._bin, "--status"]
             sections.append("=== vice-timesync --status ===\n" + self._run(cmd))
 
-        if shutil.which("timedatectl"):
+        if not self._stopped and shutil.which("timedatectl"):
             sections.append("=== timedatectl ===\n" + self._run(["timedatectl"]))
 
-        if shutil.which("chronyc"):
+        if not self._stopped and shutil.which("chronyc"):
             sections.append("=== Chrony Tracking (chronyc tracking) ===\n" + self._run(["chronyc", "tracking"]))
-            sections.append("=== Chrony Sources (chronyc sources -v) ===\n" + self._run(["chronyc", "sources", "-v"]))
+            if not self._stopped:
+                sections.append("=== Chrony Sources (chronyc sources -v) ===\n" + self._run(["chronyc", "sources", "-v"]))
 
-        if shutil.which("systemctl"):
-            sections.append(
-                "=== VirtualBox & Sync Services ===\n" + self._run([
-                    "systemctl", "is-active", "chrony", "vboxservice",
-                    "virtualbox-guest-utils", "vice-timesync.timer"
-                ])
-            )
+        if not self._stopped and shutil.which("systemctl"):
+            units = ["chrony", "vboxservice", "virtualbox-guest-utils", "vice-timesync.timer"]
+            lines = [f"{unit}: {self._run(['systemctl', 'is-active', unit])}" for unit in units if not self._stopped]
+            sections.append("=== VirtualBox & Sync Services ===\n" + "\n".join(lines))
 
         if not self._stopped:
             self.report_ready.emit("\n\n".join(sections))
@@ -200,11 +221,16 @@ class ViceClockSyncApp(QMainWindow):
         self._clock_timer.start()
 
     @staticmethod
-    def _stat_localtime() -> float:
+    def _stat_localtime() -> tuple:
         try:
-            return os.lstat("/etc/localtime").st_mtime
+            mtime = os.lstat("/etc/localtime").st_mtime
         except OSError:
-            return 0.0
+            mtime = 0.0
+        try:
+            target = os.path.realpath("/etc/localtime")
+        except OSError:
+            target = ""
+        return (mtime, target)
 
     def _init_ui(self) -> None:
         root = QWidget(self)
@@ -381,7 +407,16 @@ class ViceClockSyncApp(QMainWindow):
         self._sync_proc = QProcess(self)
         self._sync_proc.setProcessChannelMode(QProcess.MergedChannels)
         self._sync_proc.finished.connect(self._on_timesync_finished)
+        self._sync_proc.errorOccurred.connect(self._on_timesync_error)
         self._sync_proc.start(prog, args)
+
+    def _on_timesync_error(self, _err) -> None:
+        self._sync_btn.setEnabled(True)
+        self._sync_only_btn.setEnabled(True)
+        self._apply_tz_btn.setEnabled(True)
+        msg = self._sync_proc.errorString() if self._sync_proc is not None else "Process failed to start"
+        self._status_lbl.setStyleSheet(f"color: {COLORS['danger']}; font-weight: 600;")
+        self._status_lbl.setText(f"Failed to start time sync: {msg}")
 
     def _on_timesync_finished(self, exit_code: int, _status) -> None:
         self._sync_btn.setEnabled(True)
@@ -425,7 +460,7 @@ class ViceClockSyncApp(QMainWindow):
         if self._diag_worker is not None:
             self._diag_worker.stop()
             if self._diag_worker.isRunning():
-                self._diag_worker.wait(1500)
+                self._diag_worker.wait(2500)
         event.accept()
 
 

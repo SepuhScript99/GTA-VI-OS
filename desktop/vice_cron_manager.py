@@ -1,47 +1,27 @@
 #!/usr/bin/env python3
 """Vice OS — Cron Job Manager. Full crontab editor with visual schedule builder."""
 
-import sys
-import os
 import subprocess
+import sys
+
+from PyQt5.QtGui import QBrush, QColor, QFont
+from PyQt5.QtWidgets import (
+    QAbstractItemView, QApplication, QComboBox, QDialog, QDialogButtonBox,
+    QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QMessageBox, QTabWidget, QTableWidget, QTableWidgetItem, QTextEdit,
+    QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QMessageBox, QDialog, QFormLayout, QComboBox, QSpinBox, QLineEdit,
-    QDialogButtonBox, QTabWidget, QTextEdit, QGroupBox
-)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QColor, QBrush
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 640
 
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QSpinBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 3px; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QTextEdit { background: #0d0d0d; color: #aaffff; border: 1px solid #1a4a4a; font-size: 12px; }
-QTabBar::tab { background: #1a1a1a; color: #00ffff; padding: 6px 14px; }
-QTabBar::tab:selected { background: #00ffff; color: #0a0a0a; }
-QTabWidget::pane { border: 1px solid #00ffff; }
-QGroupBox { border: 1px solid #00ffff; margin-top: 10px; padding: 8px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QLabel { color: #00ffff; }
-"""
-
 FIELD_NAMES = ["Minute", "Hour", "Day of Month", "Month", "Day of Week"]
+FIELD_RANGES = [(0, 59), (0, 23), (1, 31), (1, 12), (0, 6)]
 
 
 def load_crontab():
@@ -57,8 +37,9 @@ def load_crontab():
 
 def save_crontab(content):
     try:
-        proc = subprocess.run(["crontab", "-"], input=content, text=True,
-                              capture_output=True, timeout=5)
+        proc = subprocess.run(
+            ["crontab", "-"], input=content, text=True, capture_output=True, timeout=5
+        )
         return proc.returncode == 0, proc.stderr.strip()
     except Exception as e:
         return False, str(e)
@@ -76,11 +57,10 @@ class CronBuilderDialog(QDialog):
     def __init__(self, schedule=None, command="", parent=None):
         super().__init__(parent)
         self.setWindowTitle("Cron Job Builder")
-        self.setFixedSize(560, 420)
-        self.setStyleSheet(STYLE)
+        self.setMinimumSize(560, 420)
+        vt.apply_app_theme(self)
         layout = QVBoxLayout(self)
 
-        # Preset schedules
         preset_box = QGroupBox("Preset Schedule")
         pl = QHBoxLayout(preset_box)
         self._preset = QComboBox()
@@ -97,18 +77,19 @@ class CronBuilderDialog(QDialog):
         pl.addWidget(self._preset)
         layout.addWidget(preset_box)
 
-        # Custom fields
         custom_box = QGroupBox("Custom Schedule")
         form = QFormLayout(custom_box)
         self._fields = []
         defaults = schedule if schedule else ["*", "*", "*", "*", "*"]
-        # Map day-of-week names to numbers when loading
-        dow_map = {"sun": "0", "mon": "1", "tue": "2", "wed": "3", "thu": "4",
-                   "fri": "5", "sat": "6"}
+        dow_map = {
+            "sun": "0", "mon": "1", "tue": "2", "wed": "3",
+            "thu": "4", "fri": "5", "sat": "6",
+        }
         for i, name in enumerate(FIELD_NAMES):
             combo = QComboBox()
             combo.setEditable(True)
-            combo.addItems(["*"] + [str(n) for n in range(0, 60 if i == 0 else 24 if i == 1 else 32 if i == 2 else 13)])
+            lo, hi = FIELD_RANGES[i]
+            combo.addItems(["*"] + [str(n) for n in range(lo, hi + 1)])
             val = defaults[i].lower()
             for dname, dnum in dow_map.items():
                 val = val.replace(dname, dnum)
@@ -117,7 +98,6 @@ class CronBuilderDialog(QDialog):
             form.addRow(name + ":", combo)
         layout.addWidget(custom_box)
 
-        # Command
         cmd_box = QGroupBox("Command")
         cl = QVBoxLayout(cmd_box)
         self._command = QLineEdit(command)
@@ -125,9 +105,8 @@ class CronBuilderDialog(QDialog):
         cl.addWidget(self._command)
         layout.addWidget(cmd_box)
 
-        # Preview
         self._preview = QLabel()
-        self._preview.setStyleSheet("color: #ff00ff; font-size: 11px;")
+        self._preview.setStyleSheet(f"color: {vt.COLORS['accent_aqua']}; font-size: 11px;")
         layout.addWidget(self._preview)
         for f in self._fields:
             f.currentTextChanged.connect(self._update_preview)
@@ -156,7 +135,7 @@ class CronBuilderDialog(QDialog):
         self._preview.setText("Cron: " + self.get_schedule() + " " + self._command.text())
 
     def get_schedule(self):
-        return " ".join(f.currentText() for f in self._fields)
+        return " ".join(f.currentText().strip() or "*" for f in self._fields)
 
     def get_command(self):
         return self._command.text().strip()
@@ -166,24 +145,27 @@ class CronManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Cron Job Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(780, 500)
+        vt.apply_app_theme(self)
         self._init_ui()
         self._refresh()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
 
-        title = QLabel("Vice OS — Cron Job Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        root.addWidget(vt.make_header(
+            "Cron Job Manager",
+            "User crontab schedule builder and raw editor",
+            icon_name="preferences-system-time",
+            badge_text="CRONTAB",
+            badge_variant="coral",
+            parent=self,
+        ))
 
         tabs = QTabWidget()
         root.addWidget(tabs, 1)
 
-        # --- Jobs tab ---
         jobs_tab = QWidget()
         jl = QVBoxLayout(jobs_tab)
 
@@ -198,34 +180,31 @@ class CronManager(QWidget):
         jl.addWidget(self._table)
 
         btn_row = QHBoxLayout()
-        add_btn = QPushButton("+ Add Job")
+        add_btn = vt.make_button("+ Add Job", "primary", parent=jobs_tab)
         add_btn.clicked.connect(self._add_job)
         btn_row.addWidget(add_btn)
-        edit_btn = QPushButton("Edit Selected")
+        edit_btn = vt.make_button("Edit Selected", "secondary", parent=jobs_tab)
         edit_btn.clicked.connect(self._edit_job)
         btn_row.addWidget(edit_btn)
-        del_btn = QPushButton("Delete Selected")
-        del_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        del_btn = vt.make_button("Delete Selected", "danger", parent=jobs_tab)
         del_btn.clicked.connect(self._delete_job)
         btn_row.addWidget(del_btn)
-        reload_btn = QPushButton("Reload from System")
+        reload_btn = vt.make_button("Reload from System", "secondary", parent=jobs_tab)
         reload_btn.clicked.connect(self._refresh)
         btn_row.addWidget(reload_btn)
         jl.addLayout(btn_row)
         tabs.addTab(jobs_tab, "Jobs")
 
-        # --- Raw tab ---
         raw_tab = QWidget()
         rl = QVBoxLayout(raw_tab)
         self._raw_edit = QTextEdit()
         self._raw_edit.setFont(QFont("monospace", 12))
         rl.addWidget(self._raw_edit)
         raw_btns = QHBoxLayout()
-        save_raw_btn = QPushButton("Save Raw Crontab")
-        save_raw_btn.setStyleSheet("QPushButton { border-color: #ff00ff; color: #ff00ff; } QPushButton:hover { background: #ff00ff; color: #0a0a0a; }")
+        save_raw_btn = vt.make_button("Save Raw Crontab", "primary", parent=raw_tab)
         save_raw_btn.clicked.connect(self._save_raw)
         raw_btns.addWidget(save_raw_btn)
-        reload_raw_btn = QPushButton("Reload")
+        reload_raw_btn = vt.make_button("Reload", "secondary", parent=raw_tab)
         reload_raw_btn.clicked.connect(self._load_raw)
         raw_btns.addWidget(reload_raw_btn)
         raw_btns.addStretch()
@@ -233,7 +212,7 @@ class CronManager(QWidget):
         tabs.addTab(raw_tab, "Raw Crontab")
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         root.addWidget(self._status)
 
     def _get_jobs(self):
@@ -254,14 +233,17 @@ class CronManager(QWidget):
 
     def _refresh(self):
         self._table.setRowCount(0)
-        jobs, others = self._get_jobs()
+        jobs, _ = self._get_jobs()
 
         for job in jobs:
-            sched, cmd = parse_job_line(job)
+            parsed = parse_job_line(job)
+            if not parsed:
+                continue
+            sched, cmd = parsed
             row = self._table.rowCount()
             self._table.insertRow(row)
             sched_item = QTableWidgetItem(" ".join(sched))
-            sched_item.setForeground(QBrush(QColor("#ff00ff")))
+            sched_item.setForeground(QBrush(QColor(vt.COLORS["accent_aqua"])))
             self._table.setItem(row, 0, sched_item)
             self._table.setItem(row, 1, QTableWidgetItem(cmd))
             self._table.setItem(row, 2, QTableWidgetItem(describe_schedule(sched)))
@@ -271,7 +253,7 @@ class CronManager(QWidget):
 
     def _load_raw(self):
         _, raw = load_crontab()
-        self._raw_edit.setPlainText(raw or "no crontab for user\n")
+        self._raw_edit.setPlainText(raw or "# No crontab entries yet\n")
 
     def _save_raw(self):
         ok, err = save_crontab(self._raw_edit.toPlainText())
@@ -319,8 +301,9 @@ class CronManager(QWidget):
             return
         row = self._table.currentRow()
         jobs, others = self._get_jobs()
-        jobs[row] = f"{new_sched} {new_cmd}"
-        self._commit(jobs, others)
+        if row < len(jobs):
+            jobs[row] = f"{new_sched} {new_cmd}"
+            self._commit(jobs, others)
 
     def _delete_job(self):
         row = self._table.currentRow()
@@ -330,12 +313,15 @@ class CronManager(QWidget):
         job = self._selected_job()
         if job is None:
             return
-        if QMessageBox.question(self, "Delete Job", f"Delete:\n{job}?",
-                                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+        if QMessageBox.question(
+            self, "Delete Job", f"Delete:\n{job}?",
+            QMessageBox.Yes | QMessageBox.No,
+        ) != QMessageBox.Yes:
             return
         jobs, others = self._get_jobs()
-        jobs.pop(row)
-        self._commit(jobs, others)
+        if row < len(jobs):
+            jobs.pop(row)
+            self._commit(jobs, others)
 
     def _commit(self, jobs, others):
         """Write jobs + other lines (comments, env vars) back to crontab."""
@@ -355,8 +341,8 @@ def describe_schedule(sched):
     m, h, dom, mon, dow = sched
     parts = []
     if m == "*" and h == "*":
-        parts.append("every hour")
-    elif m.startswith("*/"):
+        parts.append("every minute")
+    elif m.startswith("*/") and h == "*":
         parts.append(f"every {m[2:]} minutes")
     elif h == "*":
         parts.append(f"every hour at :{m.zfill(2)}")
@@ -365,9 +351,10 @@ def describe_schedule(sched):
     if dow != "*":
         days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         try:
-            parts.append("on " + days[int(dow)])
-        except (ValueError, IndexError):
-            pass
+            idx = int(dow) % 7
+            parts.append("on " + days[idx])
+        except ValueError:
+            parts.append(f"on dow={dow}")
     if dom != "*":
         parts.append(f"day {dom} of month")
     if mon != "*":

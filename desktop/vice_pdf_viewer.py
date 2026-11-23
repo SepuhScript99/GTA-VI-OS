@@ -1,35 +1,27 @@
 #!/usr/bin/env python3
 """Vice OS — PDF Viewer. Page navigation, zoom, rendered via poppler (pdftoppm)."""
 
-import sys
-import os
-import subprocess
-import tempfile
 import glob
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtWidgets import (
+    QApplication, QFileDialog, QHBoxLayout, QLabel, QMessageBox,
+    QScrollArea, QSpinBox, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QSpinBox, QScrollArea, QFileDialog, QMessageBox
-)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QPixmap
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 720
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QSpinBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 3px; }
-QScrollArea { background: #0d0d0d; border: 1px solid #1a4a4a; }
-QLabel { color: #00ffff; }
-"""
 
 
 def get_page_count(pdf_path):
@@ -46,46 +38,59 @@ def get_page_count(pdf_path):
 
 class RenderWorker(QThread):
     """Renders a single PDF page to PNG via pdftoppm."""
+
     done = pyqtSignal(bool, str)
 
-    def __init__(self, pdf_path, page, dpi):
-        super().__init__()
+    def __init__(self, pdf_path, page, dpi, parent=None):
+        super().__init__(parent)
         self._pdf = pdf_path
         self._page = page
         self._dpi = dpi
         self._tmp = None
+        self._proc = None
+        self._cancelled = False
+
+    def stop(self):
+        self._cancelled = True
+        if self._proc is not None and self._proc.poll() is None:
+            try:
+                self._proc.terminate()
+            except OSError:
+                pass
 
     def run(self):
-        if not shutil_which("pdftoppm"):
-            self.done.emit(False, "pdftoppm not found. Install: apt install poppler-utils")
+        if not shutil.which("pdftoppm"):
+            if not self._cancelled:
+                self.done.emit(False, "pdftoppm not found. Install: apt install poppler-utils")
             return
         try:
             self._tmp = tempfile.mkdtemp(prefix="vice_pdf_")
             out_prefix = os.path.join(self._tmp, "page")
-            subprocess.run(
-                ["pdftoppm", "-png", "-f", str(self._page), "-l", str(self._page),
-                 "-r", str(self._dpi), self._pdf, out_prefix],
-                capture_output=True, timeout=30, check=True
+            self._proc = subprocess.Popen(
+                [
+                    "pdftoppm", "-png", "-f", str(self._page), "-l", str(self._page),
+                    "-r", str(self._dpi), self._pdf, out_prefix,
+                ],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             )
+            _, stderr = self._proc.communicate(timeout=30)
+            if self._cancelled:
+                return
+            if self._proc.returncode != 0:
+                self.done.emit(False, f"pdftoppm error: {(stderr or '')[:200]}")
+                return
             pngs = sorted(glob.glob(out_prefix + "*.png"))
             if pngs:
                 self.done.emit(True, pngs[0])
             else:
                 self.done.emit(False, "No page rendered")
-        except subprocess.CalledProcessError as e:
-            self.done.emit(False, f"pdftoppm error: {e.stderr.decode()[:200] if e.stderr else e}")
         except Exception as e:
-            self.done.emit(False, str(e))
+            if not self._cancelled:
+                self.done.emit(False, str(e))
 
     def cleanup(self):
         if self._tmp and os.path.isdir(self._tmp):
-            import shutil
             shutil.rmtree(self._tmp, ignore_errors=True)
-
-
-def shutil_which(cmd):
-    from shutil import which
-    return which(cmd)
 
 
 class PDFViewer(QWidget):
@@ -93,28 +98,38 @@ class PDFViewer(QWidget):
         super().__init__()
         self.setWindowTitle("Vice OS — PDF Viewer")
         self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.setMinimumSize(780, 560)
+        vt.apply_app_theme(self)
         self._pdf = None
         self._pages = 0
         self._page = 1
         self._dpi = 120
         self._worker = None
         self._last_png = None
+        self._rerender_pending = False
         self._init_ui()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
 
-        # Toolbar
+        root.addWidget(vt.make_header(
+            "PDF Viewer",
+            "Inspect multi-page PDF documents rendered via Poppler (pdftoppm)",
+            icon_name="application-pdf",
+            badge_text="PDF",
+            badge_variant="gold",
+            parent=self,
+        ))
+
         toolbar = QHBoxLayout()
 
-        open_btn = QPushButton("Open PDF")
+        open_btn = vt.make_button("Open PDF", "primary", parent=self)
         open_btn.clicked.connect(self._open_pdf)
         toolbar.addWidget(open_btn)
 
         toolbar.addStretch()
 
-        prev_btn = QPushButton("◀ Prev")
+        prev_btn = vt.make_button("Prev", "secondary", parent=self)
         prev_btn.clicked.connect(self._prev_page)
         toolbar.addWidget(prev_btn)
 
@@ -126,39 +141,36 @@ class PDFViewer(QWidget):
         self._total_label = QLabel("/ 0")
         toolbar.addWidget(self._total_label)
 
-        next_btn = QPushButton("Next ▶")
+        next_btn = vt.make_button("Next", "secondary", parent=self)
         next_btn.clicked.connect(self._next_page)
         toolbar.addWidget(next_btn)
 
         toolbar.addStretch()
 
-        zoom_out_btn = QPushButton("Zoom −")
+        zoom_out_btn = vt.make_button("Zoom -", "secondary", parent=self)
         zoom_out_btn.clicked.connect(self._zoom_out)
         toolbar.addWidget(zoom_out_btn)
-        zoom_in_btn = QPushButton("Zoom +")
+        zoom_in_btn = vt.make_button("Zoom +", "secondary", parent=self)
         zoom_in_btn.clicked.connect(self._zoom_in)
         toolbar.addWidget(zoom_in_btn)
 
         self._zoom_label = QLabel("120 DPI")
-        self._zoom_label.setStyleSheet("color: #888; font-size: 11px;")
+        self._zoom_label.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         toolbar.addWidget(self._zoom_label)
-
         root.addLayout(toolbar)
 
-        # Viewer area
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(False)
         self._scroll.setAlignment(Qt.AlignCenter)
         self._page_label = QLabel("Open a PDF to begin")
         self._page_label.setAlignment(Qt.AlignCenter)
-        self._page_label.setStyleSheet("color: #444; font-size: 16px;")
-        self._page_label.setMinimumSize(800, 560)
+        self._page_label.setStyleSheet(f"color: {vt.COLORS['text_muted']}; font-size: 16px;")
+        self._page_label.setMinimumSize(720, 480)
         self._scroll.setWidget(self._page_label)
         root.addWidget(self._scroll, 1)
 
-        # Status
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         root.addWidget(self._status)
 
     def _open_pdf(self):
@@ -170,8 +182,10 @@ class PDFViewer(QWidget):
         self._pdf = path
         self._pages = get_page_count(path)
         if self._pages == 0:
-            QMessageBox.warning(self, "Invalid PDF",
-                                "Could not read page count.\nInstall poppler-utils: apt install poppler-utils")
+            QMessageBox.warning(
+                self, "Invalid PDF",
+                "Could not read page count.\nInstall poppler-utils: apt install poppler-utils",
+            )
             return
         self._page_spin.setRange(1, self._pages)
         self._page_spin.setValue(1)
@@ -182,13 +196,11 @@ class PDFViewer(QWidget):
 
     def _prev_page(self):
         if self._page > 1:
-            self._page -= 1
-            self._page_spin.setValue(self._page)
+            self._page_spin.setValue(self._page - 1)
 
     def _next_page(self):
         if self._page < self._pages:
-            self._page += 1
-            self._page_spin.setValue(self._page)
+            self._page_spin.setValue(self._page + 1)
 
     def _goto_page(self, page):
         if not self._pdf or page == self._page:
@@ -209,41 +221,39 @@ class PDFViewer(QWidget):
     def _render_page(self):
         if not self._pdf:
             return
-        self._page_label.setText(f"Rendering page {self._page}...")
         if self._worker and self._worker.isRunning():
+            self._rerender_pending = True
             return
-        self._worker = RenderWorker(self._pdf, self._page, self._dpi)
+        self._rerender_pending = False
+        self._page_label.setText(f"Rendering page {self._page}...")
+        self._worker = RenderWorker(self._pdf, self._page, self._dpi, parent=self)
         self._worker.done.connect(self._on_rendered)
         self._worker.start()
 
     def _on_rendered(self, ok, result):
+        pix = QPixmap(result) if ok and os.path.exists(result) else QPixmap()
         if self._worker:
             self._worker.cleanup()
-        if not ok:
+        if not ok or pix.isNull():
+            self._page_label.setPixmap(QPixmap())
             self._page_label.setText("Render failed")
             self._status.setText(f"Error: {result}")
             log_error(f"PDF render failed: {result}")
-            return
-        # Clean up previous temp file
-        if self._last_png and os.path.exists(self._last_png):
-            try:
-                os.remove(self._last_png)
-            except OSError:
-                pass
-        self._last_png = result
-        pix = QPixmap(result)
-        self._page_label.setPixmap(pix)
-        self._page_label.adjustSize()
-        self._status.setText(f"Page {self._page}/{self._pages} @ {self._dpi} DPI")
+        else:
+            self._last_png = result
+            self._page_label.setPixmap(pix)
+            self._page_label.adjustSize()
+            self._status.setText(f"Page {self._page}/{self._pages} @ {self._dpi} DPI")
+
+        if self._rerender_pending:
+            self._rerender_pending = False
+            self._render_page()
 
     def closeEvent(self, event):
-        if self._last_png and os.path.exists(self._last_png):
-            try:
-                tmp_dir = os.path.dirname(self._last_png)
-                os.remove(self._last_png)
-                os.rmdir(tmp_dir)
-            except OSError:
-                pass
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(2500)
+            self._worker.cleanup()
         super().closeEvent(event)
 
 

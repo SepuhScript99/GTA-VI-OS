@@ -83,12 +83,12 @@ run_help_and_prompt() {
     local rc=0
 
     set +e
-    if "$bin" --help >/dev/null 2>&1; then
-        "$bin" --help 2>&1 | head -n 36
-    elif "$bin" -h >/dev/null 2>&1; then
-        "$bin" -h 2>&1 | head -n 36
+    if "$bin" --help </dev/null >/dev/null 2>&1; then
+        "$bin" --help </dev/null 2>&1 | head -n 36
+    elif "$bin" -h </dev/null >/dev/null 2>&1; then
+        "$bin" -h </dev/null 2>&1 | head -n 36
     else
-        "$bin" --help 2>&1 | head -n 36 || true
+        "$bin" --help </dev/null 2>&1 | head -n 36 || true
     fi
     set -e
 
@@ -155,9 +155,9 @@ main() {
                 local term_base
                 term_base=$(basename "$term_bin")
                 if [ "$term_base" = "xfce4-terminal" ]; then
-                    exec "$term_bin" -T "Vice OS - $title" -x env VICE_IN_TERMINAL=1 "$self_path" "$title" "${cmd_args[@]}"
+                    exec "$term_bin" --disable-server -T "Vice OS - $title" -x env VICE_IN_TERMINAL=1 VICE_NO_HOLD="${VICE_NO_HOLD:-0}" "$self_path" "$title" "${cmd_args[@]}"
                 else
-                    exec "$term_bin" -T "Vice OS - $title" -e env VICE_IN_TERMINAL=1 "$self_path" "$title" "${cmd_args[@]}"
+                    exec "$term_bin" -T "Vice OS - $title" -e env VICE_IN_TERMINAL=1 VICE_NO_HOLD="${VICE_NO_HOLD:-0}" "$self_path" "$title" "${cmd_args[@]}"
                 fi
             fi
         fi

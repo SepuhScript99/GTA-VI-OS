@@ -95,29 +95,70 @@ class CloakWorker(QThread):
         super().__init__()
         self._task = task
         self._payload = payload
+        self._stopped = False
+        self._proc = None
+
+    def stop(self) -> None:
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+
+    def _run_proc(self, cmd: list, timeout: int) -> tuple:
+        if self._stopped:
+            return -1, "", "cancelled"
+        try:
+            self._proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            )
+            stdout, stderr = self._proc.communicate(timeout=timeout)
+            return self._proc.returncode, (stdout or "").strip(), (stderr or "").strip()
+        except subprocess.TimeoutExpired:
+            if self._proc is not None:
+                self._proc.kill()
+                self._proc.communicate()
+            return -1, "", f"timed out after {timeout}s"
+        except Exception as exc:
+            return -1, "", str(exc)
+        finally:
+            self._proc = None
 
     def run(self) -> None:
+        if self._stopped:
+            return
         if self._task == "ifaces":
-            self.result_ready.emit("ifaces", True, self._read_ifaces())
+            data = self._read_ifaces()
+            if not self._stopped:
+                self.result_ready.emit("ifaces", True, data)
         elif self._task == "sockets":
-            self.result_ready.emit("sockets", True, self._read_sockets())
+            data = self._read_sockets()
+            if not self._stopped:
+                self.result_ready.emit("sockets", True, data)
         elif self._task == "mac_cmd":
             cmd, ok_msg = self._payload
-            try:
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
-                if res.returncode == 0:
-                    self.result_ready.emit("mac_cmd", True, res.stdout.strip() or ok_msg)
-                else:
-                    err = res.stderr.strip() or res.stdout.strip() or f"Exit {res.returncode}"
-                    self.result_ready.emit("mac_cmd", False, err)
-            except Exception as exc:
-                self.result_ready.emit("mac_cmd", False, str(exc))
+            rc, out, err = self._run_proc(cmd, 25)
+            if self._stopped:
+                return
+            if rc == 0:
+                self.result_ready.emit("mac_cmd", True, out or ok_msg)
+            else:
+                self.result_ready.emit("mac_cmd", False, err or out or f"Exit {rc}")
         elif self._task == "meta_inspect":
-            self.result_ready.emit("meta_inspect", True, self._inspect_meta(self._payload))
+            data = self._inspect_meta(self._payload)
+            if not self._stopped:
+                self.result_ready.emit("meta_inspect", True, data)
         elif self._task == "meta_clean":
             files, inplace = self._payload
             ok, msg = self._clean_meta(files, inplace)
-            self.result_ready.emit("meta_clean", ok, msg)
+            if not self._stopped:
+                self.result_ready.emit("meta_clean", ok, msg)
 
     def _read_ifaces(self) -> list:
         rows = []
@@ -178,12 +219,14 @@ class CloakWorker(QThread):
         mat2_bin = shutil.which("mat2")
         out_parts = []
         for path in files:
+            if self._stopped:
+                break
             if exif_bin:
-                res = subprocess.run([exif_bin, path], capture_output=True, text=True, timeout=10)
-                out_parts.append(f"=== {os.path.basename(path)} (exiftool) ===\n{res.stdout.strip() or res.stderr.strip()}")
+                _rc, out, err = self._run_proc([exif_bin, path], 10)
+                out_parts.append(f"=== {os.path.basename(path)} (exiftool) ===\n{out or err}")
             elif mat2_bin:
-                res = subprocess.run([mat2_bin, "--show", path], capture_output=True, text=True, timeout=10)
-                out_parts.append(f"=== {os.path.basename(path)} (mat2) ===\n{res.stdout.strip() or res.stderr.strip()}")
+                _rc, out, err = self._run_proc([mat2_bin, "--show", path], 10)
+                out_parts.append(f"=== {os.path.basename(path)} (mat2) ===\n{out or err}")
             else:
                 out_parts.append(f"[{os.path.basename(path)}] Install 'mat2' or 'libimage-exiftool-perl'.")
         return "\n\n".join(out_parts)
@@ -194,22 +237,24 @@ class CloakWorker(QThread):
         logs = []
         ok_all = True
         for path in files:
+            if self._stopped:
+                return False, "Cancelled"
             if mat2_bin and not inplace:
-                res = subprocess.run([mat2_bin, path], capture_output=True, text=True, timeout=20)
-                ok_all = ok_all and (res.returncode == 0)
-                logs.append(f"[mat2] {os.path.basename(path)}: {'cleaned copy created' if res.returncode == 0 else res.stderr.strip()}")
+                rc, _out, err = self._run_proc([mat2_bin, path], 20)
+                ok_all = ok_all and (rc == 0)
+                logs.append(f"[mat2] {os.path.basename(path)}: {'cleaned copy created' if rc == 0 else err}")
             elif exif_bin:
                 cmd = [exif_bin, "-all="]
                 if inplace:
                     cmd.append("-overwrite_original")
                 cmd.append(path)
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-                ok_all = ok_all and (res.returncode == 0)
-                logs.append(f"[exiftool] {os.path.basename(path)}: {res.stdout.strip() or res.stderr.strip()}")
+                rc, out, err = self._run_proc(cmd, 20)
+                ok_all = ok_all and (rc == 0)
+                logs.append(f"[exiftool] {os.path.basename(path)}: {out or err}")
             elif mat2_bin:
-                res = subprocess.run([mat2_bin, "--inplace", path], capture_output=True, text=True, timeout=20)
-                ok_all = ok_all and (res.returncode == 0)
-                logs.append(f"[mat2 --inplace] {os.path.basename(path)}: {res.returncode}")
+                rc, _out, _err = self._run_proc([mat2_bin, "--inplace", path], 20)
+                ok_all = ok_all and (rc == 0)
+                logs.append(f"[mat2 --inplace] {os.path.basename(path)}: {rc}")
             else:
                 return False, "Neither 'mat2' nor 'exiftool' is installed."
         return ok_all, "\n".join(logs)
@@ -470,7 +515,7 @@ class VicePrivacyCloakApp(QMainWindow):
         if not iface:
             return
         if shutil.which("macchanger"):
-            script = 'ip link set dev "$1" down && macchanger -r "$1" && ip link set dev "$1" up'
+            script = 'ip link set dev "$1" down && { macchanger -r "$1"; rc=$?; ip link set dev "$1" up; exit "$rc"; }'
             self._start_worker("mac_cmd", (["pkexec", "bash", "-c", script, "vice-mac", iface], f"Randomized MAC on {iface}"))
         else:
             QMessageBox.warning(self, "Missing macchanger", "Install package 'macchanger' for automatic MAC randomization.")
@@ -482,7 +527,7 @@ class VicePrivacyCloakApp(QMainWindow):
         if not shutil.which("macchanger"):
             QMessageBox.warning(self, "Missing macchanger", "Install package 'macchanger'.")
             return
-        script = 'ip link set dev "$1" down && macchanger -p "$1" && ip link set dev "$1" up'
+        script = 'ip link set dev "$1" down && { macchanger -p "$1"; rc=$?; ip link set dev "$1" up; exit "$rc"; }'
         self._start_worker("mac_cmd", (["pkexec", "bash", "-c", script, "vice-mac", iface], f"Restored permanent MAC on {iface}"))
 
     def _set_custom_mac(self) -> None:
@@ -494,9 +539,9 @@ class VicePrivacyCloakApp(QMainWindow):
             QMessageBox.warning(self, "Invalid MAC", "Enter a valid MAC address like 02:11:22:33:44:55.")
             return
         if shutil.which("macchanger"):
-            script = 'ip link set dev "$1" down && macchanger -m "$2" "$1" && ip link set dev "$1" up'
+            script = 'ip link set dev "$1" down && { macchanger -m "$2" "$1"; rc=$?; ip link set dev "$1" up; exit "$rc"; }'
         else:
-            script = 'ip link set dev "$1" down && ip link set dev "$1" address "$2" && ip link set dev "$1" up'
+            script = 'ip link set dev "$1" down && { ip link set dev "$1" address "$2"; rc=$?; ip link set dev "$1" up; exit "$rc"; }'
         self._start_worker("mac_cmd", (["pkexec", "bash", "-c", script, "vice-mac", iface, mac], f"Set MAC {mac} on {iface}"))
 
     def _refresh_sockets(self) -> None:
@@ -587,8 +632,10 @@ class VicePrivacyCloakApp(QMainWindow):
     def closeEvent(self, event) -> None:
         self._sock_timer.stop()
         for w in self._workers:
+            w.stop()
+        for w in self._workers:
             if w.isRunning():
-                w.wait(1500)
+                w.wait(2500)
         event.accept()
 
 

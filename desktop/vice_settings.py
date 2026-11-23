@@ -6,6 +6,8 @@ system, security, and hardware, styled with the Leonida Coastal Dusk design syst
 """
 
 import os
+import platform
+import shutil
 import subprocess
 import sys
 
@@ -136,20 +138,41 @@ class _DiagWorker(QThread):
     def __init__(self, cmd):
         super().__init__()
         self.cmd = cmd
+        self._stopped = False
+        self._proc = None
+
+    def stop(self):
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def run(self):
         try:
-            proc = subprocess.Popen(
+            self._proc = subprocess.Popen(
                 self.cmd, shell=True,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             )
-            for line in proc.stdout:
+            for line in self._proc.stdout:
+                if self._stopped:
+                    break
                 self.line_out.emit(line.rstrip())
-            proc.wait()
-            self.done.emit(proc.returncode == 0)
+            self._proc.wait()
+            if not self._stopped:
+                self.done.emit(self._proc.returncode == 0)
         except Exception as e:
-            self.line_out.emit(f"Error: {e}")
-            self.done.emit(False)
+            if not self._stopped:
+                self.line_out.emit(f"Error: {e}")
+                self.done.emit(False)
+        finally:
+            self._proc = None
 
 
 class DiagnosticsPage(QWidget):
@@ -257,6 +280,13 @@ class _DetectWorker(QThread):
     found = pyqtSignal(dict)
     done = pyqtSignal()
 
+    def __init__(self):
+        super().__init__()
+        self._stopped = False
+
+    def stop(self):
+        self._stopped = True
+
     def run(self):
         checks = [
             ("GPU", "NVIDIA", "lspci 2>/dev/null | grep -i nvidia", "nvidia-driver",
@@ -269,8 +299,10 @@ class _DetectWorker(QThread):
              "dpkg -l intel-media-va-driver* 2>/dev/null | grep '^ii' | head -1"),
         ]
         for dtype, vendor, detect_cmd, rec_pkg, inst_cmd in checks:
+            if self._stopped:
+                return
             out = run_cmd(detect_cmd)
-            if out:
+            if out and not self._stopped:
                 inst = run_cmd(inst_cmd)
                 pkg = inst.split()[1] if inst and inst != "N/A" else ""
                 self.found.emit({
@@ -281,11 +313,15 @@ class _DetectWorker(QThread):
                     "status": "Installed" if pkg else "Not Installed",
                 })
 
+        if self._stopped:
+            return
         wifi_out = run_cmd("lspci 2>/dev/null | grep -i 'network\\|wireless'")
-        if not wifi_out:
+        if not wifi_out and not self._stopped:
             wifi_out = run_cmd("lsusb 2>/dev/null | grep -i 'wireless\\|wifi'")
-        if wifi_out:
+        if wifi_out and not self._stopped:
             for line in wifi_out.splitlines():
+                if self._stopped:
+                    return
                 vendor = (
                     "Broadcom" if "broadcom" in line.lower() else
                     "Realtek" if "realtek" in line.lower() else
@@ -307,7 +343,8 @@ class _DetectWorker(QThread):
                     "recommended": pkg,
                     "status": "Installed" if installed else "Not Installed",
                 })
-        self.done.emit()
+        if not self._stopped:
+            self.done.emit()
 
 
 class _InstallWorker(QThread):
@@ -318,23 +355,48 @@ class _InstallWorker(QThread):
         super().__init__()
         self.pkg = pkg
         self.remove = remove
+        self._stopped = False
+        self._proc = None
+
+    def stop(self):
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def run(self):
-        op = "remove -y" if self.remove else "install -y"
-        cmd = f"sudo DEBIAN_FRONTEND=noninteractive apt-get {op} {self.pkg}"
-        self.line_out.emit(f"$ {cmd}")
+        op = "remove" if self.remove else "install"
+        cmd = ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", op, "-y", self.pkg]
+        if (os.geteuid() != 0 if hasattr(os, "geteuid") else True) and shutil.which("pkexec"):
+            cmd = ["pkexec"] + cmd
+        elif shutil.which("sudo") and (os.geteuid() != 0 if hasattr(os, "geteuid") else False):
+            cmd = ["sudo"] + cmd
+        self.line_out.emit("$ " + " ".join(cmd))
         try:
-            proc = subprocess.Popen(
-                cmd, shell=True,
+            self._proc = subprocess.Popen(
+                cmd,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             )
-            for line in proc.stdout:
+            for line in self._proc.stdout:
+                if self._stopped:
+                    break
                 self.line_out.emit(line.rstrip())
-            proc.wait()
-            self.done.emit(proc.returncode == 0)
+            self._proc.wait()
+            if not self._stopped:
+                self.done.emit(self._proc.returncode == 0)
         except Exception as e:
-            self.line_out.emit(f"Error: {e}")
-            self.done.emit(False)
+            if not self._stopped:
+                self.line_out.emit(f"Error: {e}")
+                self.done.emit(False)
+        finally:
+            self._proc = None
 
 
 class DriversPage(QWidget):
@@ -395,13 +457,18 @@ class DriversPage(QWidget):
         self._progress.setRange(0, 0)
         self._progress.setVisible(False)
         status_row.addWidget(self._progress)
-        self._status = QLabel("Ready")
+        self._status = QLabel("Click Scan or open this page to detect hardware.")
         self._status.setStyleSheet(f"color: {c['text_secondary']};")
         status_row.addWidget(self._status)
         status_row.addStretch()
         root.addLayout(status_row)
 
-        self._scan()
+        self._initial_scan_done = False
+
+    def on_activated(self):
+        if not self._initial_scan_done:
+            self._initial_scan_done = True
+            self._scan()
 
     def _scan(self):
         self._table.setRowCount(0)
@@ -645,7 +712,7 @@ class AppLauncherPage(QWidget):
 
         cl.addSpacing(4)
         btn_row = QHBoxLayout()
-        open_btn = QPushButton(f"Open {page_name} Settings", card)
+        open_btn = QPushButton(f"Open {page_name} Settings".replace("&", "&&"), card)
         open_btn.setObjectName("PrimaryButton")
         open_btn.clicked.connect(lambda: self._launch(app_file))
         btn_row.addWidget(open_btn)
@@ -698,21 +765,34 @@ class AboutPage(QWidget):
         il = QVBoxLayout(info)
         il.setSpacing(6)
 
-        rows = [
-            ("OS", "cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'\"' -f2"),
-            ("Kernel", "uname -r"),
-            ("Architecture", "uname -m"),
-            ("Hostname", "uname -n"),
-            ("Desktop", "echo 'Vice OS Leonida Desktop (Openbox + PyQt5)'"),
-            ("Uptime", "uptime -p"),
-        ]
-        for label, cmd in rows:
+        os_name = "Vice OS (Debian GNU/Linux 12)"
+        if os.path.isfile("/etc/os-release"):
             try:
-                value = subprocess.run(
-                    cmd, shell=True, capture_output=True, text=True, timeout=3
+                with open("/etc/os-release", "r", encoding="utf-8", errors="replace") as fp:
+                    for line in fp:
+                        if line.startswith("PRETTY_NAME="):
+                            os_name = line.split("=", 1)[1].strip().strip('"')
+                            break
+            except OSError:
+                pass
+        uptime_val = "—"
+        if shutil.which("uptime"):
+            try:
+                uptime_val = subprocess.run(
+                    ["uptime", "-p"], capture_output=True, text=True, timeout=3
                 ).stdout.strip() or "—"
             except Exception:
-                value = "—"
+                pass
+
+        rows = [
+            ("OS", os_name),
+            ("Kernel", platform.release() or "—"),
+            ("Architecture", platform.machine() or "—"),
+            ("Hostname", platform.node() or "—"),
+            ("Desktop", "Vice OS Leonida Desktop (Openbox + PyQt5)"),
+            ("Uptime", uptime_val),
+        ]
+        for label, value in rows:
             row = QHBoxLayout()
             name_lbl = QLabel(f"{label}:")
             name_lbl.setFixedWidth(110)
@@ -782,16 +862,25 @@ class SettingsWindow(QWidget):
 
     def _switch_page(self, index):
         self._stack.setCurrentIndex(index)
+        page = self._stack.widget(index)
+        if page is not None and hasattr(page, "on_activated"):
+            page.on_activated()
 
     def closeEvent(self, event):
         for idx in range(self._stack.count()):
             page = self._stack.widget(idx)
             worker = getattr(page, "_worker", None)
-            if worker is not None and worker.isRunning():
-                worker.wait(1200)
+            if worker is not None:
+                if hasattr(worker, "stop"):
+                    worker.stop()
+                if worker.isRunning():
+                    worker.wait(2500)
             for w in getattr(page, "_workers", ()):
-                if w is not None and w.isRunning():
-                    w.wait(1200)
+                if w is not None:
+                    if hasattr(w, "stop"):
+                        w.stop()
+                    if w.isRunning():
+                        w.wait(2500)
         super().closeEvent(event)
 
 

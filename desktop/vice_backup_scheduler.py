@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Vice OS — Backup Scheduler. Cron-based backup jobs with retention policies."""
 
-import sys
-import os
-import subprocess
+from datetime import datetime
 import json
+import os
 import shlex
-
-sys.path.insert(0, '/opt/vice-os/lib')
+import shutil
+import subprocess
+import sys
+import time
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
@@ -16,43 +17,46 @@ from PyQt5.QtWidgets import (
     QCheckBox, QTextEdit, QDialogButtonBox
 )
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QBrush
+from PyQt5.QtGui import QColor, QBrush
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from python.vice_utils import log_info, log_error  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    make_button,
+    make_header,
+)
 
 WINDOW_WIDTH = 1000
-WINDOW_HEIGHT = 620
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QSpinBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 3px; }
-QTextEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; }
-QCheckBox { color: #00ffff; }
-QGroupBox { border: 1px solid #00ffff; margin-top: 10px; padding: 8px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QLabel { color: #00ffff; }
-"""
+WINDOW_HEIGHT = 640
 
 BACKUP_DIR = os.path.expanduser("~/backups")
 JOBS_FILE = os.path.expanduser("~/.config/vice-os/backup_jobs.json")
 CRONTAB_MARKER = "# VICE BACKUP JOBS"
 
 
-def run_cmd(cmd):
+def run_cmd(cmd, sudo=False, input_data=None):
     try:
-        if isinstance(cmd, str):
-            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+        full_cmd = cmd
+        if not isinstance(cmd, str) and sudo and (os.geteuid() != 0 if hasattr(os, "geteuid") else True):
+            pk = shutil.which("pkexec")
+            if pk:
+                full_cmd = [pk] + list(cmd)
+        if isinstance(full_cmd, str):
+            r = subprocess.run(
+                full_cmd, shell=True, input=input_data,
+                capture_output=True, text=True, timeout=120
+            )
         else:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-        return r.stdout.strip(), r.returncode == 0
+            r = subprocess.run(
+                full_cmd, input=input_data,
+                capture_output=True, text=True, timeout=120
+            )
+        return (r.stdout or "").strip() or (r.stderr or "").strip(), r.returncode == 0
     except Exception as e:
         return str(e), False
 
@@ -87,14 +91,14 @@ class JobDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Backup Job" + (" - Edit" if job else " - New"))
         self.setFixedSize(560, 480)
-        self.setStyleSheet(STYLE)
+        apply_app_theme(self)
         layout = QFormLayout(self)
 
         self._name = QLineEdit()
         layout.addRow("Job Name:", self._name)
 
         self._src = QLineEdit()
-        self._src.setPlaceholderText("/home/user/Documents")
+        self._src.setPlaceholderText(os.path.expanduser("~/Documents"))
         layout.addRow("Source Path:", self._src)
 
         self._dst = QLineEdit()
@@ -172,24 +176,32 @@ class BackupScheduler(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Backup Scheduler")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(780, 500)
+        apply_app_theme(self)
         self._jobs = load_jobs()
+        self._worker = None
         self._init_ui()
         self._refresh()
-        self._timer = QTimer()
+        self._timer = QTimer(self)
         self._timer.setInterval(30000)
         self._timer.timeout.connect(self._refresh)
         self._timer.start()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 14)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — Backup Scheduler")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        header = make_header(
+            title="Backup Scheduler",
+            subtitle="Cron-scheduled rsync, tar.gz, and 7z archive jobs with retention",
+            icon_name="document-save",
+            badge_text="CRON",
+            badge_variant="aqua",
+            parent=self,
+        )
+        root.addWidget(header)
 
         # Table
         self._table = QTableWidget()
@@ -203,28 +215,27 @@ class BackupScheduler(QWidget):
         self._table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
-        root.addWidget(self._table)
+        root.addWidget(self._table, 1)
 
         # Buttons
         btn_row = QHBoxLayout()
-        add_btn = QPushButton("Add Job")
+        add_btn = make_button("Add Job", variant="primary", parent=self)
         add_btn.clicked.connect(self._add_job)
         btn_row.addWidget(add_btn)
 
-        edit_btn = QPushButton("Edit Job")
+        edit_btn = make_button("Edit Job", variant="secondary", parent=self)
         edit_btn.clicked.connect(self._edit_job)
         btn_row.addWidget(edit_btn)
 
-        del_btn = QPushButton("Delete Job")
-        del_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        del_btn = make_button("Delete Job", variant="danger", parent=self)
         del_btn.clicked.connect(self._delete_job)
         btn_row.addWidget(del_btn)
 
-        run_btn = QPushButton("Run Now")
+        run_btn = make_button("Run Now", variant="secondary", parent=self)
         run_btn.clicked.connect(self._run_now)
         btn_row.addWidget(run_btn)
 
-        sync_btn = QPushButton("Sync Crontab")
+        sync_btn = make_button("Sync Crontab", variant="secondary", parent=self)
         sync_btn.clicked.connect(self._sync_cron)
         btn_row.addWidget(sync_btn)
         btn_row.addStretch()
@@ -237,7 +248,7 @@ class BackupScheduler(QWidget):
         root.addWidget(self._preview)
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setObjectName("MutedLabel")
         root.addWidget(self._status)
 
     def _refresh(self):
@@ -258,7 +269,8 @@ class BackupScheduler(QWidget):
             self._table.setItem(row, 4, QTableWidgetItem(job.get("method", "")))
             status = "Enabled" if job.get("enabled", True) else "Disabled"
             item = QTableWidgetItem(status)
-            item.setForeground(QBrush(QColor("#00ff88" if job.get("enabled", True) else "#888")))
+            col = COLORS["success"] if job.get("enabled", True) else COLORS["text_muted"]
+            item.setForeground(QBrush(QColor(col)))
             self._table.setItem(row, 5, item)
 
         self._update_preview()
@@ -312,40 +324,53 @@ class BackupScheduler(QWidget):
             return
         self._execute_job(job)
 
-    def _execute_job(self, job):
-        src = job.get("source", "")
-        dest = job.get("dest", "")
-        if not src or not dest:
-            return
-        os.makedirs(dest, exist_ok=True)
-        method = job.get("method", "rsync")
+    @staticmethod
+    def _build_job_cmd(job, timestamp):
+        src = os.path.expanduser(job.get("source", "")).rstrip("/\\")
+        dest = os.path.expanduser(job.get("dest", "")).rstrip("/\\")
+        method = job.get("method", "rsync (incremental)")
         exclude = job.get("exclude", "")
+        excludes = [e.strip() for e in exclude.split(",") if e.strip()]
 
         if method == "rsync (incremental)":
-            excl = ""
-            for e in exclude.split(","):
-                e = e.strip()
-                if e:
-                    excl += f" --exclude='{e}'"
-            cmd = f"rsync -avh --delete{excl} {shlex.quote(src)}/ {shlex.quote(dest)}/"
-        elif method == "tar.gz (full archive)":
-            timestamp = subprocess.check_output(["date", "+%Y%m%d_%H%M%S"], text=True).strip()
+            cmd = ["rsync", "-avh", "--delete"]
+            for e in excludes:
+                cmd.append(f"--exclude={e}")
+            cmd.extend([f"{src}/", f"{dest}/"])
+            return cmd
+        if method == "tar.gz (full archive)":
             out = os.path.join(dest, f"{job['name']}_{timestamp}.tar.gz")
-            excl = ""
-            for e in exclude.split(","):
-                e = e.strip()
-                if e:
-                    excl += f" --exclude='{e}'"
-            cmd = f"tar -czf {shlex.quote(out)} {excl} -C {shlex.quote(os.path.dirname(src))} {os.path.basename(src)}"
-        else:  # 7z
-            timestamp = subprocess.check_output(["date", "+%Y%m%d_%H%M%S"], text=True).strip()
-            out = os.path.join(dest, f"{job['name']}_{timestamp}.7z")
-            excl = ""
-            for e in exclude.split(","):
-                e = e.strip()
-                if e:
-                    excl += f" -x!{e}"
-            cmd = f"7z a {shlex.quote(out)} {shlex.quote(src)} {excl}"
+            cmd = ["tar", "-czf", out]
+            for e in excludes:
+                cmd.append(f"--exclude={e}")
+            parent = os.path.dirname(src) or "."
+            base = os.path.basename(src) or "."
+            cmd.extend(["-C", parent, base])
+            return cmd
+        out = os.path.join(dest, f"{job['name']}_{timestamp}.7z")
+        cmd = ["7z", "a", out, src]
+        for e in excludes:
+            cmd.append(f"-x!{e}")
+        return cmd
+
+    def _execute_job(self, job):
+        src = os.path.expanduser(job.get("source", "")).strip()
+        dest = os.path.expanduser(job.get("dest", "")).strip()
+        if not src or not dest:
+            return
+        if not os.path.exists(src):
+            QMessageBox.warning(self, "Missing Source", f"Source path does not exist:\n{src}")
+            return
+        os.makedirs(dest, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        cmd = self._build_job_cmd(job, timestamp)
+        if not shutil.which(cmd[0]):
+            QMessageBox.warning(self, "Missing Tool", f"Required command '{cmd[0]}' is not installed.")
+            return
+
+        if self._worker is not None and self._worker.isRunning():
+            self._status.setText("Another backup job is already running...")
+            return
 
         self._status.setText(f"Running: {job['name']}...")
         w = CmdWorker(cmd, sudo=False)
@@ -357,22 +382,20 @@ class BackupScheduler(QWidget):
         if ok:
             self._status.setText(f"Backup complete: {job['name']}")
             log_info(f"Backup job '{job['name']}' completed")
-            # Cleanup old backups
             self._cleanup_old(job)
         else:
             self._status.setText(f"Backup failed: {out[:80]}")
             log_error(f"Backup job '{job['name']}' failed: {out}")
 
     def _cleanup_old(self, job):
-        dest = job.get("dest", "")
+        dest = os.path.expanduser(job.get("dest", ""))
         retention = job.get("retention", 7)
         if not dest or not os.path.exists(dest):
             return
         try:
-            import time
             now = time.time()
-            for f in os.listdir(dest):
-                path = os.path.join(dest, f)
+            for fname in os.listdir(dest):
+                path = os.path.join(dest, fname)
                 if os.path.isfile(path):
                     age = now - os.path.getmtime(path)
                     if age > retention * 86400:
@@ -383,37 +406,44 @@ class BackupScheduler(QWidget):
 
     def _sync_cron(self):
         """Update user's crontab with backup jobs."""
+        if not shutil.which("crontab"):
+            QMessageBox.warning(self, "Crontab Unavailable", "'crontab' command not found on system.")
+            return
         try:
-            # Get current crontab
-            out, _ = run_cmd("crontab -l")
-            lines = out.splitlines() if out else []
-
-            # Remove old VICE backup entries
-            lines = [l for l in lines if CRONTAB_MARKER not in l]
+            out, _ = run_cmd(["crontab", "-l"])
+            lines = [line for line in (out.splitlines() if out else []) if CRONTAB_MARKER not in line and not line.startswith("no crontab for")]
 
             for job in self._jobs:
                 if not job.get("enabled", True):
                     continue
                 sched = job.get("schedule", "Daily")
                 t = job.get("time", "02:00")
+                parts = t.split(":")
+                hour = parts[0] if len(parts) >= 2 and parts[0].isdigit() else "02"
+                minute = parts[1] if len(parts) >= 2 and parts[1].isdigit() else "00"
                 if sched == "Daily":
-                    cron = f"{t.split(':')[1]} {t.split(':')[0]} * * *"
+                    cron = f"{int(minute)} {int(hour)} * * *"
                 elif sched == "Weekly":
-                    cron = f"{t.split(':')[1]} {t.split(':')[0]} * * 0"
+                    cron = f"{int(minute)} {int(hour)} * * 0"
                 elif sched == "Monthly":
-                    cron = f"{t.split(':')[1]} {t.split(':')[0]} 1 * *"
+                    cron = f"{int(minute)} {int(hour)} 1 * *"
                 else:
-                    cron = job.get("custom_cron", "* * * * *")
+                    cron = job.get("custom_cron", "* * * * *").strip() or "* * * * *"
 
-                src = job.get("source", "").replace("'", "'\\''")
-                dest = job.get("dest", "").replace("'", "'\\''")
-                cmd = f"cd ~ && {sys.executable} -c \"import os,sys; from backup_scheduler import run_backup; run_backup('{job['name']}')\""
-                # Simpler: use a wrapper script
-                lines.append(f"{cron} {CRONTAB_MARKER} {job['name']}")
+                cmd_list = self._build_job_cmd(job, "$(date +\\%Y\\%m\\%d_\\%H\\%M\\%S)")
+                quoted = " ".join(
+                    arg if "$(date" in arg else shlex.quote(arg)
+                    for arg in cmd_list
+                )
+                lines.append(f"{cron} {quoted} {CRONTAB_MARKER} {job['name']}")
 
-            run_cmd("crontab -", input_data="\n".join(lines))
-            self._status.setText("Crontab synced")
-            log_info("Backup crontab updated")
+            payload = "\n".join(lines) + ("\n" if lines else "")
+            msg, ok = run_cmd(["crontab", "-"], input_data=payload)
+            if ok:
+                self._status.setText("Crontab synced")
+                log_info("Backup crontab updated")
+            else:
+                self._status.setText(f"Cron sync failed: {msg}")
         except Exception as e:
             log_error(f"Cron sync failed: {e}")
             self._status.setText(f"Cron sync failed: {e}")
@@ -431,6 +461,14 @@ class BackupScheduler(QWidget):
             self._preview.append(f"  Enabled: {job.get('enabled', True)}")
             self._preview.append("")
 
+    def closeEvent(self, event):
+        self._timer.stop()
+        if self._worker is not None:
+            self._worker.stop()
+            if self._worker.isRunning():
+                self._worker.wait(2500)
+        event.accept()
+
 
 class CmdWorker(QThread):
     done = pyqtSignal(bool, str)
@@ -439,10 +477,40 @@ class CmdWorker(QThread):
         super().__init__()
         self.cmd = cmd
         self.sudo = sudo
+        self._stopped = False
+        self._proc = None
+
+    def stop(self):
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def run(self):
-        out, ok = run_cmd(self.cmd, self.sudo)
-        self.done.emit(ok, out)
+        full_cmd = list(self.cmd)
+        if self.sudo and (os.geteuid() != 0 if hasattr(os, "geteuid") else True):
+            pk = shutil.which("pkexec")
+            if pk:
+                full_cmd = [pk] + full_cmd
+        try:
+            self._proc = subprocess.Popen(
+                full_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+            out, _ = self._proc.communicate(timeout=300)
+            if not self._stopped:
+                self.done.emit(self._proc.returncode == 0, (out or "").strip())
+        except Exception as e:
+            if not self._stopped:
+                self.done.emit(False, str(e))
+        finally:
+            self._proc = None
 
 
 def main():

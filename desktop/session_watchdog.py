@@ -25,7 +25,7 @@ except ImportError:
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from python.vice_utils import log_info, log_warn, log_error
+from python.vice_utils import log_error, log_info, log_warn  # noqa: E402
 
 SHELL_PATH = "/opt/vice-os/vice_shell.py"
 POLL_INTERVAL = 3

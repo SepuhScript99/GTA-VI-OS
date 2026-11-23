@@ -543,12 +543,20 @@ class ViceCyberDeckApp(QMainWindow):
         self._proc.setProcessChannelMode(QProcess.MergedChannels)
         self._proc.readyReadStandardOutput.connect(self._on_output)
         self._proc.finished.connect(self._on_finished)
+        self._proc.errorOccurred.connect(self._on_proc_error)
 
         self._run_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
         self._header.set_badge("SCANNING", "aqua")
         log_info(f"Vice Cyber Audit Deck running {self._current_preset['id']}")
         self._proc.start(prog, args)
+
+    def _on_proc_error(self, _err) -> None:
+        self._run_btn.setEnabled(True)
+        self._stop_btn.setEnabled(False)
+        self._header.set_badge("ERROR", "danger")
+        msg = self._proc.errorString() if self._proc is not None else "Process failed to start"
+        self._output.appendPlainText(f"\n[ERROR] {msg}\n")
 
     def _on_output(self) -> None:
         if self._proc is None:

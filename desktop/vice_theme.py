@@ -12,6 +12,8 @@ from PyQt5 import QtGui as _qt_gui
 from PyQt5 import QtWidgets as _qt_widgets
 
 Qt = _qt_core.Qt
+QPoint = getattr(_qt_core, "QPoint", lambda x=0, y=0: (x, y))
+QRect = getattr(_qt_core, "QRect", lambda *a: None)
 QSize = _qt_core.QSize
 QColor = getattr(_qt_gui, "QColor", lambda *a, **kw: None)
 QFont = _qt_gui.QFont
@@ -20,6 +22,7 @@ QApplication = _qt_widgets.QApplication
 QFrame = getattr(_qt_widgets, "QFrame", _qt_widgets.QWidget)
 QHBoxLayout = _qt_widgets.QHBoxLayout
 QLabel = _qt_widgets.QLabel
+QLayout = getattr(_qt_widgets, "QLayout", object)
 QPushButton = _qt_widgets.QPushButton
 QVBoxLayout = _qt_widgets.QVBoxLayout
 QWidget = _qt_widgets.QWidget
@@ -282,7 +285,7 @@ QPushButton {{
     border: 1px solid {c['border']};
     border-radius: 8px;
     padding: 7px 14px;
-    font-weight: 600;
+    font-weight: normal;
     min-width: 56px;
 }}
 
@@ -309,7 +312,7 @@ QPushButton#PrimaryButton, QPushButton[variant="primary"] {{
     color: #0D0E15;
     border: none;
     border-radius: 8px;
-    padding: 8px 16px;
+    padding: 8px 18px;
     font-weight: bold;
 }}
 
@@ -395,8 +398,10 @@ QComboBox::drop-down {{
 }}
 
 QComboBox::down-arrow {{
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
+    width: 0px;
+    height: 0px;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
     border-top: 6px solid {c['text_secondary']};
     margin-right: 6px;
 }}
@@ -431,11 +436,11 @@ QTabBar::tab {{
     color: {c['text_secondary']};
     border: 1px solid {c['border']};
     border-bottom: none;
-    padding: 7px 14px;
+    padding: 8px 18px;
     margin-right: 3px;
     border-top-left-radius: 8px;
     border-top-right-radius: 8px;
-    font-weight: 600;
+    font-weight: normal;
 }}
 
 QTabBar::tab:hover {{
@@ -725,6 +730,7 @@ class HeaderWidget(QFrame):
 
         self.subtitle_label = QLabel(subtitle, self)
         self.subtitle_label.setObjectName("HeaderSubtitle")
+        self.subtitle_label.setWordWrap(True)
         self.subtitle_label.setVisible(bool(subtitle))
         text_col.addWidget(self.subtitle_label)
         row.addLayout(text_col, 1)
@@ -821,8 +827,14 @@ def make_button(
     btn = QPushButton(text, parent)
     if variant == "primary":
         btn.setObjectName("PrimaryButton")
+        btn_font = btn.font()
+        btn_font.setBold(True)
+        btn.setFont(btn_font)
     elif variant == "danger":
         btn.setObjectName("DangerButton")
+        btn_font = btn.font()
+        btn_font.setBold(True)
+        btn.setFont(btn_font)
     if icon_name:
         ic = resolve_icon(icon_name)
         if not ic.isNull():
@@ -846,3 +858,81 @@ def apply_app_theme(target, extra_qss: str = "", font_size: int = 10) -> str:
 def qcolor(key: str) -> QColor:
     """Return a QColor for any key in COLORS or hex string."""
     return QColor(COLORS.get(key, key))
+
+
+class FlowLayout(QLayout):
+    """Responsive wrapping layout for buttons, badges, or category pills."""
+
+    def __init__(self, parent: QWidget = None, h_spacing: int = 6, v_spacing: int = 6):
+        super().__init__(parent)
+        self._items = []
+        self._h_space = h_spacing
+        self._v_space = v_spacing
+
+    def __del__(self):
+        try:
+            while getattr(self, "_items", None):
+                self.takeAt(0)
+        except RuntimeError:
+            pass
+
+    def addItem(self, item) -> None:
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int):
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index: int):
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return Qt.Orientations(Qt.Orientation(0))
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect) -> None:
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self) -> QSize:
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        left, top, right, bottom = self.getContentsMargins()
+        size += QSize(left + right, top + bottom)
+        return size
+
+    def _do_layout(self, rect, test_only: bool) -> int:
+        left, top, right, bottom = self.getContentsMargins()
+        eff = rect.adjusted(left, top, -right, -bottom)
+        x = eff.x()
+        y = eff.y()
+        line_h = 0
+
+        for item in self._items:
+            hint = item.sizeHint()
+            next_x = x + hint.width() + self._h_space
+            if next_x - self._h_space > eff.right() and line_h > 0:
+                x = eff.x()
+                y += line_h + self._v_space
+                next_x = x + hint.width() + self._h_space
+                line_h = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x = next_x
+            line_h = max(line_h, hint.height())
+        return y + line_h - rect.y() + bottom

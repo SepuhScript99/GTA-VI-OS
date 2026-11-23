@@ -1,39 +1,77 @@
 #!/usr/bin/env python3
 """
-GTA VI OS (Vice OS) System Report Generator
-Compiles detailed hardware, OS, kernel, package, and environment reports into Markdown/HTML.
+GTA VI OS (Vice OS) System Report Generator.
+Compiles detailed hardware, OS, kernel, package, and environment reports into Markdown/Text.
 """
 
-import sys
+import datetime
 import os
 import subprocess
-
-sys.path.insert(0, '/opt/vice-os/lib')
+import sys
 
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QTextEdit, QProgressBar, QTabWidget, QGroupBox, QGridLayout, QScrollArea
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
+    QTextEdit, QProgressBar, QTabWidget, QGroupBox, QGridLayout, QScrollArea,
+    QMessageBox
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt5.QtGui import QFont
+from PyQt5.QtCore import QThread, pyqtSignal
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-WINDOW_WIDTH = 900
-WINDOW_HEIGHT = 650
+from python.vice_utils import log_info, log_error  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    make_button,
+    make_header,
+)
 
-
-def run_cmd(cmd):
-    try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=5)
-        return result.stdout.strip()
-    except Exception:
-        return "N/A"
+WINDOW_WIDTH = 920
+WINDOW_HEIGHT = 660
 
 
 class ReportWorker(QThread):
     section_ready = pyqtSignal(str, str)
-    finished = pyqtSignal()
+    report_done = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
+        self._stopped = False
+        self._proc = None
+
+    def stop(self):
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+
+    def _run_cmd(self, cmd):
+        if self._stopped:
+            return "[cancelled]"
+        try:
+            self._proc = subprocess.Popen(
+                cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            )
+            stdout, _ = self._proc.communicate(timeout=5)
+            return (stdout or "").strip() or "N/A"
+        except subprocess.TimeoutExpired:
+            if self._proc is not None:
+                self._proc.kill()
+                self._proc.communicate()
+            return "[timed out]"
+        except Exception:
+            return "N/A"
+        finally:
+            self._proc = None
 
     def run(self):
         sections = [
@@ -52,45 +90,44 @@ class ReportWorker(QThread):
             ("Services", "systemctl list-units --state=failed --no-pager 2>/dev/null | head -10 || echo 'No failed services'"),
         ]
         for title, cmd in sections:
-            output = run_cmd(cmd)
-            self.section_ready.emit(title, output)
-        self.finished.emit()
+            if self._stopped:
+                return
+            output = self._run_cmd(cmd)
+            if not self._stopped:
+                self.section_ready.emit(title, output)
+        if not self._stopped:
+            self.report_done.emit()
 
 
 class SystemReport(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice System Report")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet("""
-            QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-            QGroupBox { border: 1px solid #00ffff; margin-top: 8px; padding: 6px; }
-            QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-            QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 12px; }
-            QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-            QTextEdit { background: #0d0d0d; color: #00ffff; border: 1px solid #333; font-size: 11px; }
-            QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; }
-            QProgressBar::chunk { background: #00ffff; }
-            QTabBar::tab { background: #1a1a1a; color: #00ffff; padding: 6px 14px; }
-            QTabBar::tab:selected { background: #00ffff; color: #0a0a0a; }
-            QTabWidget::pane { border: 1px solid #00ffff; }
-            QLabel { color: #00ffff; }
-            QScrollArea { border: none; }
-        """)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(720, 500)
+        apply_app_theme(self)
         self._sections = {}
+        self._detail_count = 0
+        self._worker = None
         self._init_ui()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 14)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — System Report")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 16, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 8px;")
-        root.addWidget(title)
+        header = make_header(
+            title="System Report Generator",
+            subtitle="OS, kernel, hardware, temperature, and systemd status overview",
+            icon_name="utilities-system-monitor",
+            badge_text="SYS REPORT",
+            badge_variant="aqua",
+            parent=self,
+        )
+        root.addWidget(header)
 
         self.tabs = QTabWidget()
-        root.addWidget(self.tabs)
+        root.addWidget(self.tabs, 1)
 
         self._overview_text = QTextEdit()
         self._overview_text.setReadOnly(True)
@@ -112,11 +149,11 @@ class SystemReport(QWidget):
         self._progress.setRange(0, 0)
         bottom.addWidget(self._progress)
 
-        refresh_btn = QPushButton("Refresh")
+        refresh_btn = make_button("Refresh", variant="secondary", parent=self)
         refresh_btn.clicked.connect(self._run_report)
         bottom.addWidget(refresh_btn)
 
-        export_btn = QPushButton("Export")
+        export_btn = make_button("Export", variant="primary", parent=self)
         export_btn.clicked.connect(self._export_report)
         bottom.addWidget(export_btn)
 
@@ -124,7 +161,10 @@ class SystemReport(QWidget):
         self._run_report()
 
     def _run_report(self):
+        if self._worker is not None and self._worker.isRunning():
+            return
         self._sections.clear()
+        self._detail_count = 0
         self._overview_text.clear()
         self._processes_text.clear()
         while self._detail_layout.count():
@@ -136,7 +176,7 @@ class SystemReport(QWidget):
 
         self._worker = ReportWorker()
         self._worker.section_ready.connect(self._on_section)
-        self._worker.finished.connect(self._on_finished)
+        self._worker.report_done.connect(self._on_finished)
         self._worker.start()
 
     def _on_section(self, title, output):
@@ -150,15 +190,16 @@ class SystemReport(QWidget):
         if title in overview_titles:
             self._overview_text.append(f"=== {title} ===\n{output}\n")
 
-        row = len(self._sections) - 1
+        idx = self._detail_count
+        self._detail_count += 1
         box = QGroupBox(title)
         box_layout = QVBoxLayout(box)
         label = QLabel(output)
         label.setWordWrap(True)
-        label.setStyleSheet("font-size: 11px; color: #aaffff;")
+        label.setStyleSheet(f"font-size: 11px; color: {COLORS['text_primary']};")
         box_layout.addWidget(label)
-        col = row % 2
-        r = row // 2
+        col = idx % 2
+        r = idx // 2
         self._detail_layout.addWidget(box, r, col)
 
     def _on_finished(self):
@@ -166,17 +207,22 @@ class SystemReport(QWidget):
         log_info("System report generated")
 
     def _export_report(self):
-        import datetime
         path = os.path.expanduser(f"~/vice_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
         try:
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
                 for title, content in self._sections.items():
                     f.write(f"=== {title} ===\n{content}\n\n")
             log_info(f"Report exported to {path}")
-            from PyQt5.QtWidgets import QMessageBox
             QMessageBox.information(self, "Exported", f"Report saved to:\n{path}")
         except Exception as e:
             log_error(f"Export failed: {e}")
+
+    def closeEvent(self, event):
+        if self._worker is not None:
+            self._worker.stop()
+            if self._worker.isRunning():
+                self._worker.wait(2500)
+        event.accept()
 
 
 def main():

@@ -55,15 +55,14 @@ if [ -x /opt/vice-os/vice_system_notifier.py ] && \
     /usr/bin/python3 /opt/vice-os/vice_system_notifier.py >/dev/null 2>&1 &
 fi
 
-# 2.8 Launch blueman-applet only if a tray (trayer/stalonetray) is present
+# 2.8 Launch blueman-applet only if a tray (stalonetray) is present
 if command -v blueman-applet >/dev/null 2>&1 && \
    ! pgrep -u "$(id -u)" -x blueman-applet >/dev/null 2>&1; then
-    if command -v stalonetray >/dev/null 2>&1 || command -v trayer >/dev/null 2>&1; then
+    if command -v stalonetray >/dev/null 2>&1; then
         (
             w=0
             while [ "$w" -lt 15 ]; do
-                if pgrep -u "$(id -u)" -x stalonetray >/dev/null 2>&1 || \
-                   pgrep -u "$(id -u)" -x trayer >/dev/null 2>&1; then
+                if pgrep -u "$(id -u)" -x stalonetray >/dev/null 2>&1; then
                     blueman-applet >/dev/null 2>&1 &
                     break
                 fi
@@ -112,7 +111,7 @@ process_autostart_dir() {
                             continue
                         fi
                         ;;
-                    nm-applet.desktop)
+                    nm-applet.desktop|print-applet.desktop)
                         if ! command -v stalonetray >/dev/null 2>&1; then
                             continue
                         fi

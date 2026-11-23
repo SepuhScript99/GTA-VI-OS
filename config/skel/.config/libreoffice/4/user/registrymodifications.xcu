@@ -5,6 +5,11 @@
       <value>sifr_dark</value>
     </prop>
   </item>
+  <item oor:path="/org.openoffice.Office.Common/Misc">
+    <prop oor:name="ShowTipOfTheDay" oor:op="fuse">
+      <value>false</value>
+    </prop>
+  </item>
   <item oor:path="/org.openoffice.Office.Common/View">
     <prop oor:name="DarkMode" oor:op="fuse">
       <value>true</value>

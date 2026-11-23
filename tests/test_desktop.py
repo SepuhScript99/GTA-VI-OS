@@ -411,13 +411,19 @@ class TestLiveVmMediaFontDesktopRegression(unittest.TestCase):
 
         systemd_setup = self._read("chroot_scripts", "19_systemd_setup.sh")
         self.assertIn("rm -f /etc/pipewire/pipewire.conf", systemd_setup)
-        self.assertIn("/etc/pipewire/pipewire.conf.d/10-vice-audio.conf", systemd_setup)
-        pw_dropin = re.search(r"cat <<'PWCONF'[^\n]*\n(.*?)\nPWCONF", systemd_setup, re.DOTALL)
-        self.assertIsNotNone(pw_dropin, "Missing PWCONF drop-in heredoc in 19_systemd_setup.sh")
-        self.assertNotIn("libpipewire-module-protocol-pulse", pw_dropin.group(1))
+        self.assertIn("10-vice-audio.conf", systemd_setup)
+        self.assertIn("10-vice-pulse.conf", systemd_setup)
+        self.assertNotIn("cat <<'PWCONF'", systemd_setup)
+        self.assertNotIn("cat <<'PULSECONF'", systemd_setup)
+
+        modprobe_setup = self._read("chroot_scripts", "20_modprobe_setup.sh")
+        self.assertIn("vice-audio-vm.conf", modprobe_setup)
+        modprobe_vm = self._read("config", "modprobe.d", "vice-audio-vm.conf")
+        self.assertIn("options snd-intel8x0 ac97_clock=48000", modprobe_vm)
 
         optimize = self._read("chroot_scripts", "90_optimize.sh")
         self.assertIn("rm -f /etc/pipewire/pipewire.conf", optimize)
+        self.assertIn("10-vice-audio.conf", optimize)
 
         net_audio = self._read("chroot_scripts", "05_network_audio_fix.sh")
         self.assertIn("rtkit-daemon.service", net_audio)
@@ -427,11 +433,13 @@ class TestLiveVmMediaFontDesktopRegression(unittest.TestCase):
         for rel in (("desktop", "dbus_session.sh"), ("desktop", "wayland_session.sh")):
             sess = self._read(*rel)
             self.assertIn("start_audio_stack", sess)
+            self.assertIn("unmute_alsa_unity", sess)
             self.assertIn("/usr/bin/pipewire", sess)
             self.assertIn("/usr/bin/wireplumber", sess)
             self.assertIn("/usr/bin/pipewire-pulse", sess)
             self.assertIn("amixer", sess)
-            self.assertIn("85% unmute", sess)
+            self.assertIn("0dB unmute", sess)
+            self.assertNotIn('sset "$ctrl" 85% unmute', sess)
             self.assertIn("auto_null", sess)
             self.assertIn("set-sink-volume", sess)
 
@@ -618,20 +626,20 @@ class TestViceAppsRuntimeSafety(unittest.TestCase):
             '["api.alsa.headroom"] = 4096',
             '["api.alsa.disable-batch"] = true',
             '["session.suspend-timeout-seconds"] = 0',
+            '["api.alsa.soft-mixer"] = true',
+            '"alsa_card.*"',
+            '"snd_intel8x0"',
         ):
             self.assertIn(token, wp_lua)
 
         pw_setup = self._read_repo("chroot_scripts", "18_pipewire_setup.sh")
         self.assertNotIn("cp \"$pipewire_src\" \"$pipewire_dest\"", pw_setup)
+        self.assertNotIn("default.clock.quantum = 2048", pw_setup)
+        self.assertNotIn("pulse.default.req = 2048/48000", pw_setup)
         for token in (
             "rm -f /etc/pipewire/pipewire.conf",
             "/etc/pipewire/pipewire.conf.d/10-vice-audio.conf",
             "/etc/pipewire/pipewire-pulse.conf.d/10-vice-pulse.conf",
-            "default.clock.quantum = 2048",
-            "default.clock.min-quantum = 1024",
-            "default.clock.max-quantum = 4096",
-            "pulse.min.req = 1024/48000",
-            "pulse.default.req = 2048/48000",
             "51-vice-vm-alsa.lua",
             "usermod -aG pipewire vice",
             "/etc/security/limits.d/95-vice-audio.conf",
@@ -641,7 +649,14 @@ class TestViceAppsRuntimeSafety(unittest.TestCase):
 
         systemd_setup = self._read_repo("chroot_scripts", "19_systemd_setup.sh")
         self.assertIn("51-vice-vm-alsa.lua", systemd_setup)
+        self.assertIn("10-vice-audio.conf", systemd_setup)
         self.assertIn("10-vice-pulse.conf", systemd_setup)
+        self.assertIn("zramswap.service", systemd_setup)
+
+        modprobe_setup = self._read_repo("chroot_scripts", "20_modprobe_setup.sh")
+        self.assertIn("vice-audio-vm.conf", modprobe_setup)
+        modprobe_vm = self._read_repo("config", "modprobe.d", "vice-audio-vm.conf")
+        self.assertIn("options snd-intel8x0 ac97_clock=48000", modprobe_vm)
 
         net_audio = self._read_repo("chroot_scripts", "05_network_audio_fix.sh")
         self.assertIn("usermod -aG pipewire vice", net_audio)
@@ -767,6 +782,7 @@ class TestLeonidaOverhaulAndTimesync(unittest.TestCase):
                 items[(path_key, pname)] = val_el.text if val_el is not None else ""
 
         self.assertEqual(items.get(("/org.openoffice.Office.Common/Misc", "SymbolStyle")), "sifr_dark")
+        self.assertEqual(items.get(("/org.openoffice.Office.Common/Misc", "ShowTipOfTheDay")), "false")
         self.assertEqual(items.get(("/org.openoffice.Office.Common/View", "DarkMode")), "true")
         self.assertEqual(
             items.get((
@@ -807,8 +823,13 @@ class TestLeonidaOverhaulAndTimesync(unittest.TestCase):
             "--auto", "--force", "--sync-only", "--set", "--status",
             "command -v VBoxService", "https://ipinfo.io/timezone",
             "http://ip-api.com/line/?fields=timezone", "validate_timezone",
+            "sync_etc_timezone_file",
         ):
             self.assertIn(token, ts_code)
+        self.assertLess(ts_code.index("${ETC_DIR}/localtime"), ts_code.index("${ETC_DIR}/timezone"))
+
+        clock_app = self._read_repo("desktop", "vice_tool_clock_sync.py")
+        self.assertLess(clock_app.index('"/etc/localtime"'), clock_app.index('"/etc/timezone"'))
 
         nm_code = self._read_repo("config", "NetworkManager", "90-vice-timesync")
         self.assertNotIn("\r\n", nm_code)
@@ -914,6 +935,53 @@ class TestLeonidaOverhaulAndTimesync(unittest.TestCase):
                 content = fp.read().lower()
             for hex_code in legacy_tokens:
                 self.assertNotIn(hex_code, content, f"Legacy neon color {hex_code} found in {path}")
+
+    def test_iso12_ui_audio_tray_and_session_fixes(self):
+        opt_sh = self._read_repo("chroot_scripts", "90_optimize.sh")
+        for token in (
+            "zramswap.service",
+            "nm-applet.desktop blueman.desktop print-applet.desktop",
+            "Hidden=true",
+        ):
+            self.assertIn(token, opt_sh)
+
+        autostart = self._read_repo("config", "skel", ".config", "openbox", "autostart")
+        self.assertIn("nm-applet.desktop|print-applet.desktop", autostart)
+
+        theme_code = self._read_repo("desktop", "vice_theme.py")
+        self.assertIn("self.subtitle_label.setWordWrap(True)", theme_code)
+        self.assertIn("width: 0px;\n    height: 0px;", theme_code)
+        self.assertNotIn("QTabBar::tab {{\n    background-color: {c['bg_surface']};\n    color: {c['text_secondary']};\n    border: 1px solid {c['border']};\n    border-bottom: none;\n    padding: 7px 14px;\n    margin-right: 3px;\n    border-top-left-radius: 8px;\n    border-top-right-radius: 8px;\n    font-weight: 600;", theme_code)
+
+        qss_code = self._read_repo("desktop", "style.qss")
+        self.assertIn("font-weight: normal;", qss_code)
+
+        shell_code = self._read_repo("desktop", "vice_shell.py")
+        for token in (
+            "self.setFixedWidth(geo.width())",
+            "self._slider.setRange(0, 100)",
+            'any(k in low_class for k in ("xfce4-terminal", "xterm")) or "vice os - " in low_title',
+            '("libreoffice calc", "libreoffice-calc")',
+        ):
+            self.assertIn(token, shell_code)
+        self.assertNotIn("setRange(0, 150)", shell_code)
+
+        settings_code = self._read_repo("desktop", "vice_settings.py")
+        self.assertIn('f"Open {page_name} Settings".replace("&", "&&")', settings_code)
+
+        office_code = self._read_repo("desktop", "vice_tool_office_hub.py")
+        self.assertIn('spec["subtitle"].replace("&", "&&")', office_code)
+
+        net_shield_code = self._read_repo("desktop", "vice_tool_net_shield.py")
+        self.assertIn("Tor && Local Proxy", net_shield_code)
+
+        mac_cloak_code = self._read_repo("desktop", "vice_tool_mac_cloak.py")
+        self.assertIn("Connections && Ports", mac_cloak_code)
+        self.assertIn("History && Trace Wipe", mac_cloak_code)
+
+        runner_code = self._read_repo("system_scripts", "vice-run-tool.sh")
+        self.assertIn("--disable-server", runner_code)
+        self.assertIn('VICE_NO_HOLD="${VICE_NO_HOLD:-0}"', runner_code)
 
 
 if __name__ == "__main__":

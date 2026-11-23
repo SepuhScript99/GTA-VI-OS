@@ -222,24 +222,37 @@ for f in files:
         record_result "ARM64 / Raspberry Pi architecture support files present" "FAIL" "Missing ARM64 support"
     fi
 
-    # --- Test 13: Chroot media/Firefox/CJK/fail2ban/PipeWire/timer hardening ---
+    # --- Test 13: Chroot media/Firefox/CJK/fail2ban/PipeWire/modprobe/timer hardening ---
     local tuning_sh="$CHROOT_SCRIPTS_DIR/02_system_tuning.sh"
     local systemd_sh="$CHROOT_SCRIPTS_DIR/19_systemd_setup.sh"
+    local pw_sh="$CHROOT_SCRIPTS_DIR/18_pipewire_setup.sh"
+    local modprobe_sh="$CHROOT_SCRIPTS_DIR/20_modprobe_setup.sh"
     local opt_sh="$CHROOT_SCRIPTS_DIR/90_optimize.sh"
     local hard_ok=true
     grep -q '/etc/firefox-esr/vice-os.js' "$tuning_sh" || hard_ok=false
     grep -q 'backend = systemd' "$tuning_sh" || hard_ok=false
     grep -q '/etc/fonts/conf.avail' "$tuning_sh" || hard_ok=false
+    grep -q 'vice-audio-vm.conf' "$modprobe_sh" || hard_ok=false
+    grep -q 'ac97_clock=48000' "$CONFIG_DIR/modprobe.d/vice-audio-vm.conf" || hard_ok=false
+    grep -q 'rm -f /etc/pipewire/pipewire.conf' "$pw_sh" || hard_ok=false
+    grep -q '10-vice-audio.conf' "$pw_sh" || hard_ok=false
+    grep -q '51-vice-vm-alsa.lua' "$pw_sh" || hard_ok=false
+    grep -q 'api.alsa.soft-mixer' "$CONFIG_DIR/wireplumber/main.lua.d/51-vice-vm-alsa.lua" || hard_ok=false
     grep -q 'rm -f /etc/pipewire/pipewire.conf' "$systemd_sh" || hard_ok=false
     grep -q '10-vice-audio.conf' "$systemd_sh" || hard_ok=false
+    grep -q '10-vice-pulse.conf' "$systemd_sh" || hard_ok=false
+    grep -q 'zramswap.service' "$systemd_sh" || hard_ok=false
+    grep -q 'chkrootkit.timer' "$systemd_sh" || hard_ok=false
     grep -q 'apt-daily.timer' "$opt_sh" || hard_ok=false
     grep -q 'apt-daily-upgrade.timer' "$opt_sh" || hard_ok=false
+    grep -q 'zramswap.service' "$opt_sh" || hard_ok=false
+    grep -q '0dB unmute' "$WORKDIR/desktop/dbus_session.sh" || hard_ok=false
     "$python_bin" -c "import json, sys; json.load(open(sys.argv[1], encoding='utf-8'))" \
         "$target_dir/config/firefox/policies.json" 2>/dev/null || hard_ok=false
     if [ "$hard_ok" = true ]; then
-        record_result "Chroot media, Firefox ESR, CJK fontconfig, PipeWire drop-in, fail2ban, and timer masking verified" "PASS"
+        record_result "Chroot media, Firefox ESR, CJK fontconfig, stock-Debian PipeWire + AC97 modprobe, fail2ban, and timer masking verified" "PASS"
     else
-        record_result "Chroot media, Firefox ESR, CJK fontconfig, PipeWire drop-in, fail2ban, and timer masking verified" "FAIL" "Missing chroot hardening"
+        record_result "Chroot media, Firefox ESR, CJK fontconfig, stock-Debian PipeWire + AC97 modprobe, fail2ban, and timer masking verified" "FAIL" "Missing chroot hardening"
     fi
 
     echo ""

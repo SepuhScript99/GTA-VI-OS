@@ -12,17 +12,17 @@ Architecture:
 """
 
 import os
-import sys
 import shutil
 import subprocess
+import sys
+
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import QLabel, QPushButton
 
 sys.path.insert(0, '/opt/vice-os/lib')
 sys.path.insert(0, '/opt/vice-os')
 
-from PyQt5.QtWidgets import QPushButton, QLabel
-from PyQt5.QtCore import Qt, QTimer
-
-from python.vice_utils import launch_command, log_info, log_warn, log_error
+from python.vice_utils import launch_command, log_error, log_info, log_warn  # noqa: E402
 
 _LOGIND_BIN = "loginctl"
 _SYSTEMCTL_BIN = "systemctl"
@@ -222,4 +222,3 @@ def _update_battery_label(label: QLabel):
 
 if __name__ == "__main__":
     print(f"Battery status: {_read_battery_status()}")
-

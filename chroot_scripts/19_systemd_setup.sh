@@ -3,8 +3,8 @@ set -Eeuo pipefail
 
 # ============================================================================
 # GTA VI OS (Vice OS) Chroot Script: Systemd Unit Setup
-# Installs and enables custom systemd service and timer unit files, and
-# ensures PipeWire uses Debian's complete defaults with a clean clock drop-in.
+# Installs and enables custom systemd service and timer unit files, aligns
+# PipeWire with stock Debian 12 defaults, and masks conflicting/broken units.
 # ============================================================================
 
 # Source the shared library from the payload directory
@@ -15,41 +15,13 @@ fi
 source /vice_payload/lib/common.sh
 
 configure_pipewire_dropin() {
-    log_info "Ensuring conflict-free PipeWire drop-in configuration..."
+    log_info "Ensuring stock Debian 12 PipeWire configuration with WirePlumber VM ALSA tuning..."
 
-    # Remove monolithic /etc/pipewire/pipewire.conf written by 18_pipewire_setup.sh,
-    # which omits context.objects and loads libpipewire-module-protocol-pulse inside
-    # the core pipewire daemon (colliding with pipewire-pulse and deadlocking clients).
-    if [ -f /etc/pipewire/pipewire.conf ]; then
-        rm -f /etc/pipewire/pipewire.conf
-        log_info "Removed conflicting /etc/pipewire/pipewire.conf (using stock /usr/share/pipewire/pipewire.conf)."
-    fi
-
-    mkdir -p /etc/pipewire/pipewire.conf.d
-    cat <<'PWCONF' > /etc/pipewire/pipewire.conf.d/10-vice-audio.conf
-# Vice OS PipeWire clock tuning (inherits full Debian /usr/share/pipewire/pipewire.conf)
-context.properties = {
-    default.clock.rate = 48000
-    default.clock.allowed-rates = [ 44100 48000 ]
-    default.clock.quantum = 2048
-    default.clock.min-quantum = 1024
-    default.clock.max-quantum = 4096
-}
-PWCONF
-    chown root:root /etc/pipewire/pipewire.conf.d/10-vice-audio.conf
-    chmod 644 /etc/pipewire/pipewire.conf.d/10-vice-audio.conf
-
-    mkdir -p /etc/pipewire/pipewire-pulse.conf.d
-    cat <<'PULSECONF' > /etc/pipewire/pipewire-pulse.conf.d/10-vice-pulse.conf
-# Vice OS PipeWire-Pulse buffering tuning for VM and desktop playback
-pulse.properties = {
-    pulse.min.req = 1024/48000
-    pulse.default.req = 2048/48000
-    pulse.min.quantum = 1024/48000
-}
-PULSECONF
-    chown root:root /etc/pipewire/pipewire-pulse.conf.d/10-vice-pulse.conf
-    chmod 644 /etc/pipewire/pipewire-pulse.conf.d/10-vice-pulse.conf
+    # Remove monolithic /etc/pipewire/pipewire.conf and custom PipeWire/Pulse
+    # drop-ins so pure upstream Debian /usr/share/pipewire/*.conf runs cleanly.
+    rm -f /etc/pipewire/pipewire.conf
+    rm -f /etc/pipewire/pipewire.conf.d/10-vice-audio.conf \
+          /etc/pipewire/pipewire-pulse.conf.d/10-vice-pulse.conf
 
     local wp_src="/vice_payload/config/wireplumber/main.lua.d/51-vice-vm-alsa.lua"
     if [ -f "$wp_src" ]; then
@@ -121,13 +93,14 @@ configure_boot_service_defaults() {
         systemctl disable "$unit" 2>/dev/null || true
     done
 
-    # Mask periodic audit timers/services that require an MTA (mail) or pre-built DB
-    # so live/offline desktops never fail systemd units (tools stay runnable via CLI/Cyber Deck)
+    # Mask periodic audit timers/services that require an MTA (mail) or pre-built DB,
+    # plus zramswap.service (zram-tools conflicts with zram-setup.service on /dev/zram0)
     local failing_timers=(
         "chkrootkit.service"
         "chkrootkit.timer"
         "dailyaidecheck.service"
         "dailyaidecheck.timer"
+        "zramswap.service"
     )
     for unit in "${failing_timers[@]}"; do
         systemctl disable "$unit" 2>/dev/null || true

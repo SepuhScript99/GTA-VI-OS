@@ -16,7 +16,7 @@ from PyQt5.QtCore import Qt, QProcess
 from PyQt5.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit,
-    QPushButton, QVBoxLayout, QWidget
+    QPushButton, QSizePolicy, QVBoxLayout, QWidget
 )
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -26,6 +26,7 @@ for _p in ("/opt/vice-os", _HERE, "/opt/vice-os/lib"):
 
 from vice_theme import (  # noqa: E402
     COLORS,
+    FlowLayout,
     apply_app_theme,
     load_tool_icon,
     make_button,
@@ -60,7 +61,7 @@ CHEATSHEETS = [
     ("Files", "Directory tree overview (depth 2)", "tree -L 2 -C", "Display colorized directory hierarchy up to 2 levels deep.", True),
     ("Files", "Show filesystem free space", "df -hT", "Display mounted filesystems with human-readable sizes and filesystem types.", True),
     ("Files", "Find largest files in current dir", "du -ah . | sort -rh | head -n 20", "List top 20 largest files and directories sorted by size.", True),
-    ("Files", "Live log tailing with follow", "tail -n 50 -f ~/.xsession-errors", "Stream the last 50 lines and follow updates of your X session log.", True),
+    ("Files", "Live kernel & system log tailing", "journalctl -f -n 50 --no-pager", "Stream the last 50 system journal lines and follow live updates.", True),
 
     ("Networking", "Show IP addresses concisely", "ip -br addr", "Compact brief summary of every network interface and assigned IP.", True),
     ("Networking", "Inspect listening & active sockets", "ss -tunap", "Show listening and established TCP/UDP sockets with process names.", True),
@@ -157,19 +158,21 @@ class ViceCommandDeckApp(QMainWindow):
         self._search.textChanged.connect(self._populate_list)
         layout.addWidget(self._search)
 
-        cat_row = QHBoxLayout()
-        cat_row.setSpacing(6)
+        cats_host = QWidget(root)
+        cats_host.setStyleSheet("background: transparent;")
+        cats_flow = FlowLayout(cats_host, h_spacing=6, v_spacing=6)
+        cats_flow.setContentsMargins(0, 0, 0, 0)
         for cat in CATEGORIES:
-            btn = QPushButton(cat, root)
+            btn = QPushButton(cat, cats_host)
             btn.setObjectName("CatTab")
             btn.setCheckable(True)
             btn.setFocusPolicy(Qt.NoFocus)
+            btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             btn.setChecked(cat == "All")
             btn.clicked.connect(lambda _=False, c=cat: self._set_category(c))
             self._cat_buttons[cat] = btn
-            cat_row.addWidget(btn)
-        cat_row.addStretch(1)
-        layout.addLayout(cat_row)
+            cats_flow.addWidget(btn)
+        layout.addWidget(cats_host)
 
         mid = QHBoxLayout()
         mid.setSpacing(12)

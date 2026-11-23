@@ -1,69 +1,58 @@
 #!/usr/bin/env python3
 """Vice OS — Log Rotation Manager. Configure logrotate, view rotated logs."""
 
-import sys
-import os
-import subprocess
 import glob
+import os
+import re
+import subprocess
+import sys
 import tempfile
+
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog,
+    QDialogButtonBox, QFormLayout, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit, QMessageBox, QSpinBox, QSplitter, QTableWidget,
+    QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QDialog, QFormLayout, QLineEdit, QSpinBox, QComboBox, QCheckBox,
-    QTextEdit, QMessageBox, QSplitter, QDialogButtonBox
-)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 1100
 WINDOW_HEIGHT = 660
 
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QTextEdit { background: #0d0d0d; color: #aaffff; border: 1px solid #1a4a4a; font-size: 11px; }
-QGroupBox { border: 1px solid #00ffff; margin-top: 10px; padding: 8px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QSpinBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 3px; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QCheckBox { color: #00ffff; }
-QLabel { color: #00ffff; }
-QSplitter::handle { background: #00ffff; width: 1px; }
-"""
-
 LOGROTATE_CONF_DIR = "/etc/logrotate.d"
 USER_LOGROTATE_DIR = os.path.expanduser("~/.config/logrotate.d")
+USER_STATE_FILE = os.path.expanduser("~/.config/logrotate.status")
 DEFAULT_CONFIGS = {
-    "apache2": {"files": ["/var/log/apache2/*.log"], "weekly": True, "rotate": 4, "compress": True,
-                "delaycompress": True, "notifempty": True, "create": "640 root adm"},
-    "nginx": {"files": ["/var/log/nginx/*.log"], "weekly": True, "rotate": 4, "compress": True,
-              "delaycompress": True, "notifempty": True, "create": "640 root adm"},
-    "syslog": {"files": ["/var/log/syslog", "/var/log/messages"], "daily": True, "rotate": 7, "compress": True,
-               "delaycompress": True, "sharedscripts": True,
-               "postrotate": ["invoke-rc.d rsyslog rotate > /dev/null"]},
-    "vice-os": {"files": ["~/.local/share/vice-os/logs/*.log"], "weekly": True, "rotate": 3, "compress": True,
-                "notifempty": True, "missingok": True},
+    "apache2": {
+        "files": ["/var/log/apache2/*.log"], "weekly": True, "rotate": 4, "compress": True,
+        "delaycompress": True, "notifempty": True, "create": "640 root adm",
+    },
+    "nginx": {
+        "files": ["/var/log/nginx/*.log"], "weekly": True, "rotate": 4, "compress": True,
+        "delaycompress": True, "notifempty": True, "create": "640 root adm",
+    },
+    "syslog": {
+        "files": ["/var/log/syslog", "/var/log/messages"], "daily": True, "rotate": 7, "compress": True,
+        "delaycompress": True, "sharedscripts": True,
+        "postrotate": ["invoke-rc.d rsyslog rotate > /dev/null"],
+    },
+    "vice-os": {
+        "files": ["~/.local/share/vice-os/logs/*.log"], "weekly": True, "rotate": 3, "compress": True,
+        "notifempty": True, "missingok": True,
+    },
 }
 
 
-def run_cmd(cmd):
+def run_cmd(cmd, timeout=15):
     try:
-        if isinstance(cmd, str):
-            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
-        else:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-        return r.stdout.strip(), r.returncode == 0
+        r = subprocess.run(list(cmd), capture_output=True, text=True, timeout=timeout)
+        out = (r.stdout or "").strip() or (r.stderr or "").strip()
+        return out, r.returncode == 0
     except Exception as e:
         return str(e), False
 
@@ -72,10 +61,10 @@ def generate_logrotate_config(name, spec):
     lines = ["# Logrotate config for " + name, "# Generated by Vice OS"]
     files = spec.get("files", [])
     if isinstance(files, list):
-        for f in files:
-            lines.append(f)
+        for path in files:
+            lines.append(os.path.expanduser(path))
     else:
-        lines.append(str(files))
+        lines.append(os.path.expanduser(str(files)))
     lines.append("{")
     if spec.get("daily"):
         lines.append("    daily")
@@ -83,36 +72,30 @@ def generate_logrotate_config(name, spec):
         lines.append("    weekly")
     elif spec.get("monthly"):
         lines.append("    monthly")
-    rotate = spec.get("rotate", 4)
-    lines.append("    rotate " + str(rotate))
-    if spec.get("compress"):
-        lines.append("    compress")
-    if spec.get("delaycompress"):
-        lines.append("    delaycompress")
-    if spec.get("notifempty"):
-        lines.append("    notifempty")
-    if spec.get("missingok"):
-        lines.append("    missingok")
+    lines.append("    rotate " + str(spec.get("rotate", 4)))
+    for flag in ("compress", "delaycompress", "notifempty", "missingok"):
+        if spec.get(flag):
+            lines.append(f"    {flag}")
     if spec.get("create"):
         lines.append("    create " + spec["create"])
     if spec.get("sharedscripts"):
         lines.append("    sharedscripts")
     post = spec.get("postrotate")
     if post:
+        lines.append("    postrotate")
         for cmd in post:
-            lines.append("    postrotate")
             lines.append("        " + cmd)
-            lines.append("    endscript")
+        lines.append("    endscript")
     lines.append("}")
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n"
 
 
 class LogrotateEditDialog(QDialog):
     def __init__(self, name="", spec=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Log Rotation Config" + (" - Edit" if name else " - New"))
-        self.setFixedSize(540, 480)
-        self.setStyleSheet(STYLE)
+        self.setMinimumSize(540, 460)
+        vt.apply_app_theme(self)
         self._name = name
         layout = QFormLayout(self)
         self._name_edit = QLineEdit(name)
@@ -126,6 +109,8 @@ class LogrotateEditDialog(QDialog):
             self._freq.setCurrentText("daily")
         elif spec and spec.get("monthly"):
             self._freq.setCurrentText("monthly")
+        else:
+            self._freq.setCurrentText("weekly")
         layout.addRow("Frequency:", self._freq)
         self._rotate = QSpinBox()
         self._rotate.setRange(1, 365)
@@ -153,8 +138,10 @@ class LogrotateEditDialog(QDialog):
     def get_values(self):
         files = [f.strip() for f in self._files.text().split(",") if f.strip()]
         freq = self._freq.currentText()
+        raw_name = self._name_edit.text().strip() or self._name
+        safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", raw_name) if raw_name else ""
         return {
-            "name": self._name_edit.text().strip() or self._name,
+            "name": safe_name,
             "files": files,
             freq: True,
             "rotate": self._rotate.value(),
@@ -170,22 +157,27 @@ class LogRotationManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Log Rotation Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(820, 520)
+        vt.apply_app_theme(self)
         self._configs = {}
         self._init_ui()
         self._load()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
-        title = QLabel("Vice OS — Log Rotation Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+
+        root.addWidget(vt.make_header(
+            "Log Rotation Manager",
+            "Inspect, simulate and manage logrotate retention policies",
+            icon_name="preferences-system",
+            badge_text="LOGROTATE",
+            badge_variant="gold",
+            parent=self,
+        ))
 
         splitter = QSplitter(Qt.Horizontal)
-        root.addWidget(splitter)
+        root.addWidget(splitter, 1)
 
         left = QWidget()
         ll = QVBoxLayout(left)
@@ -203,11 +195,10 @@ class LogRotationManager(QWidget):
         ll.addWidget(self._table)
 
         btn_row = QHBoxLayout()
-        add_btn = QPushButton("Add Config")
+        add_btn = vt.make_button("Add Config", "primary", parent=left)
         add_btn.clicked.connect(self._add_config)
         btn_row.addWidget(add_btn)
-        del_btn = QPushButton("Delete")
-        del_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        del_btn = vt.make_button("Delete", "danger", parent=left)
         del_btn.clicked.connect(self._delete_config)
         btn_row.addWidget(del_btn)
         ll.addLayout(btn_row)
@@ -220,7 +211,7 @@ class LogRotationManager(QWidget):
         self._preview = QTextEdit()
         self._preview.setReadOnly(True)
         rl.addWidget(self._preview)
-        rl.addWidget(QLabel("Rotated Logs Preview:"))
+        rl.addWidget(QLabel("Matched Log Files:"))
         self._log_preview = QTextEdit()
         self._log_preview.setReadOnly(True)
         self._log_preview.setMaximumHeight(160)
@@ -229,15 +220,15 @@ class LogRotationManager(QWidget):
         splitter.setSizes([420, 660])
 
         bottom = QHBoxLayout()
-        test_btn = QPushButton("Test Config (logrotate -d)")
+        test_btn = vt.make_button("Test Config (logrotate -d)", "secondary", parent=self)
         test_btn.clicked.connect(self._test_config)
         bottom.addWidget(test_btn)
-        force_btn = QPushButton("Force Rotate Now")
+        force_btn = vt.make_button("Force Rotate Now", "primary", parent=self)
         force_btn.clicked.connect(self._force_rotate)
         bottom.addWidget(force_btn)
         bottom.addStretch()
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         bottom.addWidget(self._status)
         root.addLayout(bottom)
 
@@ -245,46 +236,39 @@ class LogRotationManager(QWidget):
         self._configs.clear()
         self._configs.update(DEFAULT_CONFIGS)
         os.makedirs(USER_LOGROTATE_DIR, exist_ok=True)
-        for f in glob.glob(os.path.join(USER_LOGROTATE_DIR, "*")):
-            name = os.path.basename(f)
+        for path in sorted(glob.glob(os.path.join(USER_LOGROTATE_DIR, "*"))):
+            if not os.path.isfile(path):
+                continue
+            name = os.path.basename(path)
             try:
-                spec = self._parse_config(f)
-                self._configs[name] = spec
+                self._configs[name] = self._parse_config(path)
             except Exception:
                 pass
         self._populate()
 
     def _parse_config(self, path):
         spec = {"files": []}
-        in_files = False
-        with open(path) as f:
+        in_body = False
+        with open(path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
                 if line == "{":
-                    in_files = True
+                    in_body = True
                 elif line == "}":
-                    in_files = False
-                elif in_files:
+                    in_body = False
+                elif not in_body:
                     spec["files"].append(line)
-                elif line == "daily":
-                    spec["daily"] = True
-                elif line == "weekly":
-                    spec["weekly"] = True
-                elif line == "monthly":
-                    spec["monthly"] = True
+                elif line in ("daily", "weekly", "monthly"):
+                    spec[line] = True
                 elif line.startswith("rotate"):
-                    spec["rotate"] = int(line.split()[1])
-                elif line == "compress":
-                    spec["compress"] = True
-                elif line == "delaycompress":
-                    spec["delaycompress"] = True
-                elif line == "notifempty":
-                    spec["notifempty"] = True
-                elif line == "missingok":
-                    spec["missingok"] = True
-                elif line.startswith("create"):
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[1].isdigit():
+                        spec["rotate"] = int(parts[1])
+                elif line in ("compress", "delaycompress", "notifempty", "missingok", "sharedscripts"):
+                    spec[line] = True
+                elif line.startswith("create "):
                     spec["create"] = line.split("create", 1)[1].strip()
         return spec
 
@@ -298,7 +282,7 @@ class LogRotationManager(QWidget):
             if len(spec.get("files", [])) > 2:
                 files_str += "..."
             self._table.setItem(row, 1, QTableWidgetItem(files_str))
-            freq = next((k for k in ["daily", "weekly", "monthly"] if spec.get(k)), "weekly")
+            freq = next((k for k in ("daily", "weekly", "monthly") if spec.get(k)), "weekly")
             self._table.setItem(row, 2, QTableWidgetItem(freq.capitalize()))
 
     def _on_selected(self, row):
@@ -309,16 +293,18 @@ class LogRotationManager(QWidget):
             return
         name = item.text()
         spec = self._configs.get(name, {})
-        cfg_text = generate_logrotate_config(name, spec)
-        self._preview.setPlainText(cfg_text)
+        self._preview.setPlainText(generate_logrotate_config(name, spec))
         log_lines = []
-        for f in spec.get("files", []):
-            expanded = os.path.expanduser(f.replace("/*.log", ".1.log").replace("/var/log/", "/var/log/."))
-            if os.path.exists(expanded):
-                log_lines.append(expanded + ": exists")
+        for pattern in spec.get("files", []):
+            expanded = os.path.expanduser(pattern)
+            matches = sorted(glob.glob(expanded))
+            rotated = sorted(glob.glob(expanded + ".*"))
+            if matches or rotated:
+                for m in matches + rotated[:5]:
+                    log_lines.append(f"{m} ({os.path.getsize(m)} bytes)" if os.path.isfile(m) else m)
             else:
-                log_lines.append(expanded + ": not yet rotated")
-        self._log_preview.setPlainText("\n".join(log_lines) if log_lines else "No rotated files yet")
+                log_lines.append(f"{expanded}: no matching files yet")
+        self._log_preview.setPlainText("\n".join(log_lines) if log_lines else "No files configured")
 
     def _selected_name(self):
         row = self._table.currentRow()
@@ -332,8 +318,12 @@ class LogRotationManager(QWidget):
         if dlg.exec_() == QDialog.Accepted:
             spec = dlg.get_values()
             name = spec.pop("name")
+            if not name or not spec["files"]:
+                QMessageBox.warning(self, "Missing Info", "Config name and log files are required.")
+                return
             self._configs[name] = spec
             self._save_user_config(name, spec)
+            log_info(f"Logrotate config saved: {name}")
             self._populate()
 
     def _delete_config(self):
@@ -342,14 +332,17 @@ class LogRotationManager(QWidget):
             QMessageBox.warning(self, "No Selection", "Select a config first.")
             return
         if name in DEFAULT_CONFIGS:
-            QMessageBox.warning(self, "Cannot Delete", "Cannot delete built-in configs. Disable instead.")
+            QMessageBox.warning(self, "Cannot Delete", "Cannot delete built-in configs.")
             return
-        if QMessageBox.question(self, "Delete", "Delete config '" + name + "'?", QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+        if QMessageBox.question(
+            self, "Delete", f"Delete config '{name}'?",
+            QMessageBox.Yes | QMessageBox.No,
+        ) != QMessageBox.Yes:
             return
         path = os.path.join(USER_LOGROTATE_DIR, name)
         try:
             os.remove(path)
-        except Exception:
+        except OSError:
             pass
         del self._configs[name]
         self._populate()
@@ -357,37 +350,41 @@ class LogRotationManager(QWidget):
     def _save_user_config(self, name, spec):
         os.makedirs(USER_LOGROTATE_DIR, exist_ok=True)
         path = os.path.join(USER_LOGROTATE_DIR, name)
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             f.write(generate_logrotate_config(name, spec))
 
-    def _test_config(self):
+    def _run_logrotate(self, flag):
         name = self._selected_name()
         if not name:
+            QMessageBox.warning(self, "No Selection", "Select a config first.")
             return
         spec = self._configs.get(name, {})
         cfg_text = generate_logrotate_config(name, spec)
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".conf", delete=False) as tmp:
+        os.makedirs(os.path.dirname(USER_STATE_FILE), exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".conf", delete=False, encoding="utf-8") as tmp:
             tmp.write(cfg_text)
             tmp_path = tmp.name
-        out, ok = run_cmd("logrotate -d " + tmp_path)
-        os.unlink(tmp_path)
-        QMessageBox.information(self, "Test Output", out[:3000])
+        try:
+            out, ok = run_cmd(["logrotate", flag, "-s", USER_STATE_FILE, tmp_path])
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        title = "Test Output" if flag == "-d" else "Force Rotate"
+        QMessageBox.information(self, title, (out or "Done")[:3000])
         if not ok:
-            log_error("Logrotate test failed: " + out)
+            log_error(f"Logrotate {flag} failed: {out}")
+        else:
+            self._status.setText(f"{title} completed for {name}")
+        if flag == "-f":
+            self._on_selected(self._table.currentRow())
+
+    def _test_config(self):
+        self._run_logrotate("-d")
 
     def _force_rotate(self):
-        name = self._selected_name()
-        if not name:
-            return
-        spec = self._configs.get(name, {})
-        cfg_text = generate_logrotate_config(name, spec)
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".conf", delete=False) as tmp:
-            tmp.write(cfg_text)
-            tmp_path = tmp.name
-        out, ok = run_cmd("logrotate -f " + tmp_path)
-        os.unlink(tmp_path)
-        QMessageBox.information(self, "Force Rotate", out[:3000] if out else "Done")
-        self._on_selected(self._table.currentRow())
+        self._run_logrotate("-f")
 
 
 def main():

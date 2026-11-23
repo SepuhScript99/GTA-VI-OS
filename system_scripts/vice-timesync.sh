@@ -102,14 +102,6 @@ set_mode() {
 }
 
 get_current_timezone() {
-    if [ -f "${ETC_DIR}/timezone" ]; then
-        local tz_file_val
-        tz_file_val=$(head -n 1 "${ETC_DIR}/timezone" 2>/dev/null | tr -d '[:space:]' || true)
-        if [ -n "$tz_file_val" ]; then
-            printf '%s' "$tz_file_val"
-            return 0
-        fi
-    fi
     if [ -L "${ETC_DIR}/localtime" ]; then
         local target
         target=$(readlink -f "${ETC_DIR}/localtime" 2>/dev/null || true)
@@ -122,11 +114,19 @@ get_current_timezone() {
                 ;;
         esac
     fi
-    if command -v timedatectl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+    if [ "$ETC_DIR" = "/etc" ] && command -v timedatectl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
         local td_tz
         td_tz=$(timedatectl show -p Timezone --value 2>/dev/null || true)
         if [ -n "$td_tz" ]; then
             printf '%s' "$td_tz"
+            return 0
+        fi
+    fi
+    if [ -f "${ETC_DIR}/timezone" ]; then
+        local tz_file_val
+        tz_file_val=$(head -n 1 "${ETC_DIR}/timezone" 2>/dev/null | tr -d '[:space:]' || true)
+        if [ -n "$tz_file_val" ]; then
+            printf '%s' "$tz_file_val"
             return 0
         fi
     fi
@@ -170,6 +170,13 @@ validate_timezone() {
     esac
 }
 
+sync_etc_timezone_file() {
+    local tz="$1"
+    mkdir -p "$ETC_DIR"
+    printf '%s\n' "$tz" > "${ETC_DIR}/timezone"
+    chmod 644 "${ETC_DIR}/timezone"
+}
+
 apply_timezone() {
     local tz="$1"
     if ! validate_timezone "$tz"; then
@@ -180,20 +187,20 @@ apply_timezone() {
     local current_tz
     current_tz=$(get_current_timezone)
     if [ "$current_tz" = "$tz" ] && [ -L "${ETC_DIR}/localtime" ]; then
+        sync_etc_timezone_file "$tz"
         log_info "Timezone already set to $tz."
         return 0
     fi
 
-    if command -v timedatectl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+    if [ "$ETC_DIR" = "/etc" ] && command -v timedatectl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
         if timedatectl set-timezone "$tz" >/dev/null 2>&1; then
+            sync_etc_timezone_file "$tz"
             log_info "Timezone updated to $tz via timedatectl."
             return 0
         fi
     fi
 
-    mkdir -p "$ETC_DIR"
-    printf '%s\n' "$tz" > "${ETC_DIR}/timezone"
-    chmod 644 "${ETC_DIR}/timezone"
+    sync_etc_timezone_file "$tz"
     ln -snf "${ZONEINFO_DIR}/${tz}" "${ETC_DIR}/localtime"
     log_info "Timezone updated to $tz via ${ETC_DIR}/timezone and ${ETC_DIR}/localtime."
     return 0

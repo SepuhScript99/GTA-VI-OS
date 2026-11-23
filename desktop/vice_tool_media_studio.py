@@ -356,6 +356,7 @@ class ViceMediaStudioApp(QMainWindow):
         self._proc.setProcessChannelMode(QProcess.MergedChannels)
         self._proc.readyReadStandardOutput.connect(self._on_proc_output)
         self._proc.finished.connect(self._on_proc_finished)
+        self._proc.errorOccurred.connect(self._on_proc_error)
         self._set_busy(True)
         self._proc.start(ffmpeg_bin, args)
         log_info(f"Vice Media Studio started ffmpeg -> {dst}")
@@ -395,6 +396,7 @@ class ViceMediaStudioApp(QMainWindow):
             self._proc.setProcessChannelMode(QProcess.MergedChannels)
             self._proc.readyReadStandardOutput.connect(self._on_proc_output)
             self._proc.finished.connect(self._on_proc_finished)
+            self._proc.errorOccurred.connect(self._on_proc_error)
             self._set_busy(True)
             self._proc.start(convert_bin, args)
             return
@@ -450,6 +452,13 @@ class ViceMediaStudioApp(QMainWindow):
         else:
             self._header.set_badge("ERROR", "danger")
             self._append_log(f"\n[ERROR] Process exited with code {exit_code}.\n")
+
+    def _on_proc_error(self, _err) -> None:
+        self._set_busy(False)
+        self._progress.setRange(0, 100)
+        self._header.set_badge("ERROR", "danger")
+        msg = self._proc.errorString() if self._proc is not None else "Process failed to start"
+        self._append_log(f"\n[ERROR] Failed to start process: {msg}\n")
 
     def _cancel_process(self) -> None:
         if self._is_busy():

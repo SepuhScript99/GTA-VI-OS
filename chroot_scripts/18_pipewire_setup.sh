@@ -3,9 +3,9 @@ set -Eeuo pipefail
 
 # ============================================================================
 # GTA VI OS (Vice OS) Chroot Script: PipeWire & WirePlumber Setup
-# Configures conflict-free PipeWire/PipeWire-Pulse drop-ins, WirePlumber
-# 0.4.x VM/AC97 ALSA tuning, and realtime audio privileges without writing
-# a broken monolithic /etc/pipewire/pipewire.conf.
+# Aligns PipeWire with pure stock Debian 12 pipewire-audio defaults, installs
+# minimal WirePlumber 0.4.x VM/AC97 ALSA tuning, and configures RTKit/audio
+# privileges.
 # ============================================================================
 
 # Source the shared library from the payload directory
@@ -15,40 +15,13 @@ if [ ! -f /vice_payload/lib/common.sh ]; then
 fi
 source /vice_payload/lib/common.sh
 
-install_pipewire_dropins() {
-    # Ensure stock /usr/share/pipewire/pipewire.conf is inherited cleanly
-    if [ -f /etc/pipewire/pipewire.conf ]; then
-        rm -f /etc/pipewire/pipewire.conf
-        log_info "Removed conflicting monolithic /etc/pipewire/pipewire.conf."
-    fi
-
-    mkdir -p /etc/pipewire/pipewire.conf.d
-    cat <<'PWCONF' > /etc/pipewire/pipewire.conf.d/10-vice-audio.conf
-# Vice OS PipeWire clock tuning (inherits full Debian /usr/share/pipewire/pipewire.conf)
-context.properties = {
-    default.clock.rate = 48000
-    default.clock.allowed-rates = [ 44100 48000 ]
-    default.clock.quantum = 2048
-    default.clock.min-quantum = 1024
-    default.clock.max-quantum = 4096
-}
-PWCONF
-    chown root:root /etc/pipewire/pipewire.conf.d/10-vice-audio.conf
-    chmod 644 /etc/pipewire/pipewire.conf.d/10-vice-audio.conf
-
-    mkdir -p /etc/pipewire/pipewire-pulse.conf.d
-    cat <<'PULSECONF' > /etc/pipewire/pipewire-pulse.conf.d/10-vice-pulse.conf
-# Vice OS PipeWire-Pulse buffering tuning for VM and desktop playback
-pulse.properties = {
-    pulse.min.req = 1024/48000
-    pulse.default.req = 2048/48000
-    pulse.min.quantum = 1024/48000
-}
-PULSECONF
-    chown root:root /etc/pipewire/pipewire-pulse.conf.d/10-vice-pulse.conf
-    chmod 644 /etc/pipewire/pipewire-pulse.conf.d/10-vice-pulse.conf
-
-    log_info "Installed PipeWire & PipeWire-Pulse drop-ins (48000Hz, quantum 2048, min 1024)."
+ensure_stock_debian_pipewire() {
+    # Remove any custom monolithic or drop-in PipeWire overrides so pure upstream
+    # Debian 12 /usr/share/pipewire/{pipewire,pipewire-pulse}.conf defaults apply.
+    rm -f /etc/pipewire/pipewire.conf \
+          /etc/pipewire/pipewire.conf.d/10-vice-audio.conf \
+          /etc/pipewire/pipewire-pulse.conf.d/10-vice-pulse.conf
+    log_info "Aligned PipeWire with stock Debian 12 configuration."
 }
 
 install_wireplumber_config() {
@@ -113,7 +86,7 @@ RTKITPOL
 main() {
     log_info "Configuring PipeWire & WirePlumber audio server..."
 
-    install_pipewire_dropins
+    ensure_stock_debian_pipewire
     install_wireplumber_config
     configure_realtime_audio
 

@@ -178,7 +178,15 @@ class StatusRefreshWorker(QThread):
             except OSError:
                 pass
             pid_file = f"/run/vice-ovpn-{_safe_profile_name(name)}.pid"
-            connected = os.path.isfile(pid_file) or (_service_active(f"openvpn@{name}") == "ACTIVE")
+            pid_alive = False
+            if os.path.isfile(pid_file):
+                try:
+                    with open(pid_file, "r", encoding="utf-8", errors="replace") as fp:
+                        pid = fp.read().strip()
+                    pid_alive = pid.isdigit() and os.path.isdir(f"/proc/{pid}")
+                except OSError:
+                    pid_alive = True
+            connected = pid_alive or (_service_active(f"openvpn@{name}") == "ACTIVE")
             profiles.append({
                 "name": name,
                 "kind": "OpenVPN",
@@ -228,42 +236,73 @@ class IpCheckWorker(QThread):
     def __init__(self, via_tor: bool = False):
         super().__init__()
         self._via_tor = via_tor
+        self._stopped = False
+        self._proc = None
+
+    def stop(self) -> None:
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def run(self) -> None:
         if self._via_tor:
             curl_bin = shutil.which("curl")
             if not curl_bin:
-                self.ip_ready.emit(False, "Tor Check", "curl not installed.")
+                if not self._stopped:
+                    self.ip_ready.emit(False, "Tor Check", "curl not installed.")
                 return
             try:
-                res = subprocess.run(
+                self._proc = subprocess.Popen(
                     [curl_bin, "--socks5-hostname", "127.0.0.1:9050", "-fsSL", "--max-time", "8",
                      "https://check.torproject.org/api/ip"],
-                    capture_output=True, text=True, timeout=10
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
                 )
-                if res.returncode == 0:
-                    data = json.loads(res.stdout)
+                stdout, stderr = self._proc.communicate(timeout=10)
+                if self._stopped:
+                    return
+                if self._proc.returncode == 0:
+                    data = json.loads(stdout)
                     is_tor = data.get("IsTor", False)
                     ip = data.get("IP", "Unknown")
                     tag = "Tor Verified" if is_tor else "Not Tor"
                     self.ip_ready.emit(True, f"{ip} ({tag})", f"Tor SOCKS5 check: {ip} ({tag})")
                 else:
-                    self.ip_ready.emit(False, "Tor Offline", res.stderr.strip() or "Could not reach Tor SOCKS5 (127.0.0.1:9050).")
+                    self.ip_ready.emit(False, "Tor Offline", (stderr or "").strip() or "Could not reach Tor SOCKS5 (127.0.0.1:9050).")
+            except subprocess.TimeoutExpired:
+                if self._proc is not None:
+                    self._proc.kill()
+                    self._proc.communicate()
+                if not self._stopped:
+                    self.ip_ready.emit(False, "Tor Timeout", "Tor SOCKS5 check timed out.")
             except Exception as exc:
-                self.ip_ready.emit(False, "Tor Error", str(exc))
+                if not self._stopped:
+                    self.ip_ready.emit(False, "Tor Error", str(exc))
+            finally:
+                self._proc = None
             return
 
         for url in ("https://api.ipify.org", "https://ifconfig.me/ip"):
+            if self._stopped:
+                return
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": "ViceNetShield/1.0"})
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     ip = resp.read().decode("utf-8", errors="replace").strip()
-                if ip:
+                if ip and not self._stopped:
                     self.ip_ready.emit(True, ip, f"Public IP ({url}): {ip}")
                     return
             except Exception:
                 continue
-        self.ip_ready.emit(False, "Offline / Unreachable", "Could not query public IP endpoint.")
+        if not self._stopped:
+            self.ip_ready.emit(False, "Offline / Unreachable", "Could not query public IP endpoint.")
 
 
 class CmdWorker(QThread):
@@ -274,18 +313,47 @@ class CmdWorker(QThread):
         super().__init__()
         self._cmd = cmd
         self._ok_msg = ok_msg
+        self._stopped = False
+        self._proc = None
+
+    def stop(self) -> None:
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def run(self) -> None:
         try:
-            res = subprocess.run(self._cmd, capture_output=True, text=True, timeout=45)
-            out = res.stdout.strip()
-            err = res.stderr.strip()
-            if res.returncode == 0:
+            self._proc = subprocess.Popen(
+                self._cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            )
+            stdout, stderr = self._proc.communicate(timeout=45)
+            if self._stopped:
+                return
+            out = (stdout or "").strip()
+            err = (stderr or "").strip()
+            if self._proc.returncode == 0:
                 self.finished_cmd.emit(True, out or self._ok_msg)
             else:
-                self.finished_cmd.emit(False, err or out or f"Command exited with code {res.returncode}")
+                self.finished_cmd.emit(False, err or out or f"Command exited with code {self._proc.returncode}")
+        except subprocess.TimeoutExpired:
+            if self._proc is not None:
+                self._proc.kill()
+                self._proc.communicate()
+            if not self._stopped:
+                self.finished_cmd.emit(False, "Command timed out after 45s.")
         except Exception as exc:
-            self.finished_cmd.emit(False, str(exc))
+            if not self._stopped:
+                self.finished_cmd.emit(False, str(exc))
+        finally:
+            self._proc = None
 
 
 class WGProfileDialog(QDialog):
@@ -763,7 +831,7 @@ class ViceNetShieldApp(QMainWindow):
                 return
             safe = _safe_profile_name(prof["name"])
             pid_file = f"/run/vice-ovpn-{safe}.pid"
-            log_file = f"/tmp/vice-ovpn-{safe}.log"
+            log_file = f"/run/vice-ovpn-{safe}.log"
             self._run_priv(
                 ["pkexec", "openvpn", "--config", prof["path"], "--daemon",
                  "--writepid", pid_file, "--log", log_file],
@@ -785,7 +853,7 @@ class ViceNetShieldApp(QMainWindow):
                         pid = fp.read().strip()
                     if pid.isdigit():
                         self._run_priv(
-                            ["pkexec", "bash", "-c", "kill \"$1\" && rm -f \"$2\"", "vice-ovpn", pid, pid_file],
+                            ["pkexec", "bash", "-c", "kill \"$1\" 2>/dev/null || true; rm -f \"$2\"", "vice-ovpn", pid, pid_file],
                             f"Stopped OpenVPN tunnel: {prof['name']}"
                         )
                         return
@@ -896,7 +964,7 @@ class ViceNetShieldApp(QMainWindow):
                 if hasattr(w, "stop"):
                     w.stop()
                 if w.isRunning():
-                    w.wait(1500)
+                    w.wait(2500)
         event.accept()
 
 

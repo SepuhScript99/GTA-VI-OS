@@ -164,7 +164,7 @@ Batch 2 : [####################] 150 / 150 (Complete)
 | 115 | `system-config-printer` | Printers Configuration | System | `system-config-printer` | `system-config-printer` | GUI | `vice-tool-system-config-printer` |
 | 116 | `blueman` | Bluetooth Manager | System | `blueman` | `blueman-manager` | GUI | `vice-tool-blueman` |
 | 117 | `bluez` | Bluetooth CLI (bluetoothctl) | System | `bluez` | `bluetoothctl` | Terminal | `vice-tool-bluez` |
-| 118 | `timeshift` | Timeshift System Snapshots | System | `timeshift` | `timeshift-gtk` | GUI | `vice-tool-timeshift` |
+| 118 | `timeshift` | Timeshift System Snapshots | System | `timeshift` | `timeshift-launcher` | GUI | `vice-tool-timeshift` |
 | 119 | `chrony` | Chrony NTP Time Client | System | `chrony` | `chronyc tracking` | Terminal | `vice-tool-chrony` |
 | 120 | `arandr` | ARandR Display Layout | System | `arandr` | `arandr` | GUI | `vice-tool-arandr` |
 | 121 | `lxappearance` | LXAppearance Theme Switcher | System | `lxappearance` | `lxappearance` | GUI | `vice-tool-lxappearance` |
@@ -279,9 +279,9 @@ Batch 2 : [####################] 150 / 150 (Complete)
 | 230 | `pavucontrol` | PulseAudio/PipeWire Mixer | Media | `pavucontrol` | `pavucontrol` | GUI | `vice-tool-pavucontrol` |
 | 231 | `celluloid` | Celluloid Video Player | Media | `celluloid` | `celluloid` | GUI | `vice-tool-celluloid` |
 | 232 | `ristretto` | Ristretto Image Viewer | Media | `ristretto` | `ristretto` | GUI | `vice-tool-ristretto` |
-| 233 | `feh` | feh Fast Image Viewer | Media | `feh` | `feh` | GUI | `vice-tool-feh` |
-| 234 | `flameshot` | Flameshot Screenshot GUI | Media | `flameshot` | `flameshot` | GUI | `vice-tool-flameshot` |
-| 235 | `gnome-screenshot` | GNOME Screenshot Tool | Media | `gnome-screenshot` | `gnome-screenshot` | GUI | `vice-tool-gnome-screenshot` |
+| 233 | `feh` | feh Fast Image Viewer | Media | `feh` | `feh --scale-down /usr/share/backgrounds` | GUI | `vice-tool-feh` |
+| 234 | `flameshot` | Flameshot Screenshot GUI | Media | `flameshot` | `flameshot gui` | GUI | `vice-tool-flameshot` |
+| 235 | `gnome-screenshot` | GNOME Screenshot Tool | Media | `gnome-screenshot` | `gnome-screenshot --interactive` | GUI | `vice-tool-gnome-screenshot` |
 | 236 | `gcolor3` | Gcolor3 Color Picker | Media | `gcolor3` | `gcolor3` | GUI | `vice-tool-gcolor3` |
 | 237 | `easytag` | EasyTAG Audio Tagger | Media | `easytag` | `easytag` | GUI | `vice-tool-easytag` |
 | 238 | `optipng` | OptiPNG Image Optimizer | Media | `optipng` | `optipng` | Terminal | `vice-tool-optipng` |

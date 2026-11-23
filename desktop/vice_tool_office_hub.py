@@ -109,7 +109,7 @@ OFFICE_APPS = [
         "icon": "vice-tool-qpdfview",
         "fallback": "qpdfview",
         "cmd": ["qpdfview"],
-        "alt_bins": [],
+        "alt_bins": ["evince", "okular"],
     },
 ]
 
@@ -153,7 +153,7 @@ def _create_minimal_odf(dest_path: str, mime: str, kind: str, title_text: str) -
     elif kind == "calc":
         body = (
             "<office:spreadsheet>"
-            f'<table:table table:name="Sheet1">'
+            '<table:table table:name="Sheet1">'
             "<table:table-column/>"
             "<table:table-row>"
             f'<table:table-cell office:value-type="string"><text:p>{safe_title}</text:p></table:table-cell>'
@@ -301,7 +301,8 @@ def _parse_lo_history(xcu_path: str) -> list:
             for val in item.iter("value"):
                 raw = (val.text or "").strip()
                 if raw.startswith("file://"):
-                    local = urllib.parse.unquote(raw[7:])
+                    parsed = urllib.parse.urlparse(raw)
+                    local = urllib.parse.unquote(parsed.path)
                     if os.path.isfile(local):
                         found.append(local)
     except Exception:
@@ -357,7 +358,8 @@ class ViceOfficeStudioApp(QMainWindow):
         app_grid = QGridLayout()
         app_grid.setSpacing(10)
         for idx, spec in enumerate(OFFICE_APPS):
-            btn = QPushButton(f"{spec['title']}\n{spec['subtitle']}", suite_card)
+            subtitle = spec["subtitle"].replace("&", "&&")
+            btn = QPushButton(f"{spec['title']}\n{subtitle}", suite_card)
             btn.setMinimumHeight(64)
             btn.setCursor(Qt.PointingHandCursor)
             ic = load_tool_icon(spec["icon"], spec["fallback"])

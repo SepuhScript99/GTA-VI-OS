@@ -4,20 +4,21 @@ GTA VI OS (Vice OS) ISO Validator
 GUI test runner for Vice OS ISO verification scripts (rootfs, kernel, packages, bootloader).
 """
 
-import sys
+import datetime
 import os
 import subprocess
+import sys
+
+from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtWidgets import (
+    QApplication, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+    QMessageBox, QProgressBar, QTextEdit, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QFileDialog, QTextEdit, QProgressBar, QLineEdit, QGroupBox
-)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WORKDIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 VALIDATION_DIR = os.path.join(WORKDIR, 'validation')
@@ -26,40 +27,36 @@ DEFAULT_ISO = os.path.join(WORKDIR, 'out', 'gta-vi-os-amd64.iso')
 WINDOW_WIDTH = 860
 WINDOW_HEIGHT = 620
 
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QTextEdit { background: #0d0d0d; color: #00e5ff; border: 1px solid #1a4a4a; font-size: 11px; }
-QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; text-align: center; color: #00ffff; }
-QProgressBar::chunk { background: #00ffff; }
-QGroupBox { border: 1px solid #00ffff; margin-top: 8px; padding: 6px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QLabel { color: #00ffff; }
-"""
-
 VALIDATORS = [
-    ("Package List",  "validate_packages.sh",  None),
-    ("RootFS",        "validate_rootfs.sh",     "{chroot}"),
-    ("Kernel",        "validate_kernel.sh",     "{chroot}"),
-    ("Initramfs",     "validate_initramfs.sh",  "{chroot}"),
-    ("ISO Image",     "validate_iso.sh",        "{iso}"),
+    ("Package List", "validate_packages.sh", None),
+    ("RootFS", "validate_rootfs.sh", "{chroot}"),
+    ("Kernel", "validate_kernel.sh", "{chroot}"),
+    ("Initramfs", "validate_initramfs.sh", "{chroot}"),
+    ("ISO Image", "validate_iso.sh", "{iso}"),
 ]
 
 
 class ValidatorWorker(QThread):
-    step_started  = pyqtSignal(str)
-    step_done     = pyqtSignal(str, bool, str)
-    line_out      = pyqtSignal(str)
-    all_done      = pyqtSignal(int, int, int)
+    step_started = pyqtSignal(str)
+    step_done = pyqtSignal(str, bool, str)
+    line_out = pyqtSignal(str)
+    all_done = pyqtSignal(int, int, int)
 
-    def __init__(self, iso_path, chroot_path, run_single=None):
-        super().__init__()
-        self.iso_path    = iso_path
+    def __init__(self, iso_path, chroot_path, run_single=None, parent=None):
+        super().__init__(parent)
+        self.iso_path = iso_path
         self.chroot_path = chroot_path
-        self.run_single  = run_single
+        self.run_single = run_single
+        self._proc = None
+        self._cancelled = False
+
+    def stop(self):
+        self._cancelled = True
+        if self._proc is not None and self._proc.poll() is None:
+            try:
+                self._proc.terminate()
+            except OSError:
+                pass
 
     def _run_script(self, script, arg):
         path = os.path.join(VALIDATION_DIR, script)
@@ -67,25 +64,33 @@ class ValidatorWorker(QThread):
             return False, f"Script not found: {path}"
         cmd = ["bash", path] + ([arg] if arg else [])
         try:
-            proc = subprocess.Popen(
+            self._proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
             )
             output = []
-            for line in proc.stdout:
-                stripped = line.rstrip()
-                self.line_out.emit(stripped)
-                output.append(stripped)
-            proc.wait()
-            return proc.returncode == 0, "\n".join(output)
+            if self._proc.stdout:
+                for line in self._proc.stdout:
+                    if self._cancelled:
+                        break
+                    stripped = line.rstrip()
+                    self.line_out.emit(stripped)
+                    output.append(stripped)
+            rc = self._proc.wait()
+            return rc == 0, "\n".join(output)
         except Exception as e:
             return False, str(e)
 
     def run(self):
         passed = failed = skipped = 0
-        validators = ([v for v in VALIDATORS if v[0] == self.run_single]
-                      if self.run_single else VALIDATORS)
+        validators = (
+            [v for v in VALIDATORS if v[0] == self.run_single]
+            if self.run_single
+            else VALIDATORS
+        )
 
         for name, script, arg_template in validators:
+            if self._cancelled:
+                break
             arg = None
             if arg_template == "{iso}":
                 if not self.iso_path or not os.path.isfile(self.iso_path):
@@ -102,92 +107,93 @@ class ValidatorWorker(QThread):
 
             self.step_started.emit(name)
             ok, _ = self._run_script(script, arg)
+            if self._cancelled:
+                break
             self.step_done.emit(name, ok, "")
             if ok:
                 passed += 1
             else:
                 failed += 1
 
-        self.all_done.emit(passed, failed, skipped)
+        if not self._cancelled:
+            self.all_done.emit(passed, failed, skipped)
 
 
 class ISOValidator(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — ISO Build Validator")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(720, 500)
+        vt.apply_app_theme(self)
         self._worker = None
         self._init_ui()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
 
-        title = QLabel("Vice OS — ISO Build Validator")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 14, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        root.addWidget(vt.make_header(
+            "ISO Build Validator",
+            "Verify Vice OS package list, rootfs, kernel, initramfs and ISO image",
+            icon_name="media-optical",
+            badge_text="ISO CHECK",
+            badge_variant="gold",
+            parent=self,
+        ))
 
-        # ISO path selector
         iso_group = QGroupBox("ISO Image")
         iso_layout = QHBoxLayout(iso_group)
         self._iso_edit = QLineEdit(DEFAULT_ISO)
         iso_layout.addWidget(self._iso_edit)
-        browse_btn = QPushButton("Browse")
+        browse_btn = vt.make_button("Browse", "secondary", parent=iso_group)
         browse_btn.clicked.connect(self._browse_iso)
         iso_layout.addWidget(browse_btn)
         root.addWidget(iso_group)
 
-        # Chroot path selector
         chroot_group = QGroupBox("Chroot Directory (for RootFS/Kernel/Initramfs checks)")
         chroot_layout = QHBoxLayout(chroot_group)
         self._chroot_edit = QLineEdit(os.path.join(WORKDIR, 'chroot'))
         chroot_layout.addWidget(self._chroot_edit)
-        browse_chroot = QPushButton("Browse")
+        browse_chroot = vt.make_button("Browse", "secondary", parent=chroot_group)
         browse_chroot.clicked.connect(self._browse_chroot)
         chroot_layout.addWidget(browse_chroot)
         root.addWidget(chroot_group)
 
-        # Output log
         self._log = QTextEdit()
         self._log.setReadOnly(True)
         root.addWidget(self._log)
 
-        # Progress
         self._progress = QProgressBar()
         self._progress.setRange(0, len(VALIDATORS))
         self._progress.setValue(0)
         root.addWidget(self._progress)
 
-        # Buttons
         btn_row = QHBoxLayout()
-        self._run_all_btn = QPushButton("Run All Validators")
+        self._run_all_btn = vt.make_button("Run All Validators", "primary", parent=self)
         self._run_all_btn.clicked.connect(self._run_all)
         btn_row.addWidget(self._run_all_btn)
 
-        self._run_iso_btn = QPushButton("ISO Only")
+        self._run_iso_btn = vt.make_button("ISO Only", "secondary", parent=self)
         self._run_iso_btn.clicked.connect(lambda: self._run_single("ISO Image"))
         btn_row.addWidget(self._run_iso_btn)
 
-        self._run_rootfs_btn = QPushButton("RootFS Only")
+        self._run_rootfs_btn = vt.make_button("RootFS Only", "secondary", parent=self)
         self._run_rootfs_btn.clicked.connect(lambda: self._run_single("RootFS"))
         btn_row.addWidget(self._run_rootfs_btn)
 
         btn_row.addStretch()
 
-        clear_btn = QPushButton("Clear")
+        clear_btn = vt.make_button("Clear", "secondary", parent=self)
         clear_btn.clicked.connect(self._log.clear)
         btn_row.addWidget(clear_btn)
 
-        export_btn = QPushButton("Export")
+        export_btn = vt.make_button("Export", "secondary", parent=self)
         export_btn.clicked.connect(self._export)
         btn_row.addWidget(export_btn)
-
         root.addLayout(btn_row)
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         root.addWidget(self._status)
 
     def _browse_iso(self):
@@ -207,9 +213,12 @@ class ISOValidator(QWidget):
         self._start_worker(name)
 
     def _start_worker(self, single):
+        if self._worker is not None and self._worker.isRunning():
+            return
         self._run_all_btn.setEnabled(False)
         self._run_iso_btn.setEnabled(False)
         self._run_rootfs_btn.setEnabled(False)
+        self._progress.setRange(0, 1 if single else len(VALIDATORS))
         self._progress.setValue(0)
         self._log.clear()
         self._log.append("Starting validation...\n")
@@ -217,7 +226,8 @@ class ISOValidator(QWidget):
         self._worker = ValidatorWorker(
             self._iso_edit.text().strip(),
             self._chroot_edit.text().strip(),
-            single
+            single,
+            parent=self,
         )
         self._worker.step_started.connect(self._on_step_started)
         self._worker.step_done.connect(self._on_step_done)
@@ -227,12 +237,11 @@ class ISOValidator(QWidget):
 
     def _on_step_started(self, name):
         self._status.setText(f"Running: {name}")
-        self._log.append(f"\n{'─'*50}\n[{name}]\n{'─'*50}")
+        self._log.append(f"\n{'-' * 50}\n[{name}]\n{'-' * 50}")
 
     def _on_step_done(self, name, ok, _):
-        val = self._progress.value() + 1
-        self._progress.setValue(val)
-        c = "#00ff88" if ok else "#ff4444"
+        self._progress.setValue(self._progress.value() + 1)
+        c = vt.COLORS["success"] if ok else vt.COLORS["danger"]
         label = "PASS" if ok else "FAIL"
         self._log.append(f'<span style="color:{c};">[{label}] {name}</span>')
         log_info(f"Validator {name}: {label}")
@@ -242,7 +251,7 @@ class ISOValidator(QWidget):
         self._run_iso_btn.setEnabled(True)
         self._run_rootfs_btn.setEnabled(True)
 
-        c = "#00ff88" if failed == 0 else "#ff4444"
+        c = vt.COLORS["success"] if failed == 0 else vt.COLORS["danger"]
         self._log.append(
             f'\n<span style="color:{c}; font-weight:bold;">'
             f'Results: {passed} passed  |  {failed} failed  |  {skipped} skipped'
@@ -251,18 +260,22 @@ class ISOValidator(QWidget):
         self._status.setText(f"Done — {passed} passed, {failed} failed, {skipped} skipped")
 
     def _export(self):
-        import datetime
         path = os.path.expanduser(
             f"~/vice_validation_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         )
         try:
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(self._log.toPlainText())
             log_info(f"Validation report exported to {path}")
-            from PyQt5.QtWidgets import QMessageBox
             QMessageBox.information(self, "Exported", f"Saved to:\n{path}")
         except Exception as e:
             log_error(f"Export failed: {e}")
+
+    def closeEvent(self, event):
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(2500)
+        super().closeEvent(event)
 
 
 def main():

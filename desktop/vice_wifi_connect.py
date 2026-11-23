@@ -1,50 +1,33 @@
 #!/usr/bin/env python3
 """Vice OS — WiFi Connect. nmcli frontend: scan, list, connect, forget, hotspot."""
 
-import sys
-import os
+import re
 import subprocess
+import sys
+
+from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor, QFont
+from PyQt5.QtWidgets import (
+    QAbstractItemView, QApplication, QComboBox, QDialog, QDialogButtonBox,
+    QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
+    QPlainTextEdit, QProgressBar, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QMessageBox, QDialog, QFormLayout, QLineEdit, QDialogButtonBox,
-    QComboBox, QProgressBar, QTabWidget, QPlainTextEdit
-)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QBrush
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 960
 WINDOW_HEIGHT = 600
 
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QTabBar::tab { background: #1a1a1a; color: #00ffff; padding: 6px 14px; }
-QTabBar::tab:selected { background: #00ffff; color: #0a0a0a; }
-QTabWidget::pane { border: 1px solid #00ffff; }
-QPlainTextEdit { background: #0d0d0d; color: #aaffff; border: 1px solid #1a4a4a; font-size: 11px; }
-QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; text-align: center; color: #00ffff; }
-QProgressBar::chunk { background: #00ffff; }
-QLabel { color: #00ffff; }
-"""
-
 
 def nmcli(args, timeout=15):
     try:
-        r = subprocess.run(["nmcli"] + args, capture_output=True, text=True, timeout=timeout)
-        return r.stdout.strip(), r.returncode == 0
+        r = subprocess.run(["nmcli"] + list(args), capture_output=True, text=True, timeout=timeout)
+        out = (r.stdout or "").strip() or (r.stderr or "").strip()
+        return out, r.returncode == 0
     except Exception as e:
         return str(e), False
 
@@ -67,78 +50,113 @@ def get_wifi_interface():
 def signal_bars(signal):
     try:
         s = int(signal)
-        if s >= 80: return "▓▓▓▓"
-        if s >= 60: return "▓▓▓░"
-        if s >= 40: return "▓▓░░"
-        if s >= 20: return "▓░░░"
-        return "░░░░"
+        if s >= 80:
+            return "[||||]"
+        if s >= 60:
+            return "[||| ]"
+        if s >= 40:
+            return "[||  ]"
+        if s >= 20:
+            return "[|   ]"
+        return "[    ]"
     except ValueError:
-        return "░░░░"
+        return "[    ]"
 
 
-def security_icon(security):
+def security_label(security):
     if not security or security == "--":
-        return "🔓 Open"
+        return "Open"
     if "WPA" in security or "WEP" in security or "SAE" in security:
-        return "🔒 " + security
-    return "🔒 Secured"
+        return security
+    return "Secured"
 
 
 class ScanWorker(QThread):
     done = pyqtSignal(list)
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._cancelled = False
+
+    def stop(self):
+        self._cancelled = True
+
     def run(self):
         iface = get_wifi_interface()
-        if not iface:
+        if not iface or self._cancelled:
             self.done.emit([])
             return
         nmcli(["device", "wifi", "rescan"], timeout=8)
+        if self._cancelled:
+            return
         out, _ = nmcli(["-t", "-f", "SSID,SIGNAL,SECURITY,IN-USE", "device", "wifi", "list"])
         networks = []
         seen = set()
         for line in out.splitlines():
-            parts = line.split(":")
+            parts = [p.replace("\\:", ":") for p in re.split(r"(?<!\\):", line)]
             if len(parts) < 4:
                 continue
             ssid, signal, security, in_use = parts[0], parts[1], parts[2], parts[3]
             if not ssid or ssid in seen:
                 continue
             seen.add(ssid)
-            networks.append({"ssid": ssid, "signal": signal, "security": security,
-                             "in_use": in_use == "*"})
-        self.done.emit(networks)
+            networks.append({
+                "ssid": ssid, "signal": signal, "security": security,
+                "in_use": in_use == "*",
+            })
+        if not self._cancelled:
+            self.done.emit(networks)
 
 
 class ConnectWorker(QThread):
     line = pyqtSignal(str)
     finished = pyqtSignal(bool)
 
-    def __init__(self, args):
-        super().__init__()
-        self._args = args
+    def __init__(self, args, parent=None):
+        super().__init__(parent)
+        self._args = list(args)
+        self._proc = None
+        self._cancelled = False
+
+    def stop(self):
+        self._cancelled = True
+        if self._proc is not None:
+            try:
+                self._proc.terminate()
+            except OSError:
+                pass
 
     def run(self):
-        self.line.emit("$ nmcli " + " ".join(self._args))
+        safe_args = [
+            "***" if i > 0 and self._args[i - 1] == "password" else a
+            for i, a in enumerate(self._args)
+        ]
+        self.line.emit("$ nmcli " + " ".join(safe_args))
         try:
-            proc = subprocess.Popen(
+            self._proc = subprocess.Popen(
                 ["nmcli"] + self._args,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             )
-            for line in proc.stdout:
-                self.line.emit(line.rstrip())
-            proc.wait()
-            self.finished.emit(proc.returncode == 0)
+            if self._proc.stdout:
+                for line in self._proc.stdout:
+                    if self._cancelled:
+                        break
+                    self.line.emit(line.rstrip())
+            rc = self._proc.wait()
+            if not self._cancelled:
+                self.finished.emit(rc == 0)
         except Exception as e:
-            self.line.emit(f"Error: {e}")
-            self.finished.emit(False)
+            if not self._cancelled:
+                self.line.emit(f"Error: {e}")
+                self.finished.emit(False)
 
 
 class PasswordDialog(QDialog):
     def __init__(self, ssid, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Connect to {ssid}")
-        self.setFixedSize(420, 180)
-        self.setStyleSheet(STYLE)
+        self.setMinimumSize(420, 180)
+        vt.apply_app_theme(self)
         layout = QFormLayout(self)
 
         self._password = QLineEdit()
@@ -163,8 +181,8 @@ class HotspotDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Create Hotspot")
-        self.setFixedSize(420, 220)
-        self.setStyleSheet(STYLE)
+        self.setMinimumSize(420, 220)
+        vt.apply_app_theme(self)
         layout = QFormLayout(self)
 
         self._ssid = QLineEdit("Vice-OS-Hotspot")
@@ -192,10 +210,13 @@ class WifiConnect(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — WiFi Connect")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(780, 500)
+        vt.apply_app_theme(self)
         self._scan_worker = None
         self._conn_worker = None
+        self._pending_autoconnect = None
+        self._pending_ssid = None
         self._init_ui()
         self._refresh_status()
         self._scan()
@@ -203,64 +224,60 @@ class WifiConnect(QWidget):
     def _init_ui(self):
         root = QVBoxLayout(self)
 
-        title = QLabel("Vice OS — WiFi Connect")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        root.addWidget(vt.make_header(
+            "WiFi Connect",
+            "Scan nearby networks, connect, manage saved profiles and hotspots",
+            icon_name="network-wireless",
+            badge_text="WIFI",
+            badge_variant="aqua",
+            parent=self,
+        ))
 
-        # Status row
         status_row = QHBoxLayout()
         self._wifi_status = QLabel("WiFi: checking...")
         self._wifi_status.setFont(QFont("monospace", 11, QFont.Bold))
         status_row.addWidget(self._wifi_status)
         status_row.addStretch()
 
-        scan_btn = QPushButton("↻ Rescan")
+        scan_btn = vt.make_button("Rescan", "secondary", parent=self)
         scan_btn.clicked.connect(self._scan)
         status_row.addWidget(scan_btn)
 
-        hotspot_btn = QPushButton("📡 Create Hotspot")
+        hotspot_btn = vt.make_button("Create Hotspot", "secondary", parent=self)
         hotspot_btn.clicked.connect(self._create_hotspot)
         status_row.addWidget(hotspot_btn)
 
-        wifi_toggle = QPushButton("WiFi On/Off")
+        wifi_toggle = vt.make_button("WiFi On/Off", "secondary", parent=self)
         wifi_toggle.clicked.connect(self._toggle_wifi)
         status_row.addWidget(wifi_toggle)
         root.addLayout(status_row)
 
-        # Networks table
         self._table = QTableWidget()
         self._table.setColumnCount(4)
         self._table.setHorizontalHeaderLabels(["SSID", "Signal", "Security", "In Use"])
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        for col in (1, 2, 3):
+            self._table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeToContents)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._table.cellDoubleClicked.connect(lambda r, c: self._connect_selected())
         root.addWidget(self._table, 1)
 
-        # Action buttons
         btn_row = QHBoxLayout()
-        connect_btn = QPushButton("Connect")
-        connect_btn.setStyleSheet("QPushButton { border-color: #ff00ff; color: #ff00ff; } QPushButton:hover { background: #ff00ff; color: #0a0a0a; }")
+        connect_btn = vt.make_button("Connect", "primary", parent=self)
         connect_btn.clicked.connect(self._connect_selected)
         btn_row.addWidget(connect_btn)
 
-        forget_btn = QPushButton("Forget Network")
-        forget_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        forget_btn = vt.make_button("Forget Network", "danger", parent=self)
         forget_btn.clicked.connect(self._forget_selected)
         btn_row.addWidget(forget_btn)
 
-        saved_btn = QPushButton("Saved Networks")
+        saved_btn = vt.make_button("Saved Networks", "secondary", parent=self)
         saved_btn.clicked.connect(self._show_saved)
         btn_row.addWidget(saved_btn)
         btn_row.addStretch()
         root.addLayout(btn_row)
 
-        # Progress + log
         self._progress = QProgressBar()
         self._progress.setRange(0, 0)
         self._progress.setVisible(False)
@@ -272,7 +289,7 @@ class WifiConnect(QWidget):
         root.addWidget(self._log)
 
         self._status = QLabel("Ready — double-click a network to connect")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']}; font-size: 11px;")
         root.addWidget(self._status)
 
     def _refresh_status(self):
@@ -280,8 +297,8 @@ class WifiConnect(QWidget):
         wifi_enabled = out.startswith("enabled")
         self._wifi_status.setText("WiFi: " + ("ENABLED" if wifi_enabled else "DISABLED"))
         self._wifi_status.setStyleSheet(
-            "color: #00ff88; font-weight: bold;" if wifi_enabled
-            else "color: #ff4444; font-weight: bold;"
+            f"color: {vt.COLORS['success']}; font-weight: bold;" if wifi_enabled
+            else f"color: {vt.COLORS['danger']}; font-weight: bold;"
         )
 
     def _toggle_wifi(self):
@@ -294,9 +311,11 @@ class WifiConnect(QWidget):
         self._scan()
 
     def _scan(self):
+        if self._scan_worker is not None and self._scan_worker.isRunning():
+            return
         self._table.setRowCount(0)
         self._status.setText("Scanning...")
-        self._scan_worker = ScanWorker()
+        self._scan_worker = ScanWorker(parent=self)
         self._scan_worker.done.connect(self._on_scan_done)
         self._scan_worker.start()
 
@@ -308,14 +327,16 @@ class WifiConnect(QWidget):
 
             ssid_item = QTableWidgetItem(net["ssid"])
             if net["in_use"]:
-                ssid_item.setForeground(QBrush(QColor("#00ff88")))
+                ssid_item.setForeground(QBrush(QColor(vt.COLORS["success"])))
             self._table.setItem(row, 0, ssid_item)
 
-            self._table.setItem(row, 1, QTableWidgetItem(signal_bars(net["signal"]) + f" ({net['signal']}%)"))
-            self._table.setItem(row, 2, QTableWidgetItem(security_icon(net["security"])))
+            self._table.setItem(row, 1, QTableWidgetItem(
+                signal_bars(net["signal"]) + f" ({net['signal']}%)"
+            ))
+            self._table.setItem(row, 2, QTableWidgetItem(security_label(net["security"])))
 
-            use_item = QTableWidgetItem("● Connected" if net["in_use"] else "")
-            use_item.setForeground(QBrush(QColor("#00ff88")))
+            use_item = QTableWidgetItem("Connected" if net["in_use"] else "")
+            use_item.setForeground(QBrush(QColor(vt.COLORS["success"])))
             self._table.setItem(row, 3, use_item)
 
         self._status.setText(f"{len(networks)} network(s) found")
@@ -333,31 +354,39 @@ class WifiConnect(QWidget):
             QMessageBox.warning(self, "No Selection", "Select a network first.")
             return
 
-        # Check if open or secured
         row = self._table.currentRow()
-        sec_text = self._table.item(row, 2).text()
-        password = ""
+        sec_item = self._table.item(row, 2)
+        sec_text = sec_item.text() if sec_item else "Open"
+        args = ["device", "wifi", "connect", ssid]
         autoconnect = "yes"
-        if "Open" not in sec_text:
+        if sec_text != "Open":
             dlg = PasswordDialog(ssid, self)
             if dlg.exec_() != QDialog.Accepted:
                 return
             password, autoconnect = dlg.values()
+            if password:
+                args += ["password", password]
 
-        self._run_connect(["device", "wifi", "connect", ssid,
-                           "password", password or "dummy"])
-        if autoconnect == "yes" and password:
-            self._log.appendPlainText("Note: connection is saved by NetworkManager for auto-reconnect.")
+        self._pending_ssid = ssid
+        self._pending_autoconnect = autoconnect
+        self._run_connect(args)
 
     def _run_connect(self, args):
+        if self._conn_worker is not None and self._conn_worker.isRunning():
+            QMessageBox.information(self, "Busy", "Connection already in progress.")
+            return
         self._progress.setVisible(True)
-        self._conn_worker = ConnectWorker(args)
+        self._conn_worker = ConnectWorker(args, parent=self)
         self._conn_worker.line.connect(self._log.appendPlainText)
         self._conn_worker.finished.connect(self._connect_done)
         self._conn_worker.start()
 
     def _connect_done(self, ok):
         self._progress.setVisible(False)
+        if ok and self._pending_ssid and self._pending_autoconnect == "no":
+            nmcli(["connection", "modify", "id", self._pending_ssid, "connection.autoconnect", "no"])
+        self._pending_ssid = None
+        self._pending_autoconnect = None
         self._refresh_status()
         if ok:
             self._status.setText("Connected")
@@ -373,8 +402,10 @@ class WifiConnect(QWidget):
         if not ssid:
             QMessageBox.warning(self, "No Selection", "Select a network first.")
             return
-        if QMessageBox.question(self, "Forget", f"Remove saved credentials for '{ssid}'?",
-                                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+        if QMessageBox.question(
+            self, "Forget", f"Remove saved credentials for '{ssid}'?",
+            QMessageBox.Yes | QMessageBox.No,
+        ) != QMessageBox.Yes:
             return
         out, ok = nmcli(["connection", "delete", "id", ssid])
         if ok:
@@ -385,7 +416,7 @@ class WifiConnect(QWidget):
 
     def _show_saved(self):
         out, _ = nmcli(["-t", "-f", "NAME,TYPE,DEVICE", "connection", "show"])
-        wifi_conns = [l for l in out.splitlines() if ":802-11" in l]
+        wifi_conns = [line for line in out.splitlines() if ":802-11" in line]
         msg = "\n".join(wifi_conns) if wifi_conns else "No saved WiFi networks."
         QMessageBox.information(self, "Saved Networks", msg)
 
@@ -394,6 +425,9 @@ class WifiConnect(QWidget):
         if dlg.exec_() != QDialog.Accepted:
             return
         ssid, password, band = dlg.values()
+        if not ssid:
+            QMessageBox.warning(self, "Invalid SSID", "Hotspot SSID cannot be empty.")
+            return
         if len(password) < 8:
             QMessageBox.warning(self, "Weak Password", "Hotspot password must be at least 8 characters.")
             return
@@ -402,7 +436,18 @@ class WifiConnect(QWidget):
         if iface:
             args += ["ifname", iface]
         args += ["ssid", ssid, "password", password, "band", band]
+        self._pending_ssid = None
+        self._pending_autoconnect = None
         self._run_connect(args)
+
+    def closeEvent(self, event):
+        if self._scan_worker is not None and self._scan_worker.isRunning():
+            self._scan_worker.stop()
+            self._scan_worker.wait(2000)
+        if self._conn_worker is not None and self._conn_worker.isRunning():
+            self._conn_worker.stop()
+            self._conn_worker.wait(2500)
+        super().closeEvent(event)
 
 
 def main():

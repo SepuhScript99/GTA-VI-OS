@@ -1,82 +1,73 @@
 #!/usr/bin/env python3
 """Vice OS — Theme Manager. Apply color themes, GTK/Qt styling, font selection, icon themes."""
 
-import sys
+import json
 import os
 import shutil
 import subprocess
-import json
-
-sys.path.insert(0, '/opt/vice-os/lib')
+import sys
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QComboBox, QGroupBox, QMessageBox, QFontComboBox, QSlider, QListWidget,
+    QComboBox, QGroupBox, QFontComboBox, QSlider, QListWidget,
     QListWidgetItem, QSplitter, QFrame, QLineEdit
 )
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QColor, QPainter
+from PyQt5.QtGui import QColor, QPainter
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-WINDOW_WIDTH = 900
-WINDOW_HEIGHT = 620
+from python.vice_utils import log_info, log_error  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    CJK_FONT_FAMILIES,
+    apply_app_theme,
+    make_button,
+    make_header,
+)
 
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QGroupBox { border: 1px solid #00ffff; margin-top: 10px; padding: 10px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QListWidget { background: #0d0d0d; color: #00ffff; border: 1px solid #00ffff; }
-QListWidget::item:selected { background: #00ffff; color: #0a0a0a; }
-QSlider::groove:horizontal { background: #1a1a1a; height: 6px; border: 1px solid #00ffff; }
-QSlider::handle:horizontal { background: #00ffff; width: 16px; height: 16px; margin: -5px 0; border-radius: 8px; }
-QLabel { color: #00ffff; }
-QSplitter::handle { background: #00ffff; width: 1px; }
-"""
+WINDOW_WIDTH = 920
+WINDOW_HEIGHT = 640
 
 THEME_FILE = os.path.expanduser("~/.config/vice-os/theme.json")
 QSS_FILE = os.path.expanduser("~/.config/vice-os/theme.qss")
 
 THEMES = {
-    "Cyberpunk Cyan":  {"primary": "#00ffff", "accent": "#ff00ff", "bg": "#0a0a0a", "fg": "#ccffff"},
-    "Blood Red":       {"primary": "#ff2222", "accent": "#ff8800", "bg": "#0a0a0a", "fg": "#ffcccc"},
-    "Matrix Green":    {"primary": "#00ff41", "accent": "#00aa00", "bg": "#000a00", "fg": "#ccffcc"},
-    "Neon Purple":     {"primary": "#bf00ff", "accent": "#ff00ff", "bg": "#0a0a0a", "fg": "#eeccff"},
-    "Solar Gold":      {"primary": "#ffd700", "accent": "#ff8c00", "bg": "#0a0a0a", "fg": "#fff8dd"},
-    "Ice Blue":        {"primary": "#88ccff", "accent": "#0088ff", "bg": "#0d0d12", "fg": "#e0f0ff"},
-    "Vaporwave":       {"primary": "#ff71ce", "accent": "#01cdfe", "bg": "#0d0221", "fg": "#ffb3f0"},
-    "Terminal Amber":  {"primary": "#ffb000", "accent": "#ff6600", "bg": "#0a0a00", "fg": "#ffe0a0"},
+    "Leonida Dusk": {
+        "primary": COLORS["accent_coral"],
+        "accent": COLORS["accent_aqua"],
+        "bg": COLORS["bg_canvas"],
+        "fg": COLORS["text_primary"],
+    },
+    "Sunset Coral": {"primary": "#FF9A62", "accent": "#F7C873", "bg": "#121018", "fg": "#F5F6FA"},
+    "Emerald Pine": {"primary": "#3ED598", "accent": "#36D6C3", "bg": "#0B1210", "fg": "#EAF5F0"},
+    "Crimson Slate": {"primary": "#F25C6E", "accent": "#FF9A62", "bg": "#130F14", "fg": "#F5F6FA"},
+    "Ocean Mist": {"primary": "#5E9EFF", "accent": "#36D6C3", "bg": "#0D111A", "fg": "#EDF2FA"},
+    "Nord Dusk": {"primary": "#88C0D0", "accent": "#EBCB8B", "bg": "#1D222B", "fg": "#ECEFF4"},
+    "Solar Gold": {"primary": "#F7C873", "accent": "#FF9A62", "bg": "#12110E", "fg": "#F8F6EE"},
+    "Obsidian Mono": {"primary": "#A6AEBF", "accent": "#F5F6FA", "bg": "#0E1015", "fg": "#F5F6FA"},
 }
 
 
 def build_qss(theme):
-    return f"""
-QWidget {{ background-color: {theme['bg']}; color: {theme['fg']}; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }}
-QPushButton {{ background: #1a1a1a; color: {theme['primary']}; border: 1px solid {theme['primary']}; padding: 5px 14px; }}
-QPushButton:hover {{ background: {theme['primary']}; color: {theme['bg']}; }}
-QPushButton:disabled {{ color: #444; border-color: #444; }}
-QLineEdit {{ background: #1a1a1a; color: {theme['primary']}; border: 1px solid {theme['primary']}; padding: 5px; }}
-QComboBox {{ background: #1a1a1a; color: {theme['primary']}; border: 1px solid {theme['primary']}; padding: 4px; }}
-QTableWidget {{ background: #0d0d0d; color: {theme['primary']}; gridline-color: #1a4a4a; border: 1px solid {theme['primary']}; }}
-QHeaderView::section {{ background: {theme['primary']}; color: {theme['bg']}; padding: 4px; font-weight: bold; }}
-QTableWidget::item:selected {{ background: {theme['accent']}; color: {theme['bg']}; }}
-QListWidget {{ background: #0d0d0d; color: {theme['primary']}; border: 1px solid {theme['primary']}; }}
-QListWidget::item:selected {{ background: {theme['primary']}; color: {theme['bg']}; }}
-QTabBar::tab {{ background: #1a1a1a; color: {theme['primary']}; padding: 6px 14px; }}
-QTabBar::tab:selected {{ background: {theme['primary']}; color: {theme['bg']}; }}
-QTabWidget::pane {{ border: 1px solid {theme['primary']}; }}
-QGroupBox {{ border: 1px solid {theme['primary']}; margin-top: 10px; padding: 8px; }}
-QGroupBox::title {{ color: {theme['accent']}; subcontrol-origin: margin; left: 8px; }}
-QProgressBar {{ border: 1px solid {theme['primary']}; background: #1a1a1a; text-align: center; color: {theme['primary']}; }}
-QProgressBar::chunk {{ background: {theme['primary']}; }}
-QTextEdit {{ background: #0d0d0d; color: {theme['fg']}; border: 1px solid #1a4a4a; }}
-QScrollBar:vertical {{ background: {theme['bg']}; width: 8px; }}
-QScrollBar::handle:vertical {{ background: {theme['primary']}; border-radius: 4px; }}
-QLabel {{ color: {theme['primary']}; }}
-"""
+    fonts = ", ".join(f'"{f}"' for f in CJK_FONT_FAMILIES)
+    return (
+        f"QWidget {{ background-color: {theme['bg']}; color: {theme['fg']}; font-family: {fonts}; }}\n"
+        f"QPushButton {{ background: #141621; color: {theme['fg']}; border: 1px solid #262A3D; border-radius: 6px; padding: 6px 14px; }}\n"
+        f"QPushButton:hover {{ border-color: {theme['primary']}; background: #1B1E2D; }}\n"
+        f"QPushButton:disabled {{ color: #6E778C; border-color: #262A3D; }}\n"
+        f"QLineEdit, QComboBox {{ background: #141621; color: {theme['fg']}; border: 1px solid #262A3D; border-radius: 6px; padding: 5px 8px; }}\n"
+        f"QTableWidget, QListWidget, QTextEdit {{ background: #141621; color: {theme['fg']}; border: 1px solid #262A3D; border-radius: 6px; }}\n"
+        f"QListWidget::item:selected, QTableWidget::item:selected {{ background: #23273A; color: {theme['primary']}; }}\n"
+        f"QTabBar::tab {{ background: #141621; color: #A6AEBF; padding: 6px 14px; }}\n"
+        f"QTabBar::tab:selected {{ color: {theme['primary']}; border-bottom: 2px solid {theme['primary']}; }}\n"
+        f"QGroupBox {{ border: 1px solid #262A3D; border-radius: 8px; margin-top: 10px; padding: 8px; }}\n"
+        f"QGroupBox::title {{ color: {theme['accent']}; subcontrol-origin: margin; left: 8px; }}\n"
+        f"QProgressBar {{ border: 1px solid #262A3D; background: #141621; text-align: center; color: {theme['fg']}; }}\n"
+        f"QProgressBar::chunk {{ background: {theme['primary']}; }}\n"
+    )
 
 
 class ColorSwatch(QFrame):
@@ -90,34 +81,41 @@ class ColorSwatch(QFrame):
     def paintEvent(self, event):
         p = QPainter(self)
         p.fillRect(self.rect(), self._color)
-        p.setPen(QColor("#000000") if self._color.lightness() > 128 else QColor("#ffffff"))
+        p.setPen(QColor("#0D0E15") if self._color.lightness() > 128 else QColor("#F5F6FA"))
         p.drawText(self.rect(), Qt.AlignCenter, self._label)
+        p.end()
 
 
 class ThemeManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Theme Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
-        self._current_theme = "Cyberpunk Cyan"
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(720, 500)
+        apply_app_theme(self)
+        self._current_theme = "Leonida Dusk"
         self._init_ui()
         self._load_current()
         self._apply_preview()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 14)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — Theme Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        header = make_header(
+            title="Theme Manager",
+            subtitle="Customize Vice OS palette presets, system fonts, and icon themes",
+            icon_name="preferences-desktop-theme",
+            badge_text="APPEARANCE",
+            badge_variant="coral",
+            parent=self,
+        )
+        root.addWidget(header)
 
         splitter = QSplitter(Qt.Horizontal)
-        root.addWidget(splitter)
+        root.addWidget(splitter, 1)
 
-        # Left: theme list
         left = QWidget()
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 0, 0)
@@ -132,12 +130,10 @@ class ThemeManager(QWidget):
         ll.addWidget(self._theme_list)
         splitter.addWidget(left)
 
-        # Right: preview + options
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
 
-        # Preview widgets
         prev_box = QGroupBox("Preview")
         pv = QVBoxLayout(prev_box)
 
@@ -147,10 +143,11 @@ class ThemeManager(QWidget):
         pv.addWidget(self._preview_frame)
 
         swatch_row = QHBoxLayout()
-        self._swatch_primary = ColorSwatch("#00ffff", "P")
-        self._swatch_accent = ColorSwatch("#ff00ff", "A")
-        self._swatch_bg = ColorSwatch("#0a0a0a", "B")
-        self._swatch_fg = ColorSwatch("#ccffff", "F")
+        t_def = THEMES[self._current_theme]
+        self._swatch_primary = ColorSwatch(t_def["primary"], "P")
+        self._swatch_accent = ColorSwatch(t_def["accent"], "A")
+        self._swatch_bg = ColorSwatch(t_def["bg"], "B")
+        self._swatch_fg = ColorSwatch(t_def["fg"], "F")
         swatch_row.addWidget(QLabel("Colors:"))
         swatch_row.addWidget(self._swatch_primary)
         swatch_row.addWidget(self._swatch_accent)
@@ -160,7 +157,6 @@ class ThemeManager(QWidget):
         pv.addLayout(swatch_row)
         rl.addWidget(prev_box)
 
-        # Font selection
         font_box = QGroupBox("System Font")
         fb = QVBoxLayout(font_box)
         self._font_combo = QFontComboBox()
@@ -170,19 +166,18 @@ class ThemeManager(QWidget):
         size_row.addWidget(QLabel("Size:"))
         self._font_size = QSlider(Qt.Horizontal)
         self._font_size.setRange(8, 16)
-        self._font_size.setValue(11)
+        self._font_size.setValue(10)
         size_row.addWidget(self._font_size)
-        self._font_size_label = QLabel("11")
+        self._font_size_label = QLabel("10")
         self._font_size.valueChanged.connect(lambda v: self._font_size_label.setText(str(v)))
         size_row.addWidget(self._font_size_label)
         fb.addLayout(size_row)
         rl.addWidget(font_box)
 
-        # Icon theme
         icon_box = QGroupBox("Icon Theme")
         ib = QVBoxLayout(icon_box)
         self._icon_combo = QComboBox()
-        self._icon_combo.addItems(["Papirus-Dark", "Adwaita-dark", "breeze-dark", "Faenza-Dark", "System Default"])
+        self._icon_combo.addItems(["Papirus-Dark", "Adwaita-dark", "breeze-dark", "System Default"])
         ib.addWidget(self._icon_combo)
         rl.addWidget(icon_box)
 
@@ -190,29 +185,27 @@ class ThemeManager(QWidget):
         splitter.addWidget(right)
         splitter.setSizes([260, 620])
 
-        # Buttons
         btn_row = QHBoxLayout()
-        apply_btn = QPushButton("Apply Theme")
-        apply_btn.setStyleSheet("QPushButton { border-color: #ff00ff; color: #ff00ff; } QPushButton:hover { background: #ff00ff; color: #0a0a0a; }")
+        apply_btn = make_button("Apply Theme", variant="primary", parent=self)
         apply_btn.clicked.connect(self._apply_theme)
         btn_row.addWidget(apply_btn)
 
-        reset_btn = QPushButton("Reset to Cyberpunk Cyan")
+        reset_btn = make_button("Reset to Leonida Dusk", variant="secondary", parent=self)
         reset_btn.clicked.connect(self._reset)
         btn_row.addWidget(reset_btn)
         btn_row.addStretch()
         root.addLayout(btn_row)
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setObjectName("MutedLabel")
         root.addWidget(self._status)
 
     def _load_current(self):
         if os.path.exists(THEME_FILE):
             try:
-                with open(THEME_FILE) as f:
+                with open(THEME_FILE, encoding="utf-8") as f:
                     data = json.load(f)
-                name = data.get("name", "Cyberpunk Cyan")
+                name = data.get("name", "Leonida Dusk")
                 if name in THEMES:
                     self._current_theme = name
             except Exception:
@@ -221,8 +214,9 @@ class ThemeManager(QWidget):
         self._theme_list.setCurrentRow(idx)
 
     def _on_theme_selected(self, name):
-        self._current_theme = name
-        self._apply_preview()
+        if name in THEMES:
+            self._current_theme = name
+            self._apply_preview()
 
     def _apply_preview(self):
         theme = THEMES[self._current_theme]
@@ -234,10 +228,9 @@ class ThemeManager(QWidget):
             sw.update()
 
         self._preview_frame.setStyleSheet(
-            f"background-color: {theme['bg']}; border: 2px solid {theme['primary']};"
+            f"background-color: {theme['bg']}; border: 1px solid {theme['primary']}; border-radius: 8px; padding: 8px;"
         )
 
-        # Live preview via persistent layout
         inner = self._preview_layout
         while inner.count():
             item = inner.takeAt(0)
@@ -245,13 +238,13 @@ class ThemeManager(QWidget):
             if w:
                 w.deleteLater()
 
-        btn = QPushButton("Button")
+        btn = QPushButton("Sample Button")
         edit = QLineEdit("Text input")
-        lbl = QLabel("Label text")
+        lbl = QLabel("Sample Label")
         for w in (btn, edit, lbl):
             inner.addWidget(w)
 
-    def _font_changed(self, font):
+    def _font_changed(self, _font):
         self._font_size_label.setText(str(self._font_size.value()))
 
     def _apply_theme(self):
@@ -260,7 +253,6 @@ class ThemeManager(QWidget):
         font_size = self._font_size.value()
         icon_theme = self._icon_combo.currentText()
 
-        # Save theme config
         os.makedirs(os.path.dirname(THEME_FILE), exist_ok=True)
         config = {
             "name": self._current_theme,
@@ -270,36 +262,40 @@ class ThemeManager(QWidget):
             "icon_theme": icon_theme,
         }
         try:
-            with open(THEME_FILE, "w") as f:
+            with open(THEME_FILE, "w", encoding="utf-8", newline="\n") as f:
                 json.dump(config, f, indent=2)
         except Exception as e:
             log_error(f"Theme save failed: {e}")
 
-        # Write QSS file
         try:
             qss = build_qss(theme)
-            with open(QSS_FILE, "w") as f:
+            with open(QSS_FILE, "w", encoding="utf-8", newline="\n") as f:
                 f.write(qss)
         except Exception as e:
             log_error(f"QSS write failed: {e}")
 
-        # Apply GTK theme hint via gsettings when available
         if shutil.which("gsettings"):
-            subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "gtk-theme",
-                            "Adwaita-dark"], capture_output=True)
+            subprocess.run(
+                ["gsettings", "set", "org.gnome.desktop.interface", "gtk-theme", "Adwaita-dark"],
+                capture_output=True,
+            )
             if icon_theme != "System Default":
-                subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "icon-theme",
-                                icon_theme], capture_output=True)
-            subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "font-name",
-                            f"{font} {font_size}"], capture_output=True)
+                subprocess.run(
+                    ["gsettings", "set", "org.gnome.desktop.interface", "icon-theme", icon_theme],
+                    capture_output=True,
+                )
+            subprocess.run(
+                ["gsettings", "set", "org.gnome.desktop.interface", "font-name", f"{font} {font_size}"],
+                capture_output=True,
+            )
 
         self._status.setText(f"Theme applied: {self._current_theme}")
         log_info(f"Theme applied: {self._current_theme} font={font} size={font_size}")
 
     def _reset(self):
-        self._current_theme = "Cyberpunk Cyan"
+        self._current_theme = "Leonida Dusk"
         self._theme_list.setCurrentRow(0)
-        self._font_size.setValue(11)
+        self._font_size.setValue(10)
         self._apply_theme()
 
 

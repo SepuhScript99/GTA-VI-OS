@@ -98,10 +98,12 @@ main() {
         systemctl disable "$unit" 2>/dev/null || true
     done
 
-    # Mask periodic audit timers/services that require an MTA (mail) or pre-built DB
+    # Mask periodic audit timers/services that require an MTA (mail) or pre-built DB,
+    # plus zramswap.service (zram-tools conflicts with zram-setup.service on /dev/zram0)
     local failing_timers=(
         "chkrootkit.service" "chkrootkit.timer"
         "dailyaidecheck.service" "dailyaidecheck.timer"
+        "zramswap.service"
     )
     for unit in "${failing_timers[@]}"; do
         systemctl disable "$unit" 2>/dev/null || true
@@ -128,14 +130,35 @@ vm.dirty_background_ratio=5
 kernel.numa_balancing=0
 SYSCTL
 
-    # ── 9. Safeguard PipeWire drop-in, zoneinfo/LibreOffice icons & rebuild caches ──
+    # ── 9. Align PipeWire with stock Debian 12, suppress headless tray applets, & rebuild caches ──
     # Keep /usr/share/zoneinfo intact for host timezone auto-sync (vice-timesync)
     # and keep LibreOffice sifr_dark/colibre icon themes intact for Office Studio.
     if [ -d /usr/share/zoneinfo ]; then
         log_info "Preserving /usr/share/zoneinfo for host timezone sync."
     fi
-    if [ -f /etc/pipewire/pipewire.conf.d/10-vice-audio.conf ]; then
-        rm -f /etc/pipewire/pipewire.conf
+    rm -f /etc/pipewire/pipewire.conf \
+          /etc/pipewire/pipewire.conf.d/10-vice-audio.conf \
+          /etc/pipewire/pipewire-pulse.conf.d/10-vice-pulse.conf
+
+    # Suppress XDG tray applets when no XEmbed tray (stalonetray) is installed
+    # so openbox-xdg-autostart does not launch headless tray processes.
+    if ! command -v stalonetray >/dev/null 2>&1; then
+        local autostart_dirs=("/etc/skel/.config/autostart")
+        if [ -d /home/vice ]; then
+            autostart_dirs+=("/home/vice/.config/autostart")
+        fi
+        local as_dir applet
+        for as_dir in "${autostart_dirs[@]}"; do
+            mkdir -p "$as_dir"
+            for applet in nm-applet.desktop blueman.desktop print-applet.desktop; do
+                printf '[Desktop Entry]\nType=Application\nHidden=true\n' > "${as_dir}/${applet}"
+                chmod 644 "${as_dir}/${applet}"
+            done
+        done
+        if id -u vice >/dev/null 2>&1 && [ -d /home/vice/.config/autostart ]; then
+            chown -R vice:vice /home/vice/.config/autostart
+        fi
+        log_info "Suppressed headless tray applets (nm-applet, blueman, print-applet)."
     fi
     if command -v fc-cache >/dev/null 2>&1; then
         log_info "Refreshing system fontconfig cache..."

@@ -4,48 +4,24 @@ GTA VI OS (Vice OS) Display Manager
 Screen resolution, refresh rate, orientation, and multi-monitor layout configuration.
 """
 
-import sys
-import os
-import subprocess
 import re
+import subprocess
+import sys
+
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import (
+    QApplication, QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel,
+    QMessageBox, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
+)
 
 sys.path.insert(0, '/opt/vice-os/lib')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QComboBox, QGroupBox, QMessageBox, QSpinBox, QCheckBox, QTabWidget,
-    QTableWidget, QTableWidgetItem, QHeaderView, QSlider
-)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont
-
-from python.vice_utils import log_info, log_error
+from python.vice_utils import log_error, log_info  # noqa: E402
+import vice_theme as vt  # noqa: E402
 
 WINDOW_WIDTH = 860
 WINDOW_HEIGHT = 580
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QGroupBox { border: 1px solid #00ffff; margin-top: 10px; padding: 8px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QTabBar::tab { background: #1a1a1a; color: #00ffff; padding: 6px 14px; }
-QTabBar::tab:selected { background: #00ffff; color: #0a0a0a; }
-QTabWidget::pane { border: 1px solid #00ffff; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #00ffff; color: #0a0a0a; }
-QCheckBox { color: #00ffff; }
-QCheckBox::indicator { width: 13px; height: 13px; background: #1a1a1a; border: 1px solid #00ffff; }
-QCheckBox::indicator:checked { background: #00ffff; }
-QSpinBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 3px; }
-QSlider::groove:horizontal { background: #1a1a1a; height: 4px; border: 1px solid #00ffff; }
-QSlider::handle:horizontal { background: #00ffff; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }
-QLabel { color: #00ffff; }
-"""
 
 
 def run_xrandr():
@@ -96,21 +72,30 @@ def parse_displays(xrandr_out):
 class ApplyWorker(QThread):
     done = pyqtSignal(bool, str)
 
-    def __init__(self, cmds):
-        super().__init__()
-        self.cmds = cmds
+    def __init__(self, cmds, parent=None):
+        super().__init__(parent)
+        self.cmds = list(cmds)
+        self._cancelled = False
+
+    def stop(self):
+        self._cancelled = True
 
     def run(self):
         for cmd in self.cmds:
+            if self._cancelled:
+                return
             try:
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
                 if r.returncode != 0:
-                    self.done.emit(False, r.stderr.strip() or "xrandr error")
+                    if not self._cancelled:
+                        self.done.emit(False, (r.stderr or "").strip() or "xrandr error")
                     return
             except Exception as e:
-                self.done.emit(False, str(e))
+                if not self._cancelled:
+                    self.done.emit(False, str(e))
                 return
-        self.done.emit(True, "Settings applied")
+        if not self._cancelled:
+            self.done.emit(True, "Settings applied")
 
 
 class DisplayPage(QWidget):
@@ -127,10 +112,9 @@ class DisplayPage(QWidget):
         active = "Active" if self._info["active"] else "Inactive"
         hdr = QLabel(f"{self._name}  —  {status}  |  {active}")
         hdr.setFont(QFont("monospace", 12, QFont.Bold))
-        hdr.setStyleSheet("color: #ff00ff;")
+        hdr.setStyleSheet(f"color: {vt.COLORS['accent_coral']};")
         root.addWidget(hdr)
 
-        # Resolution
         res_box = QGroupBox("Resolution")
         rl = QHBoxLayout(res_box)
         rl.addWidget(QLabel("Resolution:"))
@@ -153,7 +137,15 @@ class DisplayPage(QWidget):
         root.addWidget(res_box)
         self._update_rates(self._res_combo.currentText())
 
-        # Position / offset
+        if self._info.get("current_rate"):
+            try:
+                cur_label = f"{float(self._info['current_rate']):.2f} Hz"
+                ridx = self._rate_combo.findText(cur_label)
+                if ridx >= 0:
+                    self._rate_combo.setCurrentIndex(ridx)
+            except ValueError:
+                pass
+
         pos_box = QGroupBox("Position (offset)")
         pl = QHBoxLayout(pos_box)
         pl.addWidget(QLabel("X:"))
@@ -166,9 +158,9 @@ class DisplayPage(QWidget):
         self._y_spin.setRange(0, 4320)
         self._y_spin.setValue(int(self._info["offset_y"] or 0))
         pl.addWidget(self._y_spin)
+        pl.addStretch()
         root.addWidget(pos_box)
 
-        # Options
         opt_box = QGroupBox("Options")
         ol = QHBoxLayout(opt_box)
         self._primary_cb = QCheckBox("Set as primary")
@@ -187,18 +179,24 @@ class DisplayPage(QWidget):
         self._rate_combo.clear()
         for mode in self._info["modes"]:
             if mode["res"] == res:
-                for r in mode["rates"]:
-                    self._rate_combo.addItem(f"{r:.2f} Hz")
+                for rate in mode["rates"]:
+                    self._rate_combo.addItem(f"{rate:.2f} Hz")
                 break
 
     def build_xrandr_args(self):
         if self._off_cb.isChecked():
             return ["--output", self._name, "--off"]
-        args = ["--output", self._name,
-                "--mode", self._res_combo.currentText(),
-                "--pos", f"{self._x_spin.value()}x{self._y_spin.value()}",
-                "--rotate", self._rotate_combo.currentText()]
-        rate_text = self._rate_combo.currentText().replace(" Hz", "")
+        res = self._res_combo.currentText().strip()
+        args = ["--output", self._name]
+        if res:
+            args += ["--mode", res]
+        else:
+            args += ["--auto"]
+        args += [
+            "--pos", f"{self._x_spin.value()}x{self._y_spin.value()}",
+            "--rotate", self._rotate_combo.currentText(),
+        ]
+        rate_text = self._rate_combo.currentText().replace(" Hz", "").strip()
         if rate_text:
             args += ["--rate", rate_text]
         if self._primary_cb.isChecked():
@@ -210,8 +208,9 @@ class DisplayManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Display Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(720, 460)
+        vt.apply_app_theme(self)
         self._display_pages = {}
         self._worker = None
         self._init_ui()
@@ -219,27 +218,30 @@ class DisplayManager(QWidget):
     def _init_ui(self):
         root = QVBoxLayout(self)
 
-        title = QLabel("Vice OS — Display Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 14, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        root.addWidget(vt.make_header(
+            "Display Manager",
+            "Resolution, refresh rate, rotation and multi-monitor layout",
+            icon_name="video-display",
+            badge_text="XRANDR",
+            badge_variant="coral",
+            parent=self,
+        ))
 
         self._tabs = QTabWidget()
         root.addWidget(self._tabs)
 
         btn_row = QHBoxLayout()
-        self._apply_btn = QPushButton("Apply")
+        self._apply_btn = vt.make_button("Apply", "primary", parent=self)
         self._apply_btn.clicked.connect(self._apply)
         btn_row.addWidget(self._apply_btn)
 
-        self._revert_btn = QPushButton("Revert / Re-scan")
+        self._revert_btn = vt.make_button("Revert / Re-scan", "secondary", parent=self)
         self._revert_btn.clicked.connect(self._scan)
         btn_row.addWidget(self._revert_btn)
 
         btn_row.addStretch()
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888;")
+        self._status.setStyleSheet(f"color: {vt.COLORS['text_secondary']};")
         btn_row.addWidget(self._status)
         root.addLayout(btn_row)
 
@@ -253,7 +255,7 @@ class DisplayManager(QWidget):
             self._status.setText("xrandr not available or no display server")
             placeholder = QLabel("No display information available.\n(xrandr required)")
             placeholder.setAlignment(Qt.AlignCenter)
-            placeholder.setStyleSheet("color: #444; font-size: 14px;")
+            placeholder.setStyleSheet(f"color: {vt.COLORS['text_muted']}; font-size: 14px;")
             self._tabs.addTab(placeholder, "No displays")
             return
 
@@ -273,12 +275,14 @@ class DisplayManager(QWidget):
     def _apply(self):
         if not self._display_pages:
             return
+        if self._worker is not None and self._worker.isRunning():
+            return
         self._apply_btn.setEnabled(False)
         xrandr_cmd = ["xrandr"]
         for page in self._display_pages.values():
             xrandr_cmd += page.build_xrandr_args()
 
-        self._worker = ApplyWorker([xrandr_cmd])
+        self._worker = ApplyWorker([xrandr_cmd], parent=self)
         self._worker.done.connect(self._on_apply_done)
         self._worker.start()
         self._status.setText("Applying...")
@@ -287,10 +291,16 @@ class DisplayManager(QWidget):
         self._apply_btn.setEnabled(True)
         self._status.setText(msg)
         if ok:
-            log_info(f"Display settings applied")
+            log_info("Display settings applied")
         else:
             log_error(f"Display apply failed: {msg}")
             QMessageBox.warning(self, "Apply Failed", msg)
+
+    def closeEvent(self, event):
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.stop()
+            self._worker.wait(2000)
+        super().closeEvent(event)
 
 
 def main():

@@ -1,57 +1,86 @@
 #!/usr/bin/env python3
 """
-GTA VI OS (Vice OS) Update Manager
+GTA VI OS (Vice OS) Update Manager.
 APT update checker, upgrade staging, changelog preview, and system package maintenance.
 """
 
-import sys
 import os
+import shutil
 import subprocess
-
-sys.path.insert(0, '/opt/vice-os/lib')
+import sys
 
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QTextEdit, QProgressBar,
     QAbstractItemView, QSplitter, QMessageBox
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QBrush
+from PyQt5.QtGui import QColor, QBrush
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from python.vice_utils import log_info, log_error  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    make_button,
+    make_header,
+)
 
 WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 680
 
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QTextEdit { background: #0d0d0d; color: #00e5ff; border: 1px solid #1a4a4a; font-size: 11px; }
-QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; text-align: center; color: #00ffff; }
-QProgressBar::chunk { background: #00ffff; }
-QSplitter::handle { background: #00ffff; width: 1px; }
-QLabel { color: #00ffff; }
-"""
+
+def _priv_cmd(cmd):
+    is_root = os.geteuid() == 0 if hasattr(os, "geteuid") else False
+    if not is_root and shutil.which("pkexec"):
+        return ["pkexec"] + list(cmd)
+    return list(cmd)
 
 
 class CheckWorker(QThread):
     done = pyqtSignal(list)
 
+    def __init__(self, refresh_cache=False):
+        super().__init__()
+        self._refresh_cache = refresh_cache
+        self._stopped = False
+        self._proc = None
+
+    def stop(self):
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+
     def run(self):
         packages = []
         try:
-            subprocess.run(["sudo", "apt", "update", "-qq"],
-                           capture_output=True, timeout=60)
-            out = subprocess.check_output(
+            if self._refresh_cache and not self._stopped:
+                self._proc = subprocess.Popen(
+                    _priv_cmd(["apt-get", "update", "-qq"]),
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+                )
+                self._proc.communicate(timeout=60)
+                self._proc = None
+            if self._stopped:
+                return
+            self._proc = subprocess.Popen(
                 ["apt", "list", "--upgradable", "--quiet=2"],
-                stderr=subprocess.DEVNULL, text=True, timeout=30
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
             )
-            for line in out.splitlines():
+            out, _ = self._proc.communicate(timeout=30)
+            self._proc = None
+            for line in (out or "").splitlines():
                 if "/" not in line:
                     continue
                 parts = line.split()
@@ -59,18 +88,21 @@ class CheckWorker(QThread):
                 new_ver = parts[1] if len(parts) > 1 else ""
                 arch = parts[2] if len(parts) > 2 else ""
                 old_ver = ""
-                for p in parts:
-                    if p.startswith("[upgradable"):
-                        idx = parts.index(p)
-                        if idx + 2 < len(parts):
-                            old_ver = parts[idx + 2].rstrip("]")
+                for idx, p in enumerate(parts):
+                    if p.startswith("[upgradable") and idx + 2 < len(parts):
+                        old_ver = parts[idx + 2].rstrip("]")
+                        break
                 packages.append({
                     "name": name, "new": new_ver,
-                    "old": old_ver, "arch": arch
+                    "old": old_ver, "arch": arch,
                 })
         except Exception as e:
-            log_error(f"apt check failed: {e}")
-        self.done.emit(packages)
+            if not self._stopped:
+                log_error(f"apt check failed: {e}")
+        finally:
+            self._proc = None
+        if not self._stopped:
+            self.done.emit(packages)
 
 
 class UpgradeWorker(QThread):
@@ -80,23 +112,45 @@ class UpgradeWorker(QThread):
     def __init__(self, packages=None):
         super().__init__()
         self.packages = packages
+        self._stopped = False
+        self._proc = None
+
+    def stop(self):
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def run(self):
+        base = ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get"]
         if self.packages:
-            cmd = ["sudo", "apt", "install", "--only-upgrade", "-y"] + self.packages
+            cmd = _priv_cmd(base + ["install", "--only-upgrade", "-y"] + self.packages)
         else:
-            cmd = ["sudo", "apt", "upgrade", "-y"]
+            cmd = _priv_cmd(base + ["upgrade", "-y"])
         try:
-            proc = subprocess.Popen(
+            self._proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
             )
-            for line in proc.stdout:
+            for line in self._proc.stdout:
+                if self._stopped:
+                    break
                 self.line_out.emit(line.rstrip())
-            proc.wait()
-            self.finished.emit(proc.returncode == 0)
+            self._proc.wait()
+            if not self._stopped:
+                self.finished.emit(self._proc.returncode == 0)
         except Exception as e:
-            self.line_out.emit(f"Error: {e}")
-            self.finished.emit(False)
+            if not self._stopped:
+                self.line_out.emit(f"Error: {e}")
+                self.finished.emit(False)
+        finally:
+            self._proc = None
 
 
 class ChangelogWorker(QThread):
@@ -105,49 +159,88 @@ class ChangelogWorker(QThread):
     def __init__(self, pkg):
         super().__init__()
         self.pkg = pkg
+        self._stopped = False
+        self._proc = None
+
+    def stop(self):
+        self._stopped = True
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def run(self):
         try:
-            out = subprocess.check_output(
+            self._proc = subprocess.Popen(
                 ["apt-get", "changelog", "--quiet", self.pkg],
-                stderr=subprocess.DEVNULL, text=True, timeout=15
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
             )
-            self.done.emit(out[:3000])
+            out, _ = self._proc.communicate(timeout=15)
+            rc = self._proc.returncode
+            self._proc = None
+            if self._stopped:
+                return
+            if rc == 0 and (out or "").strip():
+                self.done.emit(out[:3000])
+                return
         except Exception:
-            try:
-                out = subprocess.check_output(
-                    ["apt", "show", self.pkg],
-                    stderr=subprocess.DEVNULL, text=True, timeout=10
-                )
-                self.done.emit(out)
-            except Exception as e:
+            if self._proc is not None:
+                self._proc.kill()
+                self._proc.communicate()
+                self._proc = None
+        if self._stopped:
+            return
+        try:
+            self._proc = subprocess.Popen(
+                ["apt-cache", "show", self.pkg],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+            )
+            out, _ = self._proc.communicate(timeout=10)
+            if not self._stopped:
+                self.done.emit((out or "").strip() or "No details available.")
+        except Exception as e:
+            if not self._stopped:
                 self.done.emit(f"Could not fetch changelog: {e}")
+        finally:
+            self._proc = None
 
 
 class UpdateManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — Update Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(780, 520)
+        apply_app_theme(self)
         self._packages = []
         self._workers = []
         self._init_ui()
-        self._check_updates()
+        self._check_updates(refresh_cache=False)
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 14)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — Update Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 14, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        header = make_header(
+            title="Update Manager",
+            subtitle="Inspect pending Debian APT package upgrades and review changelogs",
+            icon_name="system-software-update",
+            badge_text="APT",
+            badge_variant="aqua",
+            parent=self,
+        )
+        root.addWidget(header)
 
         splitter = QSplitter(Qt.Horizontal)
-        root.addWidget(splitter)
+        root.addWidget(splitter, 1)
 
-        # Left: package list
         left = QWidget()
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 0, 0)
@@ -165,22 +258,20 @@ class UpdateManager(QWidget):
         ll.addWidget(self._table)
 
         btn_row = QHBoxLayout()
-        self._check_btn = QPushButton("Check Updates")
-        self._check_btn.clicked.connect(self._check_updates)
+        self._check_btn = make_button("Refresh Updates", variant="secondary", parent=self)
+        self._check_btn.clicked.connect(lambda: self._check_updates(refresh_cache=True))
         btn_row.addWidget(self._check_btn)
 
-        self._upgrade_sel_btn = QPushButton("Upgrade Selected")
+        self._upgrade_sel_btn = make_button("Upgrade Selected", variant="secondary", parent=self)
         self._upgrade_sel_btn.clicked.connect(self._upgrade_selected)
         btn_row.addWidget(self._upgrade_sel_btn)
 
-        self._upgrade_all_btn = QPushButton("Upgrade All")
-        self._upgrade_all_btn.setStyleSheet("QPushButton { border-color: #ff00ff; color: #ff00ff; } QPushButton:hover { background: #ff00ff; color: #0a0a0a; }")
+        self._upgrade_all_btn = make_button("Upgrade All", variant="primary", parent=self)
         self._upgrade_all_btn.clicked.connect(self._upgrade_all)
         btn_row.addWidget(self._upgrade_all_btn)
         ll.addLayout(btn_row)
         splitter.addWidget(left)
 
-        # Right: changelog + output log
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
@@ -203,16 +294,16 @@ class UpdateManager(QWidget):
         root.addWidget(self._progress)
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setObjectName("MutedLabel")
         root.addWidget(self._status)
 
-    def _check_updates(self):
+    def _check_updates(self, refresh_cache=True):
         self._check_btn.setEnabled(False)
         self._upgrade_all_btn.setEnabled(False)
         self._progress.setVisible(True)
-        self._status.setText("Checking for updates...")
+        self._status.setText("Refreshing APT lists..." if refresh_cache else "Checking cached updates...")
         self._table.setRowCount(0)
-        w = CheckWorker()
+        w = CheckWorker(refresh_cache=refresh_cache)
         w.done.connect(self._on_check_done)
         w.start()
         self._workers.append(w)
@@ -226,7 +317,7 @@ class UpdateManager(QWidget):
             self._table.setItem(row, 0, QTableWidgetItem(p["name"]))
             self._table.setItem(row, 1, QTableWidgetItem(p["old"]))
             new_item = QTableWidgetItem(p["new"])
-            new_item.setForeground(QBrush(QColor("#00ff88")))
+            new_item.setForeground(QBrush(QColor(COLORS["success"])))
             self._table.setItem(row, 2, new_item)
             self._table.setItem(row, 3, QTableWidgetItem(p["arch"]))
 
@@ -283,13 +374,21 @@ class UpdateManager(QWidget):
         self._progress.setVisible(False)
         self._check_btn.setEnabled(True)
         self._upgrade_sel_btn.setEnabled(True)
-        c = "#00ff88" if ok else "#ff4444"
+        c = COLORS["success"] if ok else COLORS["danger"]
         result = "Upgrade complete" if ok else "Upgrade failed"
         self._log.append(f'<span style="color:{c}; font-weight:bold;">{result}</span>')
         self._status.setText(result)
         log_info(f"Upgrade: {result}")
         if ok:
-            self._check_updates()
+            self._check_updates(refresh_cache=False)
+
+    def closeEvent(self, event):
+        for w in self._workers:
+            w.stop()
+        for w in self._workers:
+            if w.isRunning():
+                w.wait(2500)
+        event.accept()
 
 
 def main():

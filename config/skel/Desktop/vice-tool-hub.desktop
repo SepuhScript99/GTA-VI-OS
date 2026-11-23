@@ -2,7 +2,7 @@
 Version=1.0
 Type=Application
 Name=Vice Tool Hub
-Comment=Explore and launch 100+ GTA VI and Debian power tools (100/500)
+Comment=Explore and launch 250 GTA VI and Debian power tools (250/500)
 Exec=python3 /opt/vice-os/vice_tool_hub.py
 Icon=vice-tool-hub
 Terminal=false

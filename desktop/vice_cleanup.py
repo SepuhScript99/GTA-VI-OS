@@ -1,50 +1,42 @@
 #!/usr/bin/env python3
 """Vice OS — System Cleanup. Safe disk space reclaimer with preview before delete."""
 
-import sys
-import os
-import subprocess
 import glob
+import os
+import re
 import shutil
-
-sys.path.insert(0, '/opt/vice-os/lib')
+import subprocess
+import sys
 
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QMessageBox, QProgressBar, QPlainTextEdit, QCheckBox
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QBrush
+from PyQt5.QtGui import QColor, QBrush
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from python.vice_utils import log_info  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    make_button,
+    make_header,
+)
 
 WINDOW_WIDTH = 1000
-WINDOW_HEIGHT = 620
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QCheckBox { color: #00ffff; }
-QCheckBox::indicator { width: 16px; height: 16px; background: #1a1a1a; border: 1px solid #00ffff; border-radius: 3px; }
-QCheckBox::indicator:checked { background: #00ffff; }
-QPlainTextEdit { background: #0d0d0d; color: #aaffff; border: 1px solid #1a4a4a; font-size: 11px; }
-QProgressBar { border: 1px solid #00ffff; background: #1a1a1a; text-align: center; color: #00ffff; }
-QProgressBar::chunk { background: #00ffff; }
-QLabel { color: #00ffff; }
-"""
+WINDOW_HEIGHT = 640
 
 HOME = os.path.expanduser("~")
 
 
 def dir_size(path):
     total = 0
-    for dirpath, dirnames, filenames in os.walk(path, onerror=lambda e: None):
+    for dirpath, _dirnames, filenames in os.walk(path, onerror=lambda _e: None):
         for f in filenames:
             try:
                 fp = os.path.join(dirpath, f)
@@ -56,28 +48,21 @@ def dir_size(path):
 
 
 def fmt_size(n):
-    for unit, factor in [("B", 1), ("KB", 1024), ("MB", 1024**2), ("GB", 1024**3)]:
+    for unit, factor in (("B", 1), ("KB", 1024), ("MB", 1024**2), ("GB", 1024**3)):
         if n < factor * 1024:
             return f"{n / factor:.1f} {unit}"
     return f"{n / 1024**3:.1f} GB"
 
 
 def apt_cache_size():
-    out, _ = "", False
-    try:
-        r = subprocess.run(["sh", "-c", "du -sb /var/cache/apt 2>/dev/null | cut -f1"],
-                           capture_output=True, text=True, timeout=5)
-        return int(r.stdout.strip() or 0)
-    except Exception:
-        return 0
+    return dir_size("/var/cache/apt")
 
 
 def journal_size():
+    if not shutil.which("journalctl"):
+        return 0
     try:
         r = subprocess.run(["journalctl", "--disk-usage"], capture_output=True, text=True, timeout=5)
-        # "Archived and active journals take up 123.4M"
-        m = None
-        import re
         m = re.search(r"take up ([\d.]+[KMGT])", r.stdout)
         if m:
             s = m.group(1)
@@ -89,27 +74,11 @@ def journal_size():
 
 
 def count_thumbnails():
-    path = os.path.join(HOME, ".cache/thumbnails")
+    path = os.path.join(HOME, ".cache", "thumbnails")
     n = 0
-    for _root, _dirs, files in os.walk(path, onerror=lambda e: None):
+    for _root, _dirs, files in os.walk(path, onerror=lambda _e: None):
         n += len(files)
     return n
-
-
-def old_kernels_count():
-    try:
-        r = subprocess.run(["dpkg", "-l"], capture_output=True, text=True, timeout=5)
-        running, _ = subprocess.run(["uname", "-r"], capture_output=True, text=True).stdout.strip(), True
-        count = 0
-        for line in r.stdout.splitlines():
-            parts = line.split()
-            if len(parts) >= 2 and parts[0] == "ii" and parts[1].startswith("linux-image-"):
-                ver = parts[1].replace("linux-image-", "")
-                if ver != running:
-                    count += 1
-        return count
-    except Exception:
-        return 0
 
 
 class CleanupTargets:
@@ -123,7 +92,7 @@ class CleanupTargets:
                 "name": "APT Package Cache",
                 "desc": "Downloaded .deb files in /var/cache/apt",
                 "size_fn": apt_cache_size,
-                "clean_fn": lambda log: log.append(CleanupTargets._sudo_run(
+                "clean_fn": lambda log: log.append(CleanupTargets._priv_run(
                     ["apt-get", "clean"], "apt-get clean")),
             },
             {
@@ -132,7 +101,7 @@ class CleanupTargets:
                 "desc": "Packages installed as dependencies no longer needed",
                 "size_fn": lambda: 0,
                 "size_note": "variable",
-                "clean_fn": lambda log: log.append(CleanupTargets._sudo_run(
+                "clean_fn": lambda log: log.append(CleanupTargets._priv_run(
                     ["apt-get", "autoremove", "-y"], "apt-get autoremove")),
             },
             {
@@ -148,39 +117,46 @@ class CleanupTargets:
                 "name": "Systemd Journal (vacuum to 100M)",
                 "desc": "Old systemd journal entries",
                 "size_fn": journal_size,
-                "clean_fn": lambda log: log.append(CleanupTargets._sudo_run(
+                "clean_fn": lambda log: log.append(CleanupTargets._priv_run(
                     ["journalctl", "--vacuum-size=100M"], "journalctl vacuum")),
             },
             {
                 "id": "trash",
                 "name": "Trash",
-                "desc": f"~/.local/share/Trash",
+                "desc": "~/.local/share/Trash",
                 "size_fn": lambda: dir_size(os.path.join(HOME, ".local", "share", "Trash")),
                 "clean_fn": lambda log: (
                     log.append(CleanupTargets._rm_tree(
                         os.path.join(HOME, ".local", "share", "Trash", "files"))),
                     log.append(CleanupTargets._rm_tree(
-                        os.path.join(HOME, ".local", "share", "Trash", "info")))
+                        os.path.join(HOME, ".local", "share", "Trash", "info"))),
                 ),
             },
             {
                 "id": "tmp_user",
                 "name": "User Temp Files",
                 "desc": "~/.cache/temp, /tmp/vice_* owned by user",
-                "size_fn": lambda: dir_size(os.path.join(HOME, ".cache", "temp")) +
-                                      sum(dir_size(p) for p in glob.glob("/tmp/vice_*")),
+                "size_fn": lambda: sum([
+                    dir_size(os.path.join(HOME, ".cache", "temp")),
+                    *(dir_size(p) for p in glob.glob("/tmp/vice_*")),
+                ]),
                 "clean_fn": lambda log: log.append(
                     CleanupTargets._rm_tree(os.path.join(HOME, ".cache", "temp"))),
             },
         ]
 
     @staticmethod
-    def _sudo_run(cmd, label):
+    def _priv_run(cmd, label):
+        is_root = os.geteuid() == 0 if hasattr(os, "geteuid") else False
+        full = list(cmd)
+        if not is_root and shutil.which("pkexec"):
+            full = ["pkexec"] + full
         try:
-            proc = subprocess.Popen(["sudo"] + cmd, stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, text=True)
-            out = proc.communicate()[0]
-            return f"[{'OK' if proc.returncode == 0 else 'FAIL'}] {label}\n{out.strip()[:300]}"
+            proc = subprocess.Popen(
+                full, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+            out = proc.communicate(timeout=90)[0]
+            return f"[{'OK' if proc.returncode == 0 else 'FAIL'}] {label}\n{(out or '').strip()[:300]}"
         except Exception as e:
             return f"[FAIL] {label}: {e}"
 
@@ -197,20 +173,28 @@ class CleanupTargets:
 
 class ScanWorker(QThread):
     """Scans target sizes off the UI thread."""
-    progress = pyqtSignal(int, int)  # index, size
-    finished = pyqtSignal(int)       # total size
+    progress = pyqtSignal(int, int)
+    finished = pyqtSignal(int)
 
     def __init__(self, targets):
         super().__init__()
         self._targets = targets
+        self._stopped = False
+
+    def stop(self):
+        self._stopped = True
 
     def run(self):
         total = 0
         for i, t in enumerate(self._targets):
+            if self._stopped:
+                return
             size = t["size_fn"]()
             total += size
-            self.progress.emit(i, size)
-        self.finished.emit(total)
+            if not self._stopped:
+                self.progress.emit(i, size)
+        if not self._stopped:
+            self.finished.emit(total)
 
 
 class CleanWorker(QThread):
@@ -220,6 +204,10 @@ class CleanWorker(QThread):
     def __init__(self, targets):
         super().__init__()
         self._targets = targets
+        self._stopped = False
+
+    def stop(self):
+        self._stopped = True
 
     def run(self):
         class Emitter:
@@ -231,36 +219,46 @@ class CleanWorker(QThread):
 
         em = Emitter(self.line.emit)
         for t in self._targets:
+            if self._stopped:
+                break
             self.line.emit(f"--- Cleaning: {t['name']} ---")
             try:
                 t["clean_fn"](em)
             except Exception as e:
                 self.line.emit(f"[FAIL] {t['name']}: {e}")
-        self.finished.emit()
+        if not self._stopped:
+            self.finished.emit()
 
 
 class SystemCleanup(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — System Cleanup")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(780, 520)
+        apply_app_theme(self)
         self._targets = CleanupTargets.targets()
         self._scan_worker = None
         self._clean_worker = None
+        self._checkboxes = []
         self._init_ui()
         self._scan()
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 14)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — System Cleanup")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 13, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        header = make_header(
+            title="System Cleanup",
+            subtitle="Inspect and reclaim disk space from caches, journals, and Trash",
+            icon_name="edit-clear",
+            badge_text="CLEANUP",
+            badge_variant="aqua",
+            parent=self,
+        )
+        root.addWidget(header)
 
-        # Targets table
         self._table = QTableWidget()
         self._table.setColumnCount(4)
         self._table.setHorizontalHeaderLabels(["Clean", "Target", "Description", "Size"])
@@ -281,36 +279,32 @@ class SystemCleanup(QWidget):
             cb_layout.setAlignment(Qt.AlignCenter)
             cb = QCheckBox()
             cb.setChecked(t["id"] in ("apt_cache", "thumbnails", "trash"))
-            cb_widget.setProperty("row", i)
             self._table.setCellWidget(i, 0, cb_widget)
-            self._checkboxes = getattr(self, "_checkboxes", [])
             self._checkboxes.append(cb)
 
             name_item = QTableWidgetItem(t["name"])
-            name_item.setForeground(QBrush(QColor("#00ffff")))
+            name_item.setForeground(QBrush(QColor(COLORS["text_primary"])))
             self._table.setItem(i, 1, name_item)
             self._table.setItem(i, 2, QTableWidgetItem(t["desc"]))
             size_item = QTableWidgetItem("scanning...")
             size_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self._table.setItem(i, 3, size_item)
 
-        # Buttons
         btn_row = QHBoxLayout()
-        rescan_btn = QPushButton("↻ Rescan Sizes")
+        rescan_btn = make_button("Rescan Sizes", variant="secondary", parent=self)
         rescan_btn.clicked.connect(self._scan)
         btn_row.addWidget(rescan_btn)
 
-        select_all_btn = QPushButton("Select All")
+        select_all_btn = make_button("Select All", variant="secondary", parent=self)
         select_all_btn.clicked.connect(lambda: [cb.setChecked(True) for cb in self._checkboxes])
         btn_row.addWidget(select_all_btn)
 
-        select_none_btn = QPushButton("Select None")
+        select_none_btn = make_button("Select None", variant="secondary", parent=self)
         select_none_btn.clicked.connect(lambda: [cb.setChecked(False) for cb in self._checkboxes])
         btn_row.addWidget(select_none_btn)
         btn_row.addStretch()
 
-        clean_btn = QPushButton("🧹 Clean Selected")
-        clean_btn.setStyleSheet("QPushButton { border-color: #ff00ff; color: #ff00ff; } QPushButton:hover { background: #ff00ff; color: #0a0a0a; }")
+        clean_btn = make_button("Clean Selected", variant="primary", parent=self)
         clean_btn.clicked.connect(self._clean_selected)
         btn_row.addWidget(clean_btn)
         root.addLayout(btn_row)
@@ -320,17 +314,18 @@ class SystemCleanup(QWidget):
         self._progress.setVisible(False)
         root.addWidget(self._progress)
 
-        # Log
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
         self._log.setMaximumHeight(150)
         root.addWidget(self._log)
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setObjectName("MutedLabel")
         root.addWidget(self._status)
 
     def _scan(self):
+        if self._scan_worker is not None and self._scan_worker.isRunning():
+            return
         self._status.setText("Scanning target sizes...")
         self._scan_worker = ScanWorker(self._targets)
         self._scan_worker.progress.connect(self._on_size)
@@ -350,17 +345,16 @@ class SystemCleanup(QWidget):
         log_info(f"Cleanup scan: {fmt_size(total)} reclaimable")
 
     def _clean_selected(self):
-        selected = []
-        for i, cb in enumerate(self._checkboxes):
-            if cb.isChecked():
-                selected.append(self._targets[i])
+        if self._clean_worker is not None and self._clean_worker.isRunning():
+            return
+        selected = [self._targets[i] for i, cb in enumerate(self._checkboxes) if cb.isChecked()]
         if not selected:
             QMessageBox.information(self, "Nothing Selected", "Select at least one cleanup target.")
             return
-        names = "\n".join("  • " + t["name"] for t in selected)
+        names = "\n".join("  - " + t["name"] for t in selected)
         if QMessageBox.question(
             self, "Clean Now",
-            f"Clean the following targets?\n\n{names}\n\nSome actions require sudo.",
+            f"Clean the following targets?\n\n{names}\n\nSystem caches require administrator privileges.",
             QMessageBox.Yes | QMessageBox.No
         ) != QMessageBox.Yes:
             return
@@ -377,6 +371,15 @@ class SystemCleanup(QWidget):
         self._log.appendPlainText("[DONE] Cleanup finished")
         log_info("System cleanup executed")
         self._scan()
+
+    def closeEvent(self, event):
+        for w in (self._scan_worker, self._clean_worker):
+            if w is not None:
+                w.stop()
+        for w in (self._scan_worker, self._clean_worker):
+            if w is not None and w.isRunning():
+                w.wait(2500)
+        event.accept()
 
 
 def main():

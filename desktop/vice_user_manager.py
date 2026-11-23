@@ -1,58 +1,51 @@
 #!/usr/bin/env python3
 """
-GTA VI OS (Vice OS) User & Group Manager
+GTA VI OS (Vice OS) User & Group Manager.
 User account creation, password resets, sudo privilege management, and group membership.
 """
 
-import sys
 import os
-import subprocess
 import re
-
-sys.path.insert(0, '/opt/vice-os/lib')
+import shutil
+import subprocess
+import sys
 
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QLineEdit,
     QComboBox, QGroupBox, QAbstractItemView, QCheckBox, QDialog,
     QDialogButtonBox, QFormLayout, QSplitter, QListWidget, QListWidgetItem
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QBrush
+from PyQt5.QtGui import QColor, QBrush
 
-from python.vice_utils import log_info, log_error
+sys.path.insert(0, "/opt/vice-os/lib")
+sys.path.insert(0, "/opt/vice-os")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from python.vice_utils import log_info, log_error  # noqa: E402
+from vice_theme import (  # noqa: E402
+    COLORS,
+    apply_app_theme,
+    make_button,
+    make_header,
+)
 
 WINDOW_WIDTH = 960
 WINDOW_HEIGHT = 660
-
-STYLE = """
-QWidget { background-color: #0a0a0a; color: #00ffff; font-family: "Noto Sans Mono CJK JP", "Noto Sans CJK JP", "Noto Sans CJK SC", monospace; }
-QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px 14px; }
-QPushButton:hover { background: #00ffff; color: #0a0a0a; }
-QPushButton:disabled { color: #444; border-color: #444; }
-QLineEdit { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 5px; }
-QComboBox { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px; }
-QTableWidget { background: #0d0d0d; color: #00ffff; gridline-color: #1a4a4a; border: 1px solid #00ffff; }
-QHeaderView::section { background: #00ffff; color: #0a0a0a; padding: 4px; font-weight: bold; }
-QTableWidget::item:selected { background: #003333; color: #00ffff; }
-QListWidget { background: #0d0d0d; color: #00ffff; border: 1px solid #00ffff; }
-QListWidget::item:selected { background: #00ffff; color: #0a0a0a; }
-QGroupBox { border: 1px solid #00ffff; margin-top: 10px; padding: 8px; }
-QGroupBox::title { color: #ff00ff; subcontrol-origin: margin; left: 8px; }
-QCheckBox { color: #00ffff; }
-QCheckBox::indicator { width: 13px; height: 13px; background: #1a1a1a; border: 1px solid #00ffff; }
-QCheckBox::indicator:checked { background: #00ffff; }
-QDialog { background-color: #0a0a0a; color: #00ffff; }
-QLabel { color: #00ffff; }
-QSplitter::handle { background: #00ffff; width: 1px; }
-"""
+_USERNAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 
 
-def run_cmd(cmd, sudo=False):
-    full = (["sudo"] if sudo else []) + cmd
+def run_cmd(cmd, sudo=False, input_data=None):
+    full = list(cmd)
+    is_root = os.geteuid() == 0 if hasattr(os, "geteuid") else False
+    if sudo and not is_root and shutil.which("pkexec"):
+        full = ["pkexec"] + full
     try:
-        r = subprocess.run(full, capture_output=True, text=True, timeout=10)
-        return r.stdout.strip(), r.returncode == 0
+        r = subprocess.run(
+            full, input=input_data, capture_output=True, text=True, timeout=15
+        )
+        return (r.stdout or "").strip() or (r.stderr or "").strip(), r.returncode == 0
     except Exception as e:
         return str(e), False
 
@@ -60,7 +53,7 @@ def run_cmd(cmd, sudo=False):
 def get_users():
     users = []
     try:
-        with open("/etc/passwd") as f:
+        with open("/etc/passwd", encoding="utf-8", errors="replace") as f:
             for line in f:
                 parts = line.strip().split(":")
                 if len(parts) < 7:
@@ -87,10 +80,10 @@ def get_users():
 def get_all_groups():
     groups = []
     try:
-        with open("/etc/group") as f:
+        with open("/etc/group", encoding="utf-8", errors="replace") as f:
             for line in f:
                 parts = line.strip().split(":")
-                if len(parts) >= 1:
+                if len(parts) >= 1 and parts[0]:
                     groups.append(parts[0])
     except Exception:
         pass
@@ -102,7 +95,7 @@ class AddUserDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Add User")
         self.setFixedSize(420, 300)
-        self.setStyleSheet(STYLE)
+        apply_app_theme(self)
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -130,7 +123,6 @@ class AddUserDialog(QDialog):
         layout.addLayout(form)
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btns.setStyleSheet("QPushButton { background: #1a1a1a; color: #00ffff; border: 1px solid #00ffff; padding: 4px 12px; } QPushButton:hover { background: #00ffff; color: #0a0a0a; }")
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
@@ -151,22 +143,36 @@ class CmdWorker(QThread):
     def __init__(self, cmds):
         super().__init__()
         self.cmds = cmds
+        self._stopped = False
+
+    def stop(self):
+        self._stopped = True
 
     def run(self):
-        for cmd, sudo in self.cmds:
-            out, ok = run_cmd(cmd, sudo)
-            if not ok:
-                self.done.emit(False, out)
+        for entry in self.cmds:
+            if self._stopped:
                 return
-        self.done.emit(True, "Done")
+            if len(entry) == 3:
+                cmd, sudo, stdin_data = entry
+            else:
+                cmd, sudo = entry
+                stdin_data = None
+            out, ok = run_cmd(cmd, sudo=sudo, input_data=stdin_data)
+            if not ok:
+                if not self._stopped:
+                    self.done.emit(False, out)
+                return
+        if not self._stopped:
+            self.done.emit(True, "Done")
 
 
 class UserManager(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice OS — User Manager")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setStyleSheet(STYLE)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(760, 500)
+        apply_app_theme(self)
         self._users = []
         self._worker = None
         self._init_ui()
@@ -174,17 +180,22 @@ class UserManager(QWidget):
 
     def _init_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 14)
+        root.setSpacing(10)
 
-        title = QLabel("Vice OS — User Manager")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("monospace", 14, QFont.Bold))
-        title.setStyleSheet("color: #ff00ff; margin: 6px;")
-        root.addWidget(title)
+        header = make_header(
+            title="User & Group Manager",
+            subtitle="Manage local user accounts, passwords, sudo access, and group membership",
+            icon_name="system-users",
+            badge_text="USERS",
+            badge_variant="aqua",
+            parent=self,
+        )
+        root.addWidget(header)
 
         splitter = QSplitter(Qt.Horizontal)
-        root.addWidget(splitter)
+        root.addWidget(splitter, 1)
 
-        # Left: user table
         left = QWidget()
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 0, 0)
@@ -203,22 +214,20 @@ class UserManager(QWidget):
         ll.addWidget(self._table)
 
         btn_row = QHBoxLayout()
-        add_btn = QPushButton("Add User")
+        add_btn = make_button("Add User", variant="primary", parent=self)
         add_btn.clicked.connect(self._add_user)
         btn_row.addWidget(add_btn)
 
-        self._del_btn = QPushButton("Delete User")
-        self._del_btn.setStyleSheet("QPushButton { border-color: #ff4444; color: #ff4444; } QPushButton:hover { background: #ff4444; color: #0a0a0a; }")
+        self._del_btn = make_button("Delete User", variant="danger", parent=self)
         self._del_btn.clicked.connect(self._delete_user)
         btn_row.addWidget(self._del_btn)
 
-        refresh_btn = QPushButton("Refresh")
+        refresh_btn = make_button("Refresh", variant="secondary", parent=self)
         refresh_btn.clicked.connect(self._refresh)
         btn_row.addWidget(refresh_btn)
         ll.addLayout(btn_row)
         splitter.addWidget(left)
 
-        # Right: user detail / group editor
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
@@ -227,7 +236,7 @@ class UserManager(QWidget):
         dl = QVBoxLayout(self._detail_box)
 
         self._detail_label = QLabel("Select a user to view details.")
-        self._detail_label.setStyleSheet("color: #888;")
+        self._detail_label.setObjectName("MutedLabel")
         dl.addWidget(self._detail_label)
 
         self._sudo_cb = QCheckBox("Member of sudo group")
@@ -243,10 +252,10 @@ class UserManager(QWidget):
         grp_btns = QHBoxLayout()
         self._grp_combo = QComboBox()
         grp_btns.addWidget(self._grp_combo)
-        add_grp_btn = QPushButton("Add to Group")
+        add_grp_btn = make_button("Add to Group", variant="secondary", parent=self)
         add_grp_btn.clicked.connect(self._add_to_group)
         grp_btns.addWidget(add_grp_btn)
-        rm_grp_btn = QPushButton("Remove")
+        rm_grp_btn = make_button("Remove", variant="danger", parent=self)
         rm_grp_btn.clicked.connect(self._remove_from_group)
         grp_btns.addWidget(rm_grp_btn)
         gl.addLayout(grp_btns)
@@ -258,7 +267,7 @@ class UserManager(QWidget):
         self._passwd_edit.setEchoMode(QLineEdit.Password)
         self._passwd_edit.setPlaceholderText("New password")
         pl.addWidget(self._passwd_edit)
-        passwd_btn = QPushButton("Set Password")
+        passwd_btn = make_button("Set Password", variant="primary", parent=self)
         passwd_btn.clicked.connect(self._set_password)
         pl.addWidget(passwd_btn)
         dl.addWidget(passwd_box)
@@ -269,7 +278,7 @@ class UserManager(QWidget):
         splitter.setSizes([500, 440])
 
         self._status = QLabel("Ready")
-        self._status.setStyleSheet("color: #888; font-size: 11px;")
+        self._status.setObjectName("MutedLabel")
         root.addWidget(self._status)
 
         all_groups = get_all_groups()
@@ -286,7 +295,7 @@ class UserManager(QWidget):
             self._table.setItem(row, 2, QTableWidgetItem(u["gecos"]))
             self._table.setItem(row, 3, QTableWidgetItem(u["shell"]))
             sudo_item = QTableWidgetItem("Yes" if u["sudo"] else "No")
-            sudo_item.setForeground(QBrush(QColor("#00ff88" if u["sudo"] else "#888888")))
+            sudo_item.setForeground(QBrush(QColor(COLORS["success"] if u["sudo"] else COLORS["text_muted"])))
             self._table.setItem(row, 4, sudo_item)
         self._status.setText(f"{len(self._users)} user(s) found")
 
@@ -317,21 +326,20 @@ class UserManager(QWidget):
         if dlg.exec_() != QDialog.Accepted:
             return
         vals = dlg.get_values()
-        if not vals["username"]:
-            QMessageBox.warning(self, "Missing Username", "Username is required.")
+        uname = vals["username"]
+        if not uname or not _USERNAME_RE.match(uname):
+            QMessageBox.warning(self, "Invalid Username", "Enter a valid lowercase UNIX username.")
             return
 
         cmds = [
-            (["useradd", "-m", "-s", vals["shell"],
-              "-c", vals["fullname"], vals["username"]], True),
+            (["useradd", "-m", "-s", vals["shell"], "-c", vals["fullname"], uname], True, None),
         ]
         if vals["password"]:
-            cmds.append((["bash", "-c",
-                f"echo '{vals['username']}:{vals['password']}' | chpasswd"], True))
+            cmds.append((["chpasswd"], True, f"{uname}:{vals['password']}\n"))
         if vals["sudo"]:
-            cmds.append((["usermod", "-aG", "sudo", vals["username"]], True))
+            cmds.append((["usermod", "-aG", "sudo", uname], True, None))
 
-        self._run_cmds(cmds, f"Adding user: {vals['username']}")
+        self._run_cmds(cmds, f"Adding user: {uname}")
 
     def _delete_user(self):
         u = self._selected_user()
@@ -345,7 +353,7 @@ class UserManager(QWidget):
         ) != QMessageBox.Yes:
             return
         self._run_cmds(
-            [(["userdel", "-r", u["username"]], True)],
+            [(["userdel", "-r", u["username"]], True, None)],
             f"Deleting user: {u['username']}"
         )
 
@@ -359,7 +367,7 @@ class UserManager(QWidget):
         else:
             cmd = ["gpasswd", "-d", u["username"], "sudo"]
             msg = f"Removing {u['username']} from sudo"
-        self._run_cmds([(cmd, True)], msg)
+        self._run_cmds([(cmd, True, None)], msg)
 
     def _add_to_group(self):
         u = self._selected_user()
@@ -369,7 +377,7 @@ class UserManager(QWidget):
         if not grp:
             return
         self._run_cmds(
-            [(["usermod", "-aG", grp, u["username"]], True)],
+            [(["usermod", "-aG", grp, u["username"]], True, None)],
             f"Adding {u['username']} to {grp}"
         )
 
@@ -383,7 +391,7 @@ class UserManager(QWidget):
             return
         grp = item.text()
         self._run_cmds(
-            [(["gpasswd", "-d", u["username"], grp], True)],
+            [(["gpasswd", "-d", u["username"], grp], True, None)],
             f"Removing {u['username']} from {grp}"
         )
 
@@ -396,12 +404,15 @@ class UserManager(QWidget):
             QMessageBox.warning(self, "Empty Password", "Enter a new password.")
             return
         self._run_cmds(
-            [(["bash", "-c", f"echo '{u['username']}:{pw}' | chpasswd"], True)],
+            [(["chpasswd"], True, f"{u['username']}:{pw}\n")],
             f"Setting password for {u['username']}"
         )
         self._passwd_edit.clear()
 
     def _run_cmds(self, cmds, msg):
+        if self._worker is not None and self._worker.isRunning():
+            self._status.setText("Another user operation is already running...")
+            return
         self._status.setText(msg)
         w = CmdWorker(cmds)
         w.done.connect(self._cmd_done)
@@ -411,12 +422,19 @@ class UserManager(QWidget):
     def _cmd_done(self, ok, out):
         if ok:
             self._status.setText("Done")
-            log_info(f"User operation succeeded")
+            log_info("User operation succeeded")
         else:
             self._status.setText(f"Error: {out[:80]}")
             log_error(f"User operation failed: {out}")
             QMessageBox.warning(self, "Error", out)
         self._refresh()
+
+    def closeEvent(self, event):
+        if self._worker is not None:
+            self._worker.stop()
+            if self._worker.isRunning():
+                self._worker.wait(2500)
+        event.accept()
 
 
 def main():
