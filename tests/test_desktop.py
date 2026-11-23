@@ -983,6 +983,187 @@ class TestLeonidaOverhaulAndTimesync(unittest.TestCase):
         self.assertIn("--disable-server", runner_code)
         self.assertIn('VICE_NO_HOLD="${VICE_NO_HOLD:-0}"', runner_code)
 
+    def test_iso13_win11_picom_rounded_ui_and_desktop_grid(self):
+        picom = self._read_repo("config", "picom.conf")
+        compton = self._read_repo("config", "compton.conf")
+        self.assertEqual(picom, compton, "picom.conf and compton.conf must stay synchronized")
+        for token in (
+            "detect-rounded-corners = true;",
+            "corner-radius = 12;",
+            "rounded-corners-exclude = [",
+            '"window_type = \'dock\'"',
+            '"window_type = \'desktop\'"',
+            '"window_type = \'tooltip\'"',
+            '"window_type = \'popup_menu\'"',
+            '"window_type = \'dropdown_menu\'"',
+            '"window_type = \'menu\'"',
+            '"window_type = \'notification\'"',
+            '"class_g = \'vice_shell.py\'"',
+            '"name = \'ViceTaskbar\'"',
+            '"fullscreen"',
+            '"_NET_WM_STATE@:32a *= \'_NET_WM_STATE_FULLSCREEN\'"',
+            '"_NET_WM_STATE@:32a *= \'_NET_WM_STATE_MAXIMIZED_HORZ\'"',
+            '"_NET_WM_STATE@:32a *= \'_NET_WM_STATE_MAXIMIZED_VERT\'"',
+        ):
+            self.assertIn(token, picom)
+
+        self.assertIn("border-radius: 12px;", self._read_repo("desktop", "vice_theme.py"))
+        self.assertIn("border-radius: 14px;", self._read_repo("desktop", "vice_theme.py"))
+        self.assertIn("border-radius: 14px;", self._read_repo("desktop", "style.qss"))
+        self.assertIn("border-radius: 12px;", self._read_repo("config", "gtk-3.0", "gtk.css"))
+
+        themerc = self._read_repo("config", "themes", "Vice-Dark", "openbox-3", "themerc")
+        self.assertIn("padding.width: 12", themerc)
+        self.assertIn("padding.height: 8", themerc)
+        self.assertIn("window.handle.width: 2", themerc)
+
+        launcher_code = self._read_repo("desktop", "vice_launcher.py")
+        self.assertIn("vice_tool_payload_lab.py", launcher_code)
+        self.assertIn("Vice Payload Lab", launcher_code)
+
+        hub_code = self._read_repo("desktop", "vice_tool_hub.py")
+        self.assertIn("375 / 500 (75%)", hub_code)
+        self.assertIn("implemented_count", hub_code)
+
+        grid_cp = configparser.ConfigParser(interpolation=None)
+        grid_cp.read(os.path.join(REPO_ROOT, "config", "pcmanfm", "vice", "desktop-items-0.conf"), encoding="utf-8")
+        self.assertIn("vicefetch.desktop", grid_cp.sections())
+        coords = []
+        for sec in grid_cp.sections():
+            if sec == "*":
+                continue
+            x = grid_cp[sec].get("x")
+            y = grid_cp[sec].get("y")
+            self.assertIsNotNone(x)
+            self.assertIsNotNone(y)
+            coords.append((int(x), int(y)))
+        self.assertEqual(len(coords), len(set(coords)), "Duplicate coordinates in desktop-items-0.conf")
+
+        skel_desktops = {
+            os.path.basename(p)
+            for p in glob.glob(os.path.join(REPO_ROOT, "config", "skel", "Desktop", "*.desktop"))
+        }
+        missing_grid = skel_desktops - set(grid_cp.sections())
+        self.assertEqual(missing_grid, set(), f"Desktop files missing from desktop-items-0.conf: {missing_grid}")
+
+    def test_iso13_taskbar_right_edge_cutoff_fix_and_width_budget(self):
+        qss = self._read_repo("desktop", "style.qss")
+        task_block = qss.split("QPushButton#TaskButton {", 1)[1].split("}", 1)[0]
+        self.assertIn("min-width: 0px;", task_block)
+        self.assertNotIn("min-width: 28px;", task_block)
+
+        shell_code = self._read_repo("desktop", "vice_shell.py")
+        for token in (
+            "self.setMinimumWidth(0)",
+            "QSizePolicy.Ignored",
+            "def _available_taskbar_width",
+            'elided.replace("&", "&&")',
+            "def _format_sysinfo",
+            "self.sysinfo.setMaximumWidth(235)",
+            "self._battery_btn.setMaximumWidth(94)",
+            "self.clock.setMinimumWidth(68)",
+            "self.clock.setMaximumWidth(96)",
+            "self.show_desk_btn.setFixedSize(26, 32)",
+            "self.layout().activate()",
+            'time.strftime("%H:%M\\n%a %d/%m")',
+            "vice-tool-fetch",
+            "vice-tool-payload-lab",
+        ):
+            self.assertIn(token, shell_code)
+
+        # Arithmetic width budget check at 1280px (Start + 5 Pins + SysInfo + Net + Audio + Bat + Clock + ShowDesk + margins/spacing)
+        non_taskbar_max = 12 + 86 + (5 * 32) + 235 + 30 + 30 + 94 + 96 + 26 + (11 * 4)
+        self.assertLess(non_taskbar_max, 1280)
+        self.assertGreaterEqual(1280 - non_taskbar_max, 400, "Taskbar must retain >=400px at 1280x720")
+
+        # Unit-test _format_sysinfo and _read_registry_counts cleanly without needing live X11/PyQt5
+        import importlib
+        try:
+            vs_mod = importlib.import_module("vice_shell")
+        except ImportError:
+            qt_pkg = types.ModuleType("PyQt5")
+            qt_core = types.ModuleType("PyQt5.QtCore")
+            qt_gui = types.ModuleType("PyQt5.QtGui")
+            qt_widgets = types.ModuleType("PyQt5.QtWidgets")
+            qt_core.Qt = type("Qt", (), {})
+            qt_core.QSize = type("QSize", (), {})
+            qt_core.QTimer = type("QTimer", (), {})
+            qt_core.QEvent = type("QEvent", (), {})
+            qt_core.QProcess = type("QProcess", (), {})
+            qt_core.pyqtSignal = lambda *a, **k: None
+            for name in ("QColor", "QFont", "QFontMetrics", "QIcon", "QKeySequence", "QPainter", "QPen", "QPixmap"):
+                setattr(qt_gui, name, type(name, (), {}))
+            for name in (
+                "QApplication", "QFrame", "QHBoxLayout", "QLabel", "QLineEdit",
+                "QListWidget", "QListWidgetItem", "QMenu", "QPushButton",
+                "QShortcut", "QSizePolicy", "QSlider", "QStyle", "QStyleOption",
+                "QVBoxLayout", "QWidget",
+            ):
+                setattr(qt_widgets, name, type(name, (), {}))
+            qt_pkg.QtCore = qt_core
+            qt_pkg.QtGui = qt_gui
+            qt_pkg.QtWidgets = qt_widgets
+            with patch.dict(sys.modules, {
+                "PyQt5": qt_pkg,
+                "PyQt5.QtCore": qt_core,
+                "PyQt5.QtGui": qt_gui,
+                "PyQt5.QtWidgets": qt_widgets,
+            }):
+                sys.modules.pop("vice_theme", None)
+                sys.modules.pop("vice_shell", None)
+                vs_mod = importlib.import_module("vice_shell")
+                short_txt, tip = vs_mod._format_sysinfo("CPU: 14%", "RAM: 1200MB/3900MB", "Disk: 42%", compact=False)
+                compact_txt, _ = vs_mod._format_sysinfo("CPU: 14%", "RAM: 1200MB/3900MB", "Disk: 42%", compact=True)
+                counts = vs_mod._read_registry_counts()
+            sys.modules.pop("vice_shell", None)
+            sys.modules.pop("vice_theme", None)
+        else:
+            short_txt, tip = vs_mod._format_sysinfo("CPU: 14%", "RAM: 1200MB/3900MB", "Disk: 42%", compact=False)
+            compact_txt, _ = vs_mod._format_sysinfo("CPU: 14%", "RAM: 1200MB/3900MB", "Disk: 42%", compact=True)
+            counts = vs_mod._read_registry_counts()
+
+        self.assertEqual(short_txt, "CPU 14% · RAM 1.2/3.8G · Disk 42%")
+        self.assertLess(len(compact_txt), len(short_txt))
+        self.assertIn("Click for Task Manager", tip)
+        self.assertEqual(counts, (375, 500))
+
+    def test_iso13_interactive_calendar_clock_sync_and_vicefetch_neofetch(self):
+        clock_code = self._read_repo("desktop", "vice_tool_clock_sync.py")
+        for token in (
+            "QCalendarWidget",
+            "class ViceCalendarWidget(QCalendarWidget)",
+            'self.setObjectName("ViceCalendar")',
+            "def paintCell",
+            "self.resize(1040, 620)",
+            "self.setMinimumSize(880, 540)",
+            "Sync With Host && Internet Timezone",
+            "Chrony && VirtualBox Diagnostics",
+            "Jump to Today",
+            "def _jump_to_today",
+            "def _update_calendar_banner",
+            "Week {iso_week} · Day {day_of_year} of {days_in_year}",
+        ):
+            self.assertIn(token, clock_code)
+
+        ascii_art = self._read_repo("config", "vice-os", "vice_ascii.txt")
+        self.assertNotIn("\r\n", ascii_art)
+        for token in ("${c1}", "${c2}", "${c3}", "${c4}", "${c5}", "${c6}", "L E O N I D A", "V I C E"):
+            self.assertIn(token, ascii_art)
+
+        nf_conf = self._read_repo("config", "skel", ".config", "neofetch", "config.conf")
+        self.assertNotIn("\r\n", nf_conf)
+        self.assertIn('image_source="/etc/vice-os/vice_ascii.txt"', nf_conf)
+        self.assertIn("ascii_colors=(5 1 9 3 15 6)", nf_conf)
+        bash_bin = self._find_bash()
+        if bash_bin:
+            nf_path = os.path.join(REPO_ROOT, "config", "skel", ".config", "neofetch", "config.conf")
+            proc = subprocess.run([bash_bin, "-n", nf_path], capture_output=True, text=True, check=False)
+            self.assertEqual(proc.returncode, 0, f"bash -n failed on neofetch config.conf: {proc.stderr}")
+
+        vf_sh = self._read_repo("system_scripts", "vicefetch.sh")
+        for token in ("COLORTERM", "--hold", "--plain", "--help", "--version", "Vice Tools"):
+            self.assertIn(token, vf_sh)
+
 
 if __name__ == "__main__":
     unittest.main()

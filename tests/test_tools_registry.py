@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 GTA VI OS (Vice OS) Tools Registry, Icon Generator, & Tool Deployment Tests.
-Tests config/tools_registry.json (250/500 Batch 2), all 15 vice_tool_*.py
-native apps, assets/generate_tool_icons.py live PNG + .desktop generation,
-system_scripts/vice-run-tool.sh, chroot deployment, and docs/TOOLS_PROGRESS.md.
+Tests config/tools_registry.json (375/500 Batch 3), all 17 native Vice tools
+(including vice_tool_payload_lab.py and vicefetch.sh), assets/generate_tool_icons.py
+live PNG + .desktop generation, system_scripts/vice-run-tool.sh, chroot deployment,
+and docs/TOOLS_PROGRESS.md.
 Run with: python3 -m unittest tests.test_tools_registry
 """
 
@@ -58,6 +59,8 @@ EXPECTED_NATIVE_IDS = {
     "vice-tool-mac-cloak",
     "vice-tool-office-hub",
     "vice-tool-clock-sync",
+    "vice-tool-fetch",
+    "vice-tool-payload-lab",
 }
 
 BANNED_PACKAGES = {
@@ -67,6 +70,10 @@ BANNED_PACKAGES = {
     "hashcat",
     "pandoc",
     "pulseaudio",
+    "bettercap",
+    "dns2tcp",
+    "ptunnel-ng",
+    "xkcdpass",
 }
 
 DEBIAN_BASE_PACKAGES = {
@@ -121,19 +128,21 @@ def _read_png_dimensions(path: str) -> tuple:
 class TestToolsRegistry(unittest.TestCase):
     """Validates config/tools_registry.json, native apps, and Debian Bookworm packages."""
 
-    def test_registry_schema_and_batch2_counts(self):
+    def test_registry_schema_and_batch3_counts(self):
         reg = _load_registry()
         self.assertEqual(reg.get("target_count"), 500)
-        self.assertEqual(reg.get("batch"), 2)
+        self.assertEqual(reg.get("total_slots"), 500)
+        self.assertEqual(reg.get("implemented_count"), 375)
+        self.assertEqual(reg.get("batch"), 3)
         self.assertTrue(isinstance(reg.get("theme"), str) and reg["theme"].strip())
 
         tools = reg.get("tools")
         self.assertIsInstance(tools, list)
-        self.assertEqual(len(tools), 250, "Batch 2 must contain exactly 250 tools")
+        self.assertEqual(len(tools), 375, "Batch 3 must contain exactly 375 tools")
         self.assertEqual(reg.get("current_count"), len(tools))
 
         ids = [t.get("id") for t in tools]
-        self.assertEqual(len(set(ids)), 250, "All 250 tool IDs must be unique")
+        self.assertEqual(len(set(ids)), 375, "All 375 tool IDs must be unique")
 
         seen_categories = {}
         for tool in tools:
@@ -148,10 +157,10 @@ class TestToolsRegistry(unittest.TestCase):
             seen_categories[cat] = seen_categories.get(cat, 0) + 1
 
         self.assertEqual(set(seen_categories.keys()), EXPECTED_CATEGORIES)
-        self.assertEqual(seen_categories["GTA VI Originals"], 15)
-        self.assertEqual(seen_categories["Office"], 10)
-        self.assertGreaterEqual(seen_categories["Security"], 50)
-        self.assertEqual(sum(v for k, v in seen_categories.items() if k != "GTA VI Originals"), 235)
+        self.assertEqual(seen_categories["GTA VI Originals"], 17)
+        self.assertEqual(seen_categories["Office"], 11)
+        self.assertGreaterEqual(seen_categories["Security"], 131)
+        self.assertEqual(sum(v for k, v in seen_categories.items() if k != "GTA VI Originals"), 358)
 
     def test_office_security_vpn_dns_and_debian_coverage(self):
         reg = _load_registry()
@@ -176,22 +185,30 @@ class TestToolsRegistry(unittest.TestCase):
         for lo_support in ("libreoffice-gtk3", "libreoffice-style-sifr", "libreoffice-style-colibre"):
             self.assertIn(lo_support, pkgs_set, f"Missing LibreOffice GTK3/theme package '{lo_support}'")
 
-        for pkg in ("network-manager-openvpn-gnome", "openresolv"):
-            self.assertIn(pkg, pkgs_set, f"Missing VPN/DNS helper package '{pkg}'")
+        for pkg in ("network-manager-openvpn-gnome", "openresolv", "neofetch"):
+            self.assertIn(pkg, pkgs_set, f"Missing required package '{pkg}'")
 
-        required_security_vpn_dns = (
+        required_security_vpn_dns_kali = (
             "openvpn", "wireguard-tools",
             "tor", "torsocks", "privoxy", "stubby", "unbound",
             "macchanger", "ufw", "gufw", "clamav", "firejail", "keepassxc",
             "sqlmap", "gobuster", "dirb", "hydra", "john", "aircrack-ng",
             "wireshark", "nmap", "binwalk", "yara", "lynis", "chkrootkit",
             "whatweb", "wafw00f", "sslscan", "testssl.sh", "dnsrecon", "mat2",
+            # Batch 3 verified Debian 12 bookworm/main Kali tools
+            "ffuf", "wfuzz", "wapiti", "weevely",
+            "hcxdumptool", "hcxtools", "bully", "pixiewps", "btscanner", "mdk4",
+            "dsniff", "netsniff-ng", "yersinia", "sslsplit", "python3-scapy",
+            "scalpel", "ewf-tools", "dc3dd", "ssdeep", "exiv2", "outguess",
+            "checksec", "dwarfdump", "zydis-tools", "hexyl", "adb", "uefitool-cli",
+            "chntpw", "ophcrack-cli", "princeprocessor", "bruteforce-luks",
+            "b3sum", "minisign", "nyx", "proxytunnel", "sublist3r", "zmap", "iptraf-ng",
         )
-        for pkg in required_security_vpn_dns:
-            self.assertIn(pkg, pkgs_set, f"Missing Security/VPN/DNS package '{pkg}'")
+        for pkg in required_security_vpn_dns_kali:
+            self.assertIn(pkg, pkgs_set, f"Missing Security/VPN/DNS/Kali package '{pkg}'")
             self.assertTrue(
                 any(t["package"] == pkg for t in reg["tools"]),
-                f"Missing Security/VPN/DNS tool entry for package '{pkg}'",
+                f"Missing Security/VPN/DNS/Kali tool entry for package '{pkg}'",
             )
 
         required_debian_features = (
@@ -206,13 +223,20 @@ class TestToolsRegistry(unittest.TestCase):
     def test_native_gta_tools_exist_and_meet_standards(self):
         reg = _load_registry()
         natives = [t for t in reg["tools"] if t.get("package") == "vice-native"]
-        self.assertEqual(len(natives), 15)
+        self.assertEqual(len(natives), 17)
         self.assertEqual({t["id"] for t in natives}, EXPECTED_NATIVE_IDS)
 
         for tool in natives:
             self.assertTrue(tool["gta_themed"], f"{tool['id']} must set gta_themed=true")
             self.assertFalse(tool["terminal"], f"{tool['id']} must set terminal=false")
             self.assertEqual(tool["category"], "GTA VI Originals")
+
+            if tool["id"] == "vice-tool-fetch":
+                self.assertIn("xfce4-terminal", tool["exec"])
+                self.assertIn("/usr/local/bin/vicefetch --hold", tool["exec"])
+                self.assertEqual(tool["icon_glyph"], "fetch")
+                self.assertTrue(os.path.isfile(os.path.join(SYSTEM_SCRIPTS_DIR, "vicefetch.sh")))
+                continue
 
             parts = tool["exec"].split()
             self.assertEqual(parts[0], "python3", f"{tool['id']} exec must launch via python3")
@@ -247,6 +271,74 @@ class TestToolsRegistry(unittest.TestCase):
                 )):
                     self.fail(f"{script_name} calls os.getlogin()")
 
+    def test_payload_lab_functional_logic(self):
+        """Verify vice_tool_payload_lab codecs, JWT parser, hashes, CIDR, regex, and header audit."""
+        sys.path.insert(0, DESKTOP_DIR)
+        try:
+            try:
+                import vice_tool_payload_lab as mod
+            except ImportError:
+                qt_pkg = types.ModuleType("PyQt5")
+                qt_core = types.ModuleType("PyQt5.QtCore")
+                qt_gui = types.ModuleType("PyQt5.QtGui")
+                qt_widgets = types.ModuleType("PyQt5.QtWidgets")
+                qt_core.Qt = type("Qt", (), {})
+                qt_core.QSize = type("QSize", (), {})
+                for name in ("QColor", "QFont", "QIcon", "QTextCharFormat"):
+                    setattr(qt_gui, name, type(name, (), {}))
+                for name in (
+                    "QApplication", "QCheckBox", "QFrame", "QGridLayout", "QHBoxLayout",
+                    "QHeaderView", "QLabel", "QLineEdit", "QMainWindow", "QPlainTextEdit",
+                    "QPushButton", "QSplitter", "QTabWidget", "QTableWidget",
+                    "QTableWidgetItem", "QTextEdit", "QVBoxLayout", "QWidget",
+                ):
+                    setattr(qt_widgets, name, type(name, (), {}))
+                qt_pkg.QtCore = qt_core
+                qt_pkg.QtGui = qt_gui
+                qt_pkg.QtWidgets = qt_widgets
+                with patch.dict(sys.modules, {
+                    "PyQt5": qt_pkg,
+                    "PyQt5.QtCore": qt_core,
+                    "PyQt5.QtGui": qt_gui,
+                    "PyQt5.QtWidgets": qt_widgets,
+                }):
+                    sys.modules.pop("vice_theme", None)
+                    sys.modules.pop("vice_tool_payload_lab", None)
+                    mod = importlib.import_module("vice_tool_payload_lab")
+
+            b64 = mod.encode_decode_payload("b64_enc", "Leonida13")
+            self.assertEqual(mod.encode_decode_payload("b64_dec", b64), "Leonida13")
+            self.assertEqual(mod.encode_decode_payload("rot13", "Vice"), "Ivpr")
+            self.assertEqual(mod.encode_decode_payload("hex_dec", "0x56696365"), "Vice")
+
+            import base64 as _b64
+            hdr = _b64.urlsafe_b64encode(b'{"alg":"HS256"}').decode().rstrip("=")
+            pay = _b64.urlsafe_b64encode(b'{"sub":"vice"}').decode().rstrip("=")
+            jwt_out = mod.decode_jwt_token(f"Bearer {hdr}.{pay}.sig")
+            self.assertIn('"sub": "vice"', jwt_out)
+
+            digests = mod.compute_hashes_and_hmac("abc", "key", hex_key=False)
+            self.assertEqual(len(digests["sha256"]), 64)
+            self.assertEqual(len(digests["hmac_sha256"]), 64)
+
+            cidr = mod.analyze_cidr("192.168.1.42/24")
+            self.assertEqual(cidr["network"], "192.168.1.0/24")
+            self.assertEqual(cidr["usable_hosts"], "254")
+            self.assertEqual(cidr["rfc1918"], "Yes")
+
+            matches = mod.evaluate_regex(r"(?P<id>vice-\d+)", "id=vice-13")
+            self.assertEqual(len(matches), 1)
+            self.assertEqual(matches[0]["groupdict"]["id"], "vice-13")
+
+            audit = mod.audit_http_headers("Strict-Transport-Security: max-age=31536000\nServer: nginx")
+            self.assertTrue(audit["score"].startswith("1 / "))
+            self.assertEqual(audit["info_leak"], ["server: nginx"])
+        finally:
+            for name in ("vice_tool_payload_lab", "vice_theme"):
+                sys.modules.pop(name, None)
+            if DESKTOP_DIR in sys.path:
+                sys.path.remove(DESKTOP_DIR)
+
     def test_non_native_packages_in_packages_list_and_no_duplicates(self):
         pkgs_list = _load_packages_list()
         self.assertEqual(len(pkgs_list), len(set(pkgs_list)), "Duplicate entries found in config/packages.list")
@@ -255,7 +347,7 @@ class TestToolsRegistry(unittest.TestCase):
 
         reg = _load_registry()
         non_native = [t for t in reg["tools"] if t.get("package") != "vice-native"]
-        self.assertEqual(len(non_native), 235)
+        self.assertEqual(len(non_native), 358)
         for tool in non_native:
             self.assertFalse(tool["gta_themed"], f"Debian tool {tool['id']} should have gta_themed=false")
             pkg = tool["package"]
@@ -350,11 +442,20 @@ class TestToolIconGenerator(unittest.TestCase):
             else:
                 self.assertEqual(entry.get("Exec"), tool["exec"])
 
-    def test_live_generate_250_icons_and_desktop_files(self):
+    def test_live_generate_375_icons_and_desktop_files(self):
         reg = _load_registry()
         tools = reg["tools"]
+        self.assertEqual(len(tools), 375)
         gen_path = os.path.join(ASSETS_DIR, "generate_tool_icons.py")
         reg_path = os.path.join(CONFIG_DIR, "tools_registry.json")
+
+        with open(gen_path, "r", encoding="utf-8") as fp:
+            gen_code = fp.read()
+        for glyph in (
+            "fetch", "payload", "wireless", "forensics", "reversing", "exploit",
+            "osint", "web_pentest", "password", "sniff", "tunnel", "crypto", "steg",
+        ):
+            self.assertIn(f'"{glyph}"', gen_code, f"generate_tool_icons.py missing Batch 3 glyph '{glyph}'")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             icon_dir = os.path.join(tmpdir, "icons")
@@ -384,8 +485,8 @@ class TestToolIconGenerator(unittest.TestCase):
                 self.assertEqual(proc.returncode, 0, f"generate_tool_icons.py failed:\n{proc.stderr}\n{proc.stdout}")
                 icons = sorted(glob.glob(os.path.join(icon_dir, "*.png")))
                 pixmaps = sorted(glob.glob(os.path.join(pixmap_dir, "*.png")))
-                self.assertEqual(len(icons), 250)
-                self.assertEqual(len(pixmaps), 250)
+                self.assertEqual(len(icons), 375)
+                self.assertEqual(len(pixmaps), 375)
                 for png in icons + pixmaps:
                     w, h = _read_png_dimensions(png)
                     self.assertEqual((w, h), (64, 64), f"Expected 64x64 PNG, got {(w, h)} for {png}")
@@ -427,7 +528,26 @@ class TestToolIconGenerator(unittest.TestCase):
 
 
 class TestToolsIntegrationAndDeployment(unittest.TestCase):
-    """Validates vice-run-tool.sh, chroot deployment, desktop shortcuts, and progress docs."""
+    """Validates vice-run-tool.sh, vicefetch.sh, chroot deployment, desktop shortcuts, and progress docs."""
+
+    @staticmethod
+    def _find_bash():
+        bash_candidates = []
+        which_bash = shutil.which("bash")
+        if which_bash and "WindowsApps" not in which_bash:
+            bash_candidates.append(which_bash)
+        git_bash = r"C:\Program Files\Git\bin\bash.exe"
+        if os.path.isfile(git_bash) and git_bash not in bash_candidates:
+            bash_candidates.append(git_bash)
+
+        for cand in bash_candidates:
+            try:
+                probe = subprocess.run([cand, "--version"], capture_output=True, text=True, check=False)
+                if probe.returncode == 0:
+                    return cand
+            except OSError:
+                continue
+        return None
 
     def test_vice_run_tool_script_structure_and_syntax(self):
         runner = os.path.join(SYSTEM_SCRIPTS_DIR, "vice-run-tool.sh")
@@ -440,34 +560,66 @@ class TestToolsIntegrationAndDeployment(unittest.TestCase):
         self.assertIn("/usr/sbin", code)
         self.assertNotIn("\r\n", code)
 
-        for batch2_cli in ("testssl", "sqlmap", "gobuster", "dirb", "whatweb", "wafw00f", "wg-quick", "openvpn", "tor", "binwalk", "yara", "mat2", "tldr", "yq"):
-            self.assertIn(batch2_cli, code, f"vice-run-tool.sh missing Batch 2 CLI tool '{batch2_cli}'")
+        for batch_cli in (
+            "testssl", "sqlmap", "gobuster", "dirb", "whatweb", "wafw00f",
+            "wg-quick", "openvpn", "tor", "binwalk", "yara", "mat2", "tldr", "yq",
+            "ffuf", "wfuzz", "wapiti", "weevely", "hcxdumptool", "hcxpcapngtool",
+            "dsniff", "netsniff-ng", "yersinia", "scalpel", "dc3dd", "checksec",
+            "dwarfdump", "ZydisDisasm", "adb", "chntpw", "ophcrack-cli", "b3sum",
+            "minisign", "proxytunnel", "sublist3r", "zmap", "tcptraceroute",
+        ):
+            self.assertIn(batch_cli, code, f"vice-run-tool.sh missing CLI tool '{batch_cli}'")
 
-        bash_candidates = []
-        which_bash = shutil.which("bash")
-        if which_bash and "WindowsApps" not in which_bash:
-            bash_candidates.append(which_bash)
-        git_bash = r"C:\Program Files\Git\bin\bash.exe"
-        if os.path.isfile(git_bash) and git_bash not in bash_candidates:
-            bash_candidates.append(git_bash)
+        case_block = code.split("needs_args_prompt()", 1)[1].split("run_help_and_prompt()", 1)[0]
+        for direct_tool in ("apg", "btscanner", "cadaver", "cgdb", "iptraf-ng", "iwconfig", "nwipe", "nyx", "rfkill", "scapy"):
+            self.assertNotIn(f"|{direct_tool}|", case_block, f"Interactive tool '{direct_tool}' should launch directly")
 
-        bash_bin = None
-        for cand in bash_candidates:
-            try:
-                probe = subprocess.run([cand, "--version"], capture_output=True, text=True, check=False)
-                if probe.returncode == 0:
-                    bash_bin = cand
-                    break
-            except OSError:
-                continue
-
+        bash_bin = self._find_bash()
         if bash_bin:
             proc = subprocess.run([bash_bin, "-n", runner], capture_output=True, text=True, check=False)
             self.assertEqual(proc.returncode, 0, f"bash -n failed on vice-run-tool.sh: {proc.stderr}")
 
+    def test_vicefetch_script_modes_and_registry_output(self):
+        vf_path = os.path.join(SYSTEM_SCRIPTS_DIR, "vicefetch.sh")
+        self.assertTrue(os.path.isfile(vf_path), "Missing system_scripts/vicefetch.sh")
+        code = _read_text("system_scripts", "vicefetch.sh")
+        self.assertEqual(code.splitlines()[0], "#!/bin/bash")
+        self.assertIn("set -Eeuo pipefail", code)
+        self.assertIn('main "$@"', code)
+        self.assertNotIn("\r\n", code)
+        for token in ("--plain", "--no-color", "--256", "--truecolor", "--hold", "--help", "--version", "COLORTERM"):
+            self.assertIn(token, code)
+
+        bash_bin = self._find_bash()
+        if bash_bin:
+            syntax = subprocess.run([bash_bin, "-n", vf_path], capture_output=True, text=True, check=False)
+            self.assertEqual(syntax.returncode, 0, f"bash -n failed on vicefetch.sh: {syntax.stderr}")
+
+            help_p = subprocess.run([bash_bin, vf_path, "--help"], capture_output=True, text=True, check=False)
+            self.assertEqual(help_p.returncode, 0)
+            self.assertIn("--hold", help_p.stdout)
+
+            plain_p = subprocess.run(
+                [bash_bin, vf_path, "--plain"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
+            )
+            self.assertEqual(plain_p.returncode, 0, f"vicefetch.sh --plain failed: {plain_p.stderr}")
+            self.assertIn("Vice OS", plain_p.stdout)
+            self.assertIn("375 / 500 (75%)", plain_p.stdout)
+            self.assertNotIn("\033[", plain_p.stdout)
+
+            mode256 = subprocess.run(
+                [bash_bin, vf_path, "--256"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
+            )
+            self.assertEqual(mode256.returncode, 0)
+            self.assertIn("\033[", mode256.stdout)
+
     def test_chroot_deployment_hooks(self):
         user_setup = _read_text("chroot_scripts", "03_user_setup.sh")
         for token in (
+            "/vice_payload/config/vice-os/vice_ascii.txt",
+            "/etc/vice-os/vice_ascii.txt",
             "/vice_payload/config/tools_registry.json",
             "/opt/vice-os/tools_registry.json",
             "/vice_payload/assets/generate_tool_icons.py",
@@ -489,6 +641,12 @@ class TestToolsIntegrationAndDeployment(unittest.TestCase):
         self.assertIn("/usr/local/bin/vice-run-tool", sys_install)
         self.assertIn("vice-timesync.sh", sys_install)
         self.assertIn("/usr/local/bin/vice-timesync", sys_install)
+        self.assertIn("vicefetch.sh", sys_install)
+        self.assertIn("/usr/local/bin/vicefetch", sys_install)
+
+        skel_setup = _read_text("chroot_scripts", "22_skel_setup.sh")
+        self.assertIn(".config/neofetch/config.conf", skel_setup)
+        self.assertIn("Desktop/vicefetch.desktop", skel_setup)
 
     def test_skel_desktop_shortcuts_for_new_tools(self):
         expected = {
@@ -496,8 +654,9 @@ class TestToolsIntegrationAndDeployment(unittest.TestCase):
             "vice-radio.desktop": ("vice-tool-radio", "vice_tool_radio.py"),
             "vice-office.desktop": ("vice-tool-office-hub", "vice_tool_office_hub.py"),
             "vice-net-shield.desktop": ("vice-tool-net-shield", "vice_tool_net_shield.py"),
+            "vicefetch.desktop": ("vice-tool-fetch", "/usr/local/bin/vicefetch --hold"),
         }
-        for fname, (icon_name, script_name) in expected.items():
+        for fname, (icon_name, exec_target) in expected.items():
             path = os.path.join(CONFIG_DIR, "skel", "Desktop", fname)
             self.assertTrue(os.path.isfile(path), f"Missing {path}")
             cp = configparser.ConfigParser(interpolation=None)
@@ -507,18 +666,19 @@ class TestToolsIntegrationAndDeployment(unittest.TestCase):
             self.assertEqual(entry.get("Type"), "Application")
             self.assertEqual(entry.get("Icon"), icon_name)
             self.assertEqual(entry.get("Terminal"), "false")
-            self.assertIn(script_name, entry.get("Exec", ""))
-            self.assertTrue(os.path.isfile(os.path.join(DESKTOP_DIR, script_name)))
+            self.assertIn(exec_target, entry.get("Exec", ""))
+            if exec_target.endswith(".py"):
+                self.assertTrue(os.path.isfile(os.path.join(DESKTOP_DIR, exec_target)))
             if fname == "vice-tool-hub.desktop":
-                self.assertIn("250/500", entry.get("Comment", ""))
-                self.assertNotIn("100/500", entry.get("Comment", ""))
+                self.assertIn("375/500", entry.get("Comment", ""))
+                self.assertNotIn("250/500", entry.get("Comment", ""))
 
     def test_tools_progress_markdown_matches_registry(self):
         doc_path = os.path.join(DOCS_DIR, "TOOLS_PROGRESS.md")
         self.assertTrue(os.path.isfile(doc_path), "Missing docs/TOOLS_PROGRESS.md")
         doc = _read_text("docs", "TOOLS_PROGRESS.md")
-        self.assertIn("250 / 500", doc)
-        self.assertIn("50%", doc)
+        self.assertIn("375 / 500", doc)
+        self.assertIn("75%", doc)
 
         reg = _load_registry()
         for tool in reg["tools"]:

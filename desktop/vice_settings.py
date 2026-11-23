@@ -67,12 +67,12 @@ STYLE = build_app_qss(
 QListWidget#SettingsNav {{
     background-color: {_c['bg_surface']};
     border: 1px solid {_c['border']};
-    border-radius: 10px;
+    border-radius: 12px;
     padding: 6px;
 }}
 QListWidget#SettingsNav::item {{
     padding: 6px 10px;
-    border-radius: 6px;
+    border-radius: 8px;
     color: {_c['text_secondary']};
 }}
 QListWidget#SettingsNav::item:hover {{
@@ -88,7 +88,7 @@ QListWidget#SettingsNav::item:selected {{
 QStackedWidget#SettingsStack {{
     background-color: {_c['bg_surface']};
     border: 1px solid {_c['border']};
-    border-radius: 10px;
+    border-radius: 12px;
     padding: 10px;
 }}
 QScrollBar:vertical {{

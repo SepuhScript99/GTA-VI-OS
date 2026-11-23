@@ -101,6 +101,8 @@ NATIVE_XDG_CATEGORIES = {
     "vice-tool-mac-cloak": "System;Security;Network;",
     "vice-tool-office-hub": "Office;Utility;",
     "vice-tool-clock-sync": "Utility;System;Settings;",
+    "vice-tool-fetch": "System;Utility;",
+    "vice-tool-payload-lab": "System;Security;Development;",
 }
 
 GLYPH_ALIASES = {
@@ -118,7 +120,40 @@ GLYPH_ALIASES = {
     "stars": "star",
     "vault": "lock",
     "lock": "lock",
-    "crypto": "lock",
+    "crypto": "crypto",
+    "cipher": "crypto",
+    "fetch": "fetch",
+    "vicefetch": "fetch",
+    "payload": "payload",
+    "payload-lab": "payload",
+    "encoder": "payload",
+    "wireless": "wireless",
+    "rf": "wireless",
+    "forensics": "forensics",
+    "carving": "forensics",
+    "reversing": "reversing",
+    "reverse": "reversing",
+    "disasm": "reversing",
+    "binary": "reversing",
+    "exploit": "exploit",
+    "pentest": "exploit",
+    "vuln": "exploit",
+    "osint": "osint",
+    "recon": "osint",
+    "web_pentest": "web_pentest",
+    "webapp": "web_pentest",
+    "fuzzer": "web_pentest",
+    "password": "password",
+    "crack": "password",
+    "bruteforce": "password",
+    "wordlist": "password",
+    "sniff": "sniff",
+    "mitm": "sniff",
+    "capture": "sniff",
+    "tunnel": "tunnel",
+    "pivot": "tunnel",
+    "steg": "steg",
+    "stego": "steg",
     "turbo": "bolt",
     "bolt": "bolt",
     "boost": "bolt",
@@ -300,6 +335,8 @@ def _resolve_glyph_kind(tool: dict) -> str:
 
     # Bespoke tool-ID recognition takes precedence over generic aliases like 'network' or 'security'
     exact_id_map = {
+        "vice-tool-fetch": "fetch",
+        "vice-tool-payload-lab": "payload",
         "nmap": "radar",
         "masscan": "radar",
         "arp-scan": "radar",
@@ -761,6 +798,167 @@ def _draw_glyph(draw: ImageDraw.ImageDraw, kind: str, c1: tuple, c2: tuple, hi: 
         for y, knob_x, col in [(84, 102, c1), (128, 156, c2), (172, 118, hi)]:
             draw.line([(66, y), (190, y)], fill=RIM_BASE, width=8)
             draw.ellipse([knob_x - 14, y - 14, knob_x + 14, y + 14], fill=col)
+
+    elif kind == "fetch":
+        # GTA VI Sunset Debian Open-Use swirl + bold geometric VI + Aqua horizon accent
+        scx, scy = 114.0, 114.0
+        pts_n = 360
+        for idx in range(pts_n):
+            t = idx / (pts_n - 1)
+            theta = 0.55 + t * (2.92 * math.pi)
+            rad = 4.0 + 72.0 * (t ** 1.05)
+            px = scx + rad * math.cos(theta)
+            py = scy + rad * math.sin(theta)
+            if t < 0.72:
+                hw = 3.0 + 9.2 * math.sin((t / 0.72) * (math.pi * 0.65))
+            else:
+                tail_t = (t - 0.72) / 0.28
+                hw = 10.2 * (1.0 - tail_t ** 0.85) + 1.5
+            col = _lerp_color(
+                (155, 93, 229, 255),
+                (255, 110, 127, 255),
+                t * 2.0,
+            ) if t < 0.5 else _lerp_color(
+                (255, 110, 127, 255),
+                (255, 209, 102, 255),
+                (t - 0.5) * 2.0,
+            )
+            draw.ellipse([px - hw, py - hw, px + hw, py + hw], fill=col)
+        # Vice Aqua coastal horizon hairline at bottom-left
+        draw.line([(54, 190), (122, 190)], fill=(54, 214, 195, 255), width=7)
+        # Crisp VI monogram tucked at bottom-right with clean dark slate halo
+        v_poly = [(129, 132), (146, 132), (158, 174), (170, 132), (187, 132), (166, 196), (150, 196)]
+        i_poly = [(193, 132), (208, 132), (208, 196), (193, 196)]
+        for poly in (v_poly, i_poly):
+            draw.polygon(poly, fill=BADGE_BG)
+            for j in range(len(poly)):
+                draw.line([poly[j], poly[(j + 1) % len(poly)]], fill=BADGE_BG, width=10)
+        draw.polygon(v_poly, fill=ALABASTER)
+        draw.polygon(i_poly, fill=(247, 200, 115, 255))
+
+    elif kind == "payload":
+        # Encoder / Recon Lab: Aqua < > brackets + Sunset lightning/hex core
+        aqua = (54, 214, 195, 255)
+        coral = (255, 94, 126, 255)
+        gold = (247, 200, 115, 255)
+        draw.line([(90, 80), (54, 128), (90, 176)], fill=aqua, width=11)
+        draw.line([(166, 80), (202, 128), (166, 176)], fill=aqua, width=11)
+        bolt = [(138, 66), (104, 132), (128, 132), (118, 190), (154, 122), (130, 122)]
+        draw.polygon(bolt, fill=coral)
+        draw.line([(134, 84), (116, 126)], fill=gold, width=6)
+
+    elif kind == "wireless":
+        # RF / Wireless auditing antenna + dual signal arcs + target diamond
+        aqua = (54, 214, 195, 255)
+        coral = (255, 94, 126, 255)
+        draw.line([(cx, 92), (cx, 192)], fill=ALABASTER, width=10)
+        draw.line([(cx - 26, 192), (cx + 26, 192)], fill=ALABASTER, width=9)
+        draw.polygon([(cx, 72), (cx + 14, 88), (cx, 104), (cx - 14, 88)], fill=coral)
+        for rad, col in [(36, aqua), (62, c2)]:
+            draw.arc([cx - rad, 88 - rad, cx + rad, 88 + rad], 140, 220, fill=col, width=9)
+            draw.arc([cx - rad, 88 - rad, cx + rad, 88 + rad], 320, 40, fill=col, width=9)
+
+    elif kind == "forensics":
+        # Forensics magnifier over hex/binary stack
+        aqua = (54, 214, 195, 255)
+        coral = (255, 94, 126, 255)
+        for y, w in [(92, 40), (114, 52), (136, 34)]:
+            draw.line([(86, y), (86 + w, y)], fill=aqua, width=8)
+        draw.ellipse([64, 64, 158, 158], outline=ALABASTER, width=11)
+        draw.line([(146, 146), (192, 192)], fill=coral, width=15)
+
+    elif kind == "reversing":
+        # Binary disassembly chip + inward probe arrows
+        coral = (255, 94, 126, 255)
+        gold = (247, 200, 115, 255)
+        draw.rounded_rectangle([84, 78, 172, 178], radius=14, outline=ALABASTER, width=9)
+        draw.line([(104, 108), (128, 128), (104, 148)], fill=coral, width=9)
+        draw.line([(136, 148), (156, 148)], fill=gold, width=9)
+        for py in (100, 128, 156):
+            draw.line([(56, py), (82, py)], fill=gold, width=8)
+            draw.line([(174, py), (200, py)], fill=gold, width=8)
+
+    elif kind == "exploit":
+        # Precision vulnerability crosshairs + diamond strike
+        coral = (255, 94, 126, 255)
+        gold = (247, 200, 115, 255)
+        draw.ellipse([68, 68, 188, 188], outline=coral, width=9)
+        for x0, y0, x1, y1 in [(cx, 50, cx, 92), (cx, 164, cx, 206), (50, cy, 92, cy), (164, cy, 206, cy)]:
+            draw.line([(x0, y0), (x1, y1)], fill=ALABASTER, width=9)
+        draw.polygon([(cx, 104), (152, cy), (cx, 152), (104, cy)], fill=gold)
+
+    elif kind == "osint":
+        # OSINT reconnaissance eye + linked satellite nodes
+        aqua = (54, 214, 195, 255)
+        peach = (255, 154, 98, 255)
+        draw.arc([58, 86, 198, 170], 200, 340, fill=ALABASTER, width=9)
+        draw.arc([58, 86, 198, 170], 20, 160, fill=ALABASTER, width=9)
+        draw.ellipse([104, 104, 152, 152], outline=aqua, width=8)
+        draw.ellipse([120, 120, 136, 136], fill=peach)
+        for nx, ny in [(72, 70), (184, 70), (128, 188)]:
+            draw.ellipse([nx - 8, ny - 8, nx + 8, ny + 8], fill=aqua)
+
+    elif kind == "web_pentest":
+        # Web pentest browser frame + slash probe
+        aqua = (54, 214, 195, 255)
+        coral = (255, 94, 126, 255)
+        draw.rounded_rectangle([58, 66, 198, 190], radius=14, outline=ALABASTER, width=9)
+        draw.line([(62, 98), (194, 98)], fill=RIM_BASE, width=7)
+        draw.ellipse([74, 78, 86, 90], fill=coral)
+        draw.ellipse([94, 78, 106, 90], fill=(247, 200, 115, 255))
+        draw.line([(114, 168), (144, 116)], fill=coral, width=10)
+        draw.line([(86, 124), (108, 142), (86, 160)], fill=aqua, width=9)
+        draw.line([(170, 124), (148, 142), (170, 160)], fill=aqua, width=9)
+
+    elif kind == "password":
+        # Credential cracking bar + key bit
+        coral = (255, 94, 126, 255)
+        gold = (247, 200, 115, 255)
+        draw.rounded_rectangle([56, 74, 200, 130], radius=14, outline=ALABASTER, width=9)
+        for px, col in [(88, coral), (128, gold), (168, coral)]:
+            draw.ellipse([px - 10, 92, px + 10, 112], fill=col)
+        draw.ellipse([68, 152, 106, 190], outline=gold, width=9)
+        draw.line([(106, 171), (190, 171)], fill=ALABASTER, width=9)
+        draw.line([(160, 171), (160, 194)], fill=coral, width=9)
+        draw.line([(182, 171), (182, 188)], fill=coral, width=9)
+
+    elif kind == "sniff":
+        # Packet capture waveform + pulse nodes
+        aqua = (54, 214, 195, 255)
+        peach = (255, 154, 98, 255)
+        pts = [(56, 146), (86, 146), (104, 88), (128, 170), (154, 98), (172, 146), (200, 146)]
+        draw.line(pts, fill=aqua, width=10, joint="curve")
+        for nx, ny, col in [(104, 88, peach), (128, 170, ALABASTER), (154, 98, c1)]:
+            draw.ellipse([nx - 10, ny - 10, nx + 10, ny + 10], fill=col)
+
+    elif kind == "tunnel":
+        # Encrypted tunnel arches + directional arrow
+        aqua = (54, 214, 195, 255)
+        peach = (255, 154, 98, 255)
+        draw.arc([62, 62, 194, 194], 180, 360, fill=aqua, width=10)
+        draw.arc([86, 86, 170, 170], 180, 360, fill=peach, width=9)
+        draw.line([(62, 128), (62, 186)], fill=aqua, width=10)
+        draw.line([(194, 128), (194, 186)], fill=aqua, width=10)
+        draw.line([(92, 160), (164, 160)], fill=ALABASTER, width=10)
+        draw.line([(142, 138), (166, 160), (142, 182)], fill=ALABASTER, width=10)
+
+    elif kind == "crypto":
+        # Isometric cipher cube + coral keyhole
+        gold = (247, 200, 115, 255)
+        coral = (255, 94, 126, 255)
+        pts = [(cx, 56), (190, 92), (190, 164), (cx, 200), (66, 164), (66, 92)]
+        draw.polygon(pts, outline=gold, width=9)
+        draw.line([(68, 94), (cx, 126), (188, 94)], fill=ALABASTER, width=8)
+        draw.line([(cx, 126), (cx, 196)], fill=ALABASTER, width=8)
+        draw.ellipse([cx - 14, 80, cx + 14, 108], fill=coral)
+
+    elif kind == "steg":
+        # Layered image frame with tucked hidden reveal corner
+        aqua = (54, 214, 195, 255)
+        coral = (255, 94, 126, 255)
+        draw.rounded_rectangle([62, 66, 194, 190], radius=14, outline=ALABASTER, width=9)
+        draw.polygon([(78, 170), (110, 118), (138, 152), (158, 128), (180, 170)], fill=aqua)
+        draw.polygon([(142, 66), (194, 66), (194, 118)], fill=coral)
 
     else:  # "gear" default
         for deg in range(0, 360, 45):

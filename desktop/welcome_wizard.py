@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -364,7 +365,7 @@ class ThemePage(QWidget):
         self._preview.setText(f"Vice OS — {current.text()}")
         self._preview.setStyleSheet(
             f"background-color: {bg}; color: {primary}; "
-            f"border: 1px solid {accent}; border-radius: 8px; padding: 6px;"
+            f"border: 1px solid {accent}; border-radius: 10px; padding: 6px;"
         )
 
     def get_selected_theme(self):
@@ -500,7 +501,13 @@ class WelcomeWizard(QWidget):
         self._step_label.setStyleSheet(f"color: {c['text_muted']}; font-size: 11px;")
         main_layout.addWidget(self._step_label)
 
+        stack_card = QFrame(self)
+        stack_card.setObjectName("Card")
+        stack_lay = QVBoxLayout(stack_card)
+        stack_lay.setContentsMargins(16, 14, 16, 14)
+
         self.stack = QStackedWidget()
+        self.stack.setStyleSheet("background-color: transparent; border: none;")
         self._user_page = UserSetupPage()
         self._theme_page = ThemePage()
         self._locale_page = LocalePage()
@@ -518,9 +525,11 @@ class WelcomeWizard(QWidget):
             self._finish_page,
         ]
         for page in self.pages:
+            page.setStyleSheet("background-color: transparent;")
             self.stack.addWidget(page)
 
-        main_layout.addWidget(self.stack, 1)
+        stack_lay.addWidget(self.stack, 1)
+        main_layout.addWidget(stack_card, 1)
 
         btn_layout = QHBoxLayout()
         self.back_btn = QPushButton("Back")

@@ -1,4 +1,4 @@
-/* GTA VI OS (Vice OS) Global Qt Stylesheet v4.0 — Leonida Coastal Dusk */
+/* GTA VI OS (Vice OS) Global Qt Stylesheet v4.1 — Leonida Coastal Dusk (Win11 Rounded) */
 
 /* --- Global Defaults --- */
 QWidget {
@@ -12,6 +12,7 @@ QWidget {
 QDialog, QMessageBox {
     background-color: #141621;
     color: #F5F6FA;
+    border-radius: 12px;
 }
 
 /* --- Desktop Shell: Bottom 44px Cinnamon-Style Taskbar --- */
@@ -24,7 +25,7 @@ QPushButton#StartButton {
     background-color: #141621;
     color: #F5F6FA;
     border: 1px solid #262A3D;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 2px 10px;
     font-weight: bold;
     font-size: 12px;
@@ -47,7 +48,7 @@ QPushButton#PinButton {
     background-color: transparent;
     color: #A6AEBF;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 2px;
     min-width: 0px;
 }
@@ -61,9 +62,9 @@ QPushButton#TaskButton {
     background-color: #141621;
     color: #A6AEBF;
     border: 1px solid #262A3D;
-    border-radius: 7px;
-    padding: 2px 8px;
-    min-width: 28px;
+    border-radius: 9px;
+    padding: 2px 6px;
+    min-width: 0px;
     max-width: 230px;
     font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
     font-size: 12px;
@@ -88,8 +89,8 @@ QPushButton#QuickUtilButton {
     background-color: #141621;
     color: #A6AEBF;
     border: 1px solid #262A3D;
-    border-radius: 7px;
-    padding: 2px 8px;
+    border-radius: 8px;
+    padding: 2px 6px;
     min-width: 0px;
     font-size: 12px;
 }
@@ -104,8 +105,8 @@ QPushButton#BatteryButton {
     background-color: #122427;
     color: #36D6C3;
     border: 1px solid #224B4F;
-    border-radius: 7px;
-    padding: 2px 8px;
+    border-radius: 8px;
+    padding: 2px 6px;
     min-width: 0px;
     font-size: 11px;
     font-weight: bold;
@@ -121,7 +122,7 @@ QPushButton#VolumeMuteButton {
     background-color: #1B1E2D;
     color: #F5F6FA;
     border: 1px solid #353B54;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 4px 12px;
     min-width: 68px;
     font-size: 12px;
@@ -144,7 +145,7 @@ QPushButton#ShowDesktopButton {
     background-color: #141621;
     color: #A6AEBF;
     border: 1px solid #262A3D;
-    border-radius: 7px;
+    border-radius: 8px;
     padding: 2px;
     min-width: 24px;
     max-width: 28px;
@@ -164,7 +165,7 @@ QPushButton#PowerButton {
     background-color: #2A161D;
     color: #F25C6E;
     border: 1px solid #592835;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 3px 10px;
     min-width: 32px;
     font-weight: bold;
@@ -181,20 +182,20 @@ QPushButton#PowerButton:hover {
 QWidget#StartMenuPopup, QWidget#VolumePopup {
     background-color: rgba(20, 22, 33, 248);
     border: 1px solid #353B54;
-    border-radius: 12px;
+    border-radius: 14px;
 }
 
 QWidget#StartRail {
     background-color: rgba(13, 14, 21, 248);
     border-right: 1px solid #262A3D;
-    border-top-left-radius: 11px;
-    border-bottom-left-radius: 11px;
+    border-top-left-radius: 13px;
+    border-bottom-left-radius: 13px;
 }
 
 QPushButton#RailButton {
     background-color: transparent;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 4px;
     min-width: 0px;
 }
@@ -207,7 +208,7 @@ QPushButton#RailButton:hover {
 QPushButton#RailHubButton {
     background-color: #1B1E2D;
     border: 1px solid #353B54;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 4px;
     min-width: 0px;
 }
@@ -221,7 +222,7 @@ QPushButton#StartHubPill {
     background-color: #1B1E2D;
     color: #F7C873;
     border: 1px solid #353B54;
-    border-radius: 7px;
+    border-radius: 9px;
     padding: 3px 10px;
     min-width: 0px;
     font-size: 11px;
@@ -237,7 +238,7 @@ QPushButton#StartHubPill:hover {
 QListWidget#StartCatList {
     background-color: #0D0E15;
     border: 1px solid #262A3D;
-    border-radius: 9px;
+    border-radius: 10px;
     padding: 4px;
     outline: none;
     font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
@@ -245,7 +246,7 @@ QListWidget#StartCatList {
 
 QListWidget#StartCatList::item {
     padding: 7px 10px;
-    border-radius: 6px;
+    border-radius: 8px;
     color: #A6AEBF;
 }
 
@@ -263,7 +264,7 @@ QListWidget#StartCatList::item:selected {
 QListWidget#StartAppList {
     background-color: #141621;
     border: 1px solid #262A3D;
-    border-radius: 9px;
+    border-radius: 10px;
     padding: 4px;
     outline: none;
     font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
@@ -271,7 +272,7 @@ QListWidget#StartAppList {
 
 QListWidget#StartAppList::item {
     padding: 7px 10px;
-    border-radius: 6px;
+    border-radius: 8px;
     color: #F5F6FA;
 }
 
@@ -288,13 +289,13 @@ QListWidget#StartAppList::item:selected {
 QWidget#Dock {
     background-color: rgba(20, 22, 33, 240);
     border: 1px solid #262A3D;
-    border-radius: 12px;
+    border-radius: 14px;
 }
 
 QWidget#RunMenu {
     background-color: rgba(20, 22, 33, 248);
     border: 1px solid #353B54;
-    border-radius: 10px;
+    border-radius: 12px;
 }
 
 /* --- Inputs & Text Edits --- */
@@ -302,7 +303,7 @@ QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QComboBox {
     background-color: #1B1E2D;
     color: #F5F6FA;
     border: 1px solid #262A3D;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 6px 10px;
     selection-background-color: #4A2438;
     selection-color: #F5F6FA;
@@ -318,7 +319,7 @@ QPushButton {
     background-color: #1B1E2D;
     color: #F5F6FA;
     border: 1px solid #262A3D;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 6px 14px;
     min-width: 56px;
 }
@@ -327,6 +328,11 @@ QPushButton:hover {
     background-color: #23273A;
     color: #F5F6FA;
     border: 1px solid #353B54;
+}
+
+QPushButton:focus {
+    border: 1px solid #FF5E7E;
+    outline: none;
 }
 
 QPushButton:pressed {
@@ -345,7 +351,7 @@ QPushButton#PrimaryButton {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #FF5E7E, stop:1 #FF9A62);
     color: #0D0E15;
     border: none;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 7px 16px;
     font-weight: bold;
 }
@@ -358,7 +364,7 @@ QPushButton#PrimaryButton:hover {
 QToolButton {
     background-color: transparent;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 4px 6px;
 }
 
@@ -377,7 +383,7 @@ QPushButton#DockButton {
     background-color: #1B1E2D;
     color: #F5F6FA;
     border: 1px solid #262A3D;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 6px 10px;
     font-weight: bold;
     font-size: 12px;
@@ -401,7 +407,7 @@ QPushButton#ExitButton {
     background-color: transparent;
     color: #F25C6E;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 3px 8px;
     min-width: 0px;
     font-weight: bold;
@@ -424,8 +430,8 @@ QPushButton#Clock, QLabel#Clock {
     background-color: transparent;
     color: #F5F6FA;
     border: 1px solid transparent;
-    border-radius: 7px;
-    padding: 1px 8px;
+    border-radius: 8px;
+    padding: 1px 6px;
     min-width: 0px;
     font-weight: bold;
     font-size: 11px;
@@ -441,8 +447,8 @@ QPushButton#SysInfo, QLabel#SysInfo {
     background-color: transparent;
     color: #A6AEBF;
     border: 1px solid transparent;
-    border-radius: 7px;
-    padding: 2px 8px;
+    border-radius: 8px;
+    padding: 2px 6px;
     min-width: 0px;
     font-size: 11px;
 }
@@ -470,13 +476,14 @@ QComboBox QAbstractItemView {
     background-color: #1B1E2D;
     color: #F5F6FA;
     border: 1px solid #353B54;
+    border-radius: 10px;
     outline: none;
     padding: 4px;
 }
 
 QComboBox QAbstractItemView::item {
     padding: 6px 10px;
-    border-radius: 4px;
+    border-radius: 6px;
 }
 
 QComboBox QAbstractItemView::item:selected {
@@ -495,7 +502,7 @@ QCheckBox::indicator, QRadioButton::indicator {
     height: 15px;
     border: 1px solid #353B54;
     background-color: #1B1E2D;
-    border-radius: 4px;
+    border-radius: 5px;
 }
 
 QCheckBox::indicator:focus, QRadioButton::indicator:focus {
@@ -537,7 +544,7 @@ QSlider::sub-page:horizontal {
 QGroupBox {
     background-color: #141621;
     border: 1px solid #262A3D;
-    border-radius: 10px;
+    border-radius: 12px;
     margin-top: 12px;
     padding: 12px;
     color: #F5F6FA;
@@ -572,6 +579,7 @@ QStatusBar::item {
 QDockWidget::title {
     background-color: #1B1E2D;
     border: 1px solid #262A3D;
+    border-radius: 8px;
     padding: 6px;
 }
 
@@ -579,7 +587,7 @@ QDockWidget::title {
 QTabWidget::pane {
     border: 1px solid #262A3D;
     background-color: #141621;
-    border-radius: 8px;
+    border-radius: 12px;
 }
 
 QTabBar::tab {
@@ -587,8 +595,8 @@ QTabBar::tab {
     color: #A6AEBF;
     border: 1px solid #262A3D;
     padding: 8px 18px;
-    border-top-left-radius: 6px;
-    border-top-right-radius: 6px;
+    border-top-left-radius: 9px;
+    border-top-right-radius: 9px;
     margin-right: 2px;
     font-weight: normal;
 }
@@ -611,13 +619,13 @@ QProgressBar {
     text-align: center;
     background-color: #1B1E2D;
     border: 1px solid #262A3D;
-    border-radius: 6px;
+    border-radius: 8px;
     color: #F5F6FA;
 }
 
 QProgressBar::chunk {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #FF5E7E, stop:1 #FF9A62);
-    border-radius: 5px;
+    border-radius: 7px;
 }
 
 /* --- List, Tree, & Table Views --- */
@@ -625,13 +633,13 @@ QTreeView, QListView, QTableView, QListWidget {
     background-color: #141621;
     color: #F5F6FA;
     border: 1px solid #262A3D;
-    border-radius: 8px;
+    border-radius: 10px;
     outline: none;
 }
 
 QTreeView::item, QListView::item, QTableView::item, QListWidget::item {
     padding: 6px 8px;
-    border-radius: 4px;
+    border-radius: 8px;
 }
 
 QTreeView::item:alternate, QListView::item:alternate, QTableView::item:alternate {
@@ -655,7 +663,7 @@ QHeaderView::section {
 QMenu {
     background-color: #1B1E2D;
     border: 1px solid #353B54;
-    border-radius: 8px;
+    border-radius: 12px;
     color: #F5F6FA;
     padding: 6px;
 }
@@ -663,7 +671,7 @@ QMenu {
 QMenu::item {
     background-color: transparent;
     padding: 6px 18px;
-    border-radius: 5px;
+    border-radius: 8px;
 }
 
 QMenu::item:selected {
@@ -682,8 +690,8 @@ QToolTip {
     background-color: #1B1E2D;
     color: #F5F6FA;
     border: 1px solid #353B54;
-    border-radius: 6px;
-    padding: 6px 8px;
+    border-radius: 9px;
+    padding: 6px 10px;
 }
 
 /* --- Custom Scrollbars --- */

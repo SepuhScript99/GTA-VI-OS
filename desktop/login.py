@@ -242,7 +242,7 @@ class AnimatedLogin(QWidget):
         self.login_btn.setEnabled(True)
         self.pwd.setStyleSheet(
             f"background-color: #2A161D; color: {c['text_primary']}; "
-            f"border: 1px solid {c['danger']}; border-radius: 8px; padding: 6px 10px;"
+            f"border: 1px solid {c['danger']}; border-radius: 9px; padding: 6px 10px;"
         )
         self.pwd.setPlaceholderText(message)
         self.pwd.setFocus()

@@ -69,7 +69,7 @@ needs_args_prompt() {
     local base
     base=$(basename "$1")
     case "$base" in
-        rg|fdfind|fd|batcat|bat|jq|yq|curl|wget|aria2c|axel|http|nmap|tcpdump|tshark|mtr|whois|dig|host|traceroute|nc|netcat|ncat|ndiff|socat|iperf3|fping|ethtool|openssl|gpg|ufw|lynis|chkrootkit|rkhunter|age|pass|macchanger|proxychains4|strace|ltrace|valgrind|gdb-multiarch|nasm|objdump|eu-readelf|patchelf|hexedit|xxd|cloc|cppcheck|shellcheck|rsync|parted|ddrescue|smartctl|nvme|lsof|convert|magick|ffmpeg|ffprobe|mediainfo|sox|oggenc|flac|opusenc|qrencode|yt-dlp|7z|7za|tar|gzip|unzip|zip|zstd|grep|egrep|sed|awk|find|xargs|git|gcc|g++|make|cmake|ssh|scp|exiftool|pandoc|pdftotext|diff|colordiff|openvpn|wg|wg-quick|tor|privoxy|torsocks|obfs4proxy|stubby|unbound-checkconf|nft|iptables|firejail|nikto|sqlmap|gobuster|dirb|hydra|medusa|ncrack|john|crunch|cewl|aircrack-ng|aireplay-ng|airodump-ng|reaver|ettercap|arp-scan|netdiscover|hping3|masscan|binwalk|foremost|steghide|fls|mmls|icat|yara|tcpflow|ngrep|ssldump|sslscan|testssl.sh|testssl|whatweb|dnsrecon|dnsenum|fierce|mat2|nbtscan|smbclient|fcrackzip|pdfcrack|dmitry|wafw00f|swaks|stunnel4|stunnel|sshuttle|autossh|mosh|tcpreplay|clamscan|freshclam|aide|auditctl|fail2ban-client|cryptsetup|hdparm|btrfs|fsck.exfat|fsck.fat|ntfsfix|jdupes|optipng|jpegoptim|hunspell|tldr|lnav|multitail|redshift|qpdf|pdfimages|pdftohtml|tesseract|zbarimg|python3|sqlite3|hyperfine|entr|chafa)
+        rg|fdfind|fd|batcat|bat|jq|yq|curl|wget|aria2c|axel|http|nmap|tcpdump|tshark|mtr|whois|dig|host|traceroute|nc|netcat|ncat|ndiff|socat|iperf3|fping|ethtool|openssl|gpg|ufw|lynis|chkrootkit|rkhunter|age|pass|macchanger|proxychains4|strace|ltrace|valgrind|gdb-multiarch|nasm|objdump|eu-readelf|patchelf|hexedit|xxd|cloc|cppcheck|shellcheck|rsync|parted|ddrescue|smartctl|nvme|lsof|convert|magick|ffmpeg|ffprobe|mediainfo|sox|oggenc|flac|opusenc|qrencode|yt-dlp|7z|7za|tar|gzip|unzip|zip|zstd|grep|egrep|sed|awk|find|xargs|git|gcc|g++|make|cmake|ssh|scp|exiftool|pandoc|pdftotext|diff|colordiff|openvpn|wg|wg-quick|tor|privoxy|torsocks|obfs4proxy|stubby|unbound-checkconf|nft|iptables|firejail|nikto|sqlmap|gobuster|dirb|hydra|medusa|ncrack|john|crunch|cewl|aircrack-ng|aireplay-ng|airodump-ng|reaver|ettercap|arp-scan|netdiscover|hping3|masscan|binwalk|foremost|steghide|fls|mmls|icat|yara|tcpflow|ngrep|ssldump|sslscan|testssl.sh|testssl|whatweb|dnsrecon|dnsenum|fierce|mat2|nbtscan|smbclient|fcrackzip|pdfcrack|dmitry|wafw00f|swaks|stunnel4|stunnel|sshuttle|autossh|mosh|tcpreplay|clamscan|freshclam|aide|auditctl|fail2ban-client|cryptsetup|hdparm|btrfs|fsck.exfat|fsck.fat|ntfsfix|jdupes|optipng|jpegoptim|hunspell|tldr|lnav|multitail|redshift|qpdf|pdfimages|pdftohtml|tesseract|zbarimg|python3|sqlite3|hyperfine|entr|chafa|UEFIExtract|ZydisDisasm|adb|affcat|airgraph-ng|arping|atk6-alive6|b3sum|braa|bruteforce-luks|bruteforce-salted-openssl|bruteforce-wallet|bt-adapter|bully|ccrypt|certtool|checksec|chntpw|cisco7crack|cmospwd|cowpatty|dc3dd|dcfldd|debsums|dhcpdump|dnsmap|dnstop|dnstracer|drill|dsniff|dwarfdump|ewfinfo|exiv2|ext4magic|fastboot|fatcat|ffuf|firewalk|flawfinder|fwknop|gdbserver|gifshuffle|hashdeep|hcidump|hcxdumptool|hcxpcapngtool|heartbleeder|hexyl|httping|icmptx|ike-scan|ipcalc-ng|iw|ldapsearch|mdk3|mdk4|minisign|ndisc6|netsed|netsniff-ng|onesixtyone|ophcrack-cli|outguess|p0f|packit|pcapfix|pixiewps|pngcheck|princeprocessor|proxytunnel|reglookup|rhash|rifiuti2|rlwrap|samdump2|scalpel|scan6|scanelf|scrypt|sendip|siege|sipcrack|smb-nat|smbmap|snmpwalk|ssdeep|ssh-audit|sshpass|ssl-cert-check|sslsniff|sslsplit|stegsnow|sublist3r|sucrack|t50|tcptraceroute|tcptraceroute.mt|tcptrack|tinyproxy|tlsh|unhide|unsquashfs|vbindiff|w3m|wapiti|weevely|wfuzz|yasm|yersinia|zmap|zzuf)
             return 0
             ;;
         *)
@@ -81,16 +81,24 @@ needs_args_prompt() {
 run_help_and_prompt() {
     local bin="$1"
     local rc=0
+    local help_out=""
+    local h_out=""
 
     set +e
-    if "$bin" --help </dev/null >/dev/null 2>&1; then
-        "$bin" --help </dev/null 2>&1 | head -n 36
-    elif "$bin" -h </dev/null >/dev/null 2>&1; then
-        "$bin" -h </dev/null 2>&1 | head -n 36
+    help_out=$("$bin" --help </dev/null 2>&1)
+    rc=$?
+    if [ "$rc" -eq 0 ] && [ -n "$help_out" ]; then
+        printf '%s\n' "$help_out" | head -n 36
     else
-        "$bin" --help </dev/null 2>&1 | head -n 36 || true
+        h_out=$("$bin" -h </dev/null 2>&1)
+        if [ -n "$h_out" ] && ! printf '%s\n' "$h_out" | grep -qiE 'invalid option|unrecognized option|unknown option'; then
+            printf '%s\n' "$h_out" | head -n 36
+        elif [ -n "$help_out" ]; then
+            printf '%s\n' "$help_out" | head -n 36
+        fi
     fi
     set -e
+    rc=0
 
     if [ ! -t 0 ] || [ "${VICE_NO_HOLD:-0}" = "1" ]; then
         return 0

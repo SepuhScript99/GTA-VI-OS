@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-GTA VI OS (Vice OS) — Vice World Clock & Host Time Sync.
+GTA VI OS (Vice OS) — Vice World Clock, Interactive Calendar & Host Time Sync.
 Displays live local time synced with host timezone (/etc/localtime dynamic
-tzset watcher), world reference clocks, one-click Sync With Host & Internet
-Timezone (pkexec /usr/local/bin/vice-timesync --auto --force), searchable IANA
-timezone selector (--set <TZ>), and Chrony/VirtualBox timesync diagnostics.
-Styled via vice_theme (Noto Sans CJK fallback).
+tzset watcher), world reference clocks, a Windows 11-inspired interactive
+monthly calendar with Day/Date/Month/Year details, one-click Sync With Host &
+Internet Timezone (pkexec /usr/local/bin/vice-timesync --auto --force),
+searchable IANA timezone selector (--set <TZ>), and Chrony/VirtualBox timesync
+diagnostics. Styled via vice_theme (Noto Sans CJK fallback).
 """
 
-from datetime import datetime
+from datetime import date as py_date, datetime
 import os
 import shutil
 import signal
@@ -22,11 +23,36 @@ except ImportError:
     ZoneInfo = None
     available_timezones = None
 
-from PyQt5.QtCore import Qt, QProcess, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import QDate, QPointF, QProcess, QRectF, QSize, QThread, QTimer, Qt, pyqtSignal
+from PyQt5.QtGui import (
+    QColor,
+    QFont,
+    QIcon,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QTextCharFormat,
+)
 from PyQt5.QtWidgets import (
-    QApplication, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
-    QPlainTextEdit, QVBoxLayout, QWidget
+    QApplication,
+    QCalendarWidget,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMainWindow,
+    QMessageBox,
+    QPlainTextEdit,
+    QSizePolicy,
+    QTabWidget,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
 )
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -36,11 +62,14 @@ for _p in ("/opt/vice-os", _HERE, "/opt/vice-os/lib"):
 
 from vice_theme import (  # noqa: E402
     COLORS,
+    MONO_STACK,
     apply_app_theme,
     load_tool_icon,
+    make_badge,
     make_button,
     make_card,
     make_header,
+    style_badge,
 )
 
 try:
@@ -121,6 +150,130 @@ def _collect_iana_zones() -> list:
     return sorted(zones)
 
 
+def _make_chevron_icon(direction: str) -> QIcon:
+    """Render a crisp 14x14 alabaster left/right chevron icon for calendar nav buttons."""
+    pix = QPixmap(14, 14)
+    pix.fill(Qt.transparent)
+    painter = QPainter(pix)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    pen = QPen(QColor(COLORS["text_primary"]), 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+    painter.setPen(pen)
+    path = QPainterPath()
+    if direction == "left":
+        path.moveTo(QPointF(9.0, 3.0))
+        path.lineTo(QPointF(4.5, 7.0))
+        path.lineTo(QPointF(9.0, 11.0))
+    else:
+        path.moveTo(QPointF(5.0, 3.0))
+        path.lineTo(QPointF(9.5, 7.0))
+        path.lineTo(QPointF(5.0, 11.0))
+    painter.drawPath(path)
+    painter.end()
+    return QIcon(pix)
+
+
+class ViceCalendarWidget(QCalendarWidget):
+    """Windows 11-inspired rounded dark slate calendar widget with Leonida sunset highlights."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ViceCalendar")
+        now_local = datetime.now().astimezone()
+        self._today = QDate(now_local.year, now_local.month, now_local.day)
+
+        self.setGridVisible(False)
+        self.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader)
+        self.setHorizontalHeaderFormat(QCalendarWidget.ShortDayNames)
+        self.setFirstDayOfWeek(Qt.Monday)
+        self.setNavigationBarVisible(True)
+        self.setDateEditEnabled(True)
+
+        header_fmt = QTextCharFormat()
+        header_fmt.setBackground(QColor(COLORS["bg_surface"]))
+        header_fmt.setForeground(QColor(COLORS["text_secondary"]))
+        header_font = QFont("Noto Sans", 9, QFont.Bold)
+        header_fmt.setFont(header_font)
+        self.setHeaderTextFormat(header_fmt)
+
+        # Override Qt's default harsh red weekend text with soft Leonida contrast
+        weekend_fmt = QTextCharFormat()
+        weekend_fmt.setForeground(QColor("#D99B8C"))
+        self.setWeekdayTextFormat(Qt.Saturday, weekend_fmt)
+        self.setWeekdayTextFormat(Qt.Sunday, weekend_fmt)
+
+        prev_btn = self.findChild(QToolButton, "qt_calendar_prevmonth")
+        if prev_btn is not None:
+            prev_btn.setIcon(_make_chevron_icon("left"))
+            prev_btn.setIconSize(QSize(14, 14))
+            prev_btn.setToolTip("Previous Month")
+        next_btn = self.findChild(QToolButton, "qt_calendar_nextmonth")
+        if next_btn is not None:
+            next_btn.setIcon(_make_chevron_icon("right"))
+            next_btn.setIconSize(QSize(14, 14))
+            next_btn.setToolTip("Next Month")
+
+    def today_date(self) -> QDate:
+        return self._today
+
+    def set_today(self, today_qd: QDate) -> None:
+        if today_qd != self._today:
+            self._today = today_qd
+            self.updateCells()
+
+    def paintCell(self, painter: QPainter, rect, date: QDate) -> None:
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.fillRect(rect, QColor("#10121B"))
+
+        is_selected = date == self.selectedDate()
+        is_today = date == self._today
+        in_month = date.month() == self.monthShown() and date.year() == self.yearShown()
+        is_weekend = date.dayOfWeek() in (6, 7)
+
+        pill = QRectF(rect.adjusted(3, 3, -3, -3))
+        font = QFont(painter.font())
+        font.setPointSize(10)
+
+        if is_selected:
+            grad = QLinearGradient(pill.topLeft(), pill.bottomRight())
+            grad.setColorAt(0.0, QColor(COLORS["accent_coral"]))
+            grad.setColorAt(1.0, QColor(COLORS["accent_peach"]))
+            painter.setBrush(grad)
+            painter.setPen(QPen(QColor(COLORS["accent_gold"]), 1.5) if is_today else Qt.NoPen)
+            painter.drawRoundedRect(pill, 8.0, 8.0)
+            text_color = QColor("#0D0E15")
+            font.setBold(True)
+        elif is_today:
+            painter.setBrush(QColor("#15292E"))
+            painter.setPen(QPen(QColor(COLORS["accent_aqua"]), 1.5))
+            painter.drawRoundedRect(pill, 8.0, 8.0)
+            text_color = QColor(COLORS["accent_aqua"])
+            font.setBold(True)
+        else:
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(Qt.NoPen)
+            if not in_month:
+                text_color = QColor("#4E556B")
+            elif is_weekend:
+                text_color = QColor("#E2A496")
+            else:
+                text_color = QColor(COLORS["text_primary"])
+            font.setBold(False)
+
+        painter.setFont(font)
+        painter.setPen(text_color)
+        painter.drawText(pill, Qt.AlignCenter, str(date.day()))
+
+        if is_today:
+            dot_color = QColor("#0D0E15") if is_selected else QColor(COLORS["accent_aqua"])
+            painter.setBrush(dot_color)
+            painter.setPen(Qt.NoPen)
+            dot_rect = QRectF(pill.center().x() - 2.0, pill.bottom() - 5.5, 4.0, 4.0)
+            painter.drawEllipse(dot_rect)
+
+        painter.restore()
+
+
 class ClockDiagnosticsWorker(QThread):
     """Collects vice-timesync --status, timedatectl, Chrony, and VBoxService status off UI thread."""
     report_ready = pyqtSignal(str)
@@ -191,14 +344,91 @@ class ClockDiagnosticsWorker(QThread):
             self.report_ready.emit("\n\n".join(sections))
 
 
+_CALENDAR_EXTRA_QSS = f"""
+QFrame#WorldTile {{
+    background-color: #10121B;
+    border: 1px solid {COLORS['border']};
+    border-radius: 9px;
+}}
+QFrame#DateBanner {{
+    background-color: #10121B;
+    border: 1px solid {COLORS['border']};
+    border-radius: 10px;
+}}
+QCalendarWidget#ViceCalendar {{
+    background-color: #10121B;
+    border: 1px solid {COLORS['border']};
+    border-radius: 10px;
+}}
+QCalendarWidget#ViceCalendar QWidget#qt_calendar_navigationbar {{
+    background-color: {COLORS['bg_surface']};
+    border-bottom: 1px solid {COLORS['border']};
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    padding: 6px 8px;
+}}
+QCalendarWidget#ViceCalendar QToolButton#qt_calendar_prevmonth,
+QCalendarWidget#ViceCalendar QToolButton#qt_calendar_nextmonth {{
+    background-color: {COLORS['bg_elevated']};
+    border: 1px solid {COLORS['border']};
+    border-radius: 8px;
+    padding: 4px;
+    min-width: 28px;
+    min-height: 28px;
+}}
+QCalendarWidget#ViceCalendar QToolButton#qt_calendar_prevmonth:hover,
+QCalendarWidget#ViceCalendar QToolButton#qt_calendar_nextmonth:hover {{
+    background-color: {COLORS['bg_hover']};
+    border-color: {COLORS['accent_coral']};
+}}
+QCalendarWidget#ViceCalendar QToolButton#qt_calendar_monthbutton {{
+    background-color: transparent;
+    color: {COLORS['text_primary']};
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 4px 12px;
+    font-size: 13px;
+    font-weight: bold;
+}}
+QCalendarWidget#ViceCalendar QToolButton#qt_calendar_monthbutton:hover {{
+    background-color: {COLORS['bg_elevated']};
+    border-color: {COLORS['border_strong']};
+}}
+QCalendarWidget#ViceCalendar QToolButton#qt_calendar_monthbutton::menu-indicator {{
+    width: 0px;
+}}
+QCalendarWidget#ViceCalendar QSpinBox#qt_calendar_yearedit {{
+    background-color: {COLORS['bg_elevated']};
+    color: {COLORS['accent_peach']};
+    border: 1px solid {COLORS['border']};
+    border-radius: 7px;
+    padding: 3px 8px;
+    min-width: 62px;
+    font-size: 13px;
+    font-weight: bold;
+}}
+QCalendarWidget#ViceCalendar QTableView#qt_calendar_calendarview {{
+    background-color: #10121B;
+    alternate-background-color: {COLORS['bg_surface']};
+    color: {COLORS['text_primary']};
+    selection-background-color: {COLORS['accent_coral']};
+    selection-color: #0D0E15;
+    border: none;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    outline: none;
+}}
+"""
+
+
 class ViceClockSyncApp(QMainWindow):
-    """Main window for Vice World Clock & Host Time Sync."""
+    """Main window for Vice World Clock, Interactive Calendar & Host Time Sync."""
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice World Clock & Host Time Sync — Vice OS")
-        self.resize(940, 660)
-        self.setMinimumSize(760, 520)
+        self.resize(1040, 620)
+        self.setMinimumSize(880, 540)
         icon = load_tool_icon("vice-tool-clock-sync", "preferences-system-time")
         if not icon.isNull():
             self.setWindowIcon(icon)
@@ -213,6 +443,7 @@ class ViceClockSyncApp(QMainWindow):
         self._init_ui()
         self._populate_tz_list()
         self._tick_clock()
+        self._update_calendar_banner()
         self._refresh_diagnostics()
 
         self._clock_timer = QTimer(self)
@@ -235,15 +466,16 @@ class ViceClockSyncApp(QMainWindow):
     def _init_ui(self) -> None:
         root = QWidget(self)
         root.setObjectName("RootWidget")
+        root.setStyleSheet(_CALENDAR_EXTRA_QSS)
         self.setCentralWidget(root)
 
         layout = QVBoxLayout(root)
-        layout.setContentsMargins(16, 16, 16, 14)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 14, 14, 12)
+        layout.setSpacing(10)
 
         self._header = make_header(
             title="Vice World Clock & Host Time Sync",
-            subtitle="Live local clock, host/internet timezone sync, IANA selector, and Chrony/VBox diagnostics",
+            subtitle="Live local clock, interactive monthly calendar, IANA timezone sync, and Chrony/VBox diagnostics",
             icon_name="vice-tool-clock-sync",
             badge_text=_read_active_timezone(),
             badge_variant="aqua",
@@ -254,19 +486,32 @@ class ViceClockSyncApp(QMainWindow):
         self._header.right_layout.addWidget(self._sync_btn)
         layout.addWidget(self._header)
 
-        # Top Hero Clock + World Clocks
-        clock_card = make_card(parent=root, margins=(16, 14, 16, 14), spacing=8)
+        # Main Two-Pane Split: Left (~58%) Clock + Tabs | Right (~42%) Always-Visible Calendar
+        main_split = QHBoxLayout()
+        main_split.setSpacing(12)
+
+        # --- LEFT PANE (~58%) ---
+        left_col = QVBoxLayout()
+        left_col.setSpacing(10)
+
+        clock_card = make_card(parent=root, margins=(14, 12, 14, 12), spacing=8)
         top_clock_row = QHBoxLayout()
-        left_clock = QVBoxLayout()
-        left_clock.setSpacing(4)
+        top_clock_row.setSpacing(10)
+
+        clock_text_col = QVBoxLayout()
+        clock_text_col.setSpacing(2)
         self._clock_lbl = QLabel("--:--:--", clock_card)
         self._clock_lbl.setObjectName("ClockDisplay")
-        left_clock.addWidget(self._clock_lbl)
+        self._clock_lbl.setStyleSheet(
+            f"color: {COLORS['text_primary']}; font-family: {MONO_STACK}; font-size: 34px; font-weight: bold;"
+        )
+        clock_text_col.addWidget(self._clock_lbl)
 
         self._date_lbl = QLabel("Loading date...", clock_card)
-        self._date_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 13px;")
-        left_clock.addWidget(self._date_lbl)
-        top_clock_row.addLayout(left_clock, 1)
+        self._date_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 12px;")
+        self._date_lbl.setWordWrap(True)
+        clock_text_col.addWidget(self._date_lbl)
+        top_clock_row.addLayout(clock_text_col, 1)
 
         quick_btns = QVBoxLayout()
         quick_btns.setSpacing(6)
@@ -281,54 +526,172 @@ class ViceClockSyncApp(QMainWindow):
         clock_card.body_layout.addLayout(top_clock_row)
 
         world_grid = QGridLayout()
-        world_grid.setSpacing(10)
+        world_grid.setSpacing(8)
         for idx, (city, tz_name) in enumerate(WORLD_ZONES):
-            box = QVBoxLayout()
-            box.setSpacing(2)
-            city_lbl = QLabel(city, clock_card)
+            tile = QFrame(clock_card)
+            tile.setObjectName("WorldTile")
+            tile_lay = QVBoxLayout(tile)
+            tile_lay.setContentsMargins(10, 6, 10, 6)
+            tile_lay.setSpacing(1)
+            city_lbl = QLabel(city, tile)
             city_lbl.setObjectName("MutedLabel")
-            time_lbl = QLabel("--:--", clock_card)
-            time_lbl.setStyleSheet(f"color: {COLORS['text_primary']}; font-weight: bold; font-size: 14px;")
-            box.addWidget(city_lbl)
-            box.addWidget(time_lbl)
-            world_grid.addLayout(box, 0, idx)
+            city_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 11px;")
+            time_lbl = QLabel("--:--", tile)
+            time_lbl.setStyleSheet(f"color: {COLORS['text_primary']}; font-weight: bold; font-size: 13px;")
+            tile_lay.addWidget(city_lbl)
+            tile_lay.addWidget(time_lbl)
+            r, c = divmod(idx, 3)
+            world_grid.addWidget(tile, r, c)
             self._world_labels.append((tz_name, time_lbl))
         clock_card.body_layout.addLayout(world_grid)
-        layout.addWidget(clock_card)
+        left_col.addWidget(clock_card)
 
-        # Bottom Split: Searchable IANA Timezone Selector | Chrony/VBox Diagnostics
-        lower = QHBoxLayout()
-        lower.setSpacing(12)
+        # Tabbed IANA Selector & Diagnostics
+        self._tabs = QTabWidget(root)
 
-        tz_card = make_card(title="IANA Timezone Selector", parent=root)
-        self._tz_search = QLineEdit(tz_card)
-        self._tz_search.setPlaceholderText("Search timezone (e.g. America/New_York, Asia/Tokyo)...")
+        tz_tab = QWidget(self._tabs)
+        tz_lay = QVBoxLayout(tz_tab)
+        tz_lay.setContentsMargins(12, 12, 12, 12)
+        tz_lay.setSpacing(8)
+
+        self._tz_search = QLineEdit(tz_tab)
+        self._tz_search.setPlaceholderText("Search IANA timezone (e.g. America/New_York, Asia/Tokyo)...")
         self._tz_search.setClearButtonEnabled(True)
         self._tz_search.textChanged.connect(self._populate_tz_list)
-        tz_card.body_layout.addWidget(self._tz_search)
+        tz_lay.addWidget(self._tz_search)
 
-        self._tz_list = QListWidget(tz_card)
+        self._tz_list = QListWidget(tz_tab)
         self._tz_list.itemDoubleClicked.connect(lambda _it: self._apply_selected_tz())
-        tz_card.body_layout.addWidget(self._tz_list, 1)
+        tz_lay.addWidget(self._tz_list, 1)
 
-        self._apply_tz_btn = make_button("Set Selected Timezone", variant="primary", parent=tz_card)
+        self._apply_tz_btn = make_button("Set Selected Timezone", variant="primary", parent=tz_tab)
         self._apply_tz_btn.clicked.connect(self._apply_selected_tz)
-        tz_card.body_layout.addWidget(self._apply_tz_btn)
-        lower.addWidget(tz_card, 2)
+        tz_lay.addWidget(self._apply_tz_btn)
+        self._tabs.addTab(tz_tab, "IANA Timezone Selector")
 
-        diag_card = make_card(title="Chrony & VirtualBox Timesync Diagnostics", parent=root)
-        self._diag_out = QPlainTextEdit(diag_card)
+        diag_tab = QWidget(self._tabs)
+        diag_lay = QVBoxLayout(diag_tab)
+        diag_lay.setContentsMargins(12, 12, 12, 12)
+        diag_lay.setSpacing(8)
+
+        self._diag_out = QPlainTextEdit(diag_tab)
         self._diag_out.setReadOnly(True)
         self._diag_out.setPlainText("Collecting timesync diagnostics...")
-        diag_card.body_layout.addWidget(self._diag_out, 1)
+        diag_lay.addWidget(self._diag_out, 1)
+        self._tabs.addTab(diag_tab, "Chrony && VirtualBox Diagnostics")
 
-        self._status_lbl = QLabel("Ready.", diag_card)
+        left_col.addWidget(self._tabs, 1)
+
+        self._status_lbl = QLabel("Ready.", root)
         self._status_lbl.setObjectName("MutedLabel")
         self._status_lbl.setWordWrap(True)
-        diag_card.body_layout.addWidget(self._status_lbl)
-        lower.addWidget(diag_card, 3)
+        left_col.addWidget(self._status_lbl)
 
-        layout.addLayout(lower, 1)
+        main_split.addLayout(left_col, 58)
+
+        # --- RIGHT PANE (~42%): Always-Visible Leonida Interactive Calendar ---
+        cal_card = make_card(parent=root, margins=(14, 12, 14, 12), spacing=10)
+        cal_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        cal_title_row = QHBoxLayout()
+        cal_title_row.setSpacing(8)
+        cal_title = QLabel("Interactive Calendar", cal_card)
+        cal_title.setObjectName("SectionTitle")
+        cal_title_row.addWidget(cal_title)
+        cal_title_row.addStretch(1)
+        self._cal_rel_badge = make_badge("TODAY", "aqua", cal_card)
+        cal_title_row.addWidget(self._cal_rel_badge)
+        cal_card.body_layout.addLayout(cal_title_row)
+
+        # Hero Date Banner (Day, Date, Month, Year + ISO Week & Day of Year)
+        banner = QFrame(cal_card)
+        banner.setObjectName("DateBanner")
+        banner_lay = QVBoxLayout(banner)
+        banner_lay.setContentsMargins(12, 10, 12, 10)
+        banner_lay.setSpacing(5)
+
+        banner_top = QHBoxLayout()
+        banner_top.setSpacing(8)
+        self._cal_day_badge = make_badge("Monday", "coral", banner)
+        banner_top.addWidget(self._cal_day_badge)
+        self._cal_meta_lbl = QLabel("Week 1 · Day 1 of 365", banner)
+        self._cal_meta_lbl.setObjectName("MutedLabel")
+        banner_top.addWidget(self._cal_meta_lbl, 1)
+        banner_lay.addLayout(banner_top)
+
+        self._cal_date_big = QLabel("-- ---- ----", banner)
+        self._cal_date_big.setStyleSheet(
+            f"color: {COLORS['text_primary']}; font-size: 20px; font-weight: bold;"
+        )
+        banner_lay.addWidget(self._cal_date_big)
+        cal_card.body_layout.addWidget(banner)
+
+        # Interactive Monthly Calendar Grid
+        self._calendar = ViceCalendarWidget(cal_card)
+        self._calendar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._calendar.selectionChanged.connect(self._update_calendar_banner)
+        self._calendar.currentPageChanged.connect(lambda _y, _m: self._calendar.updateCells())
+        cal_card.body_layout.addWidget(self._calendar, 1)
+
+        # Footer: Selected Day/Date/Month/Year summary + Jump to Today button
+        cal_footer = QHBoxLayout()
+        cal_footer.setSpacing(8)
+        self._cal_footer_lbl = QLabel("Selected: --", cal_card)
+        self._cal_footer_lbl.setObjectName("MutedLabel")
+        self._cal_footer_lbl.setWordWrap(True)
+        cal_footer.addWidget(self._cal_footer_lbl, 1)
+
+        self._jump_today_btn = make_button("Jump to Today", variant="secondary", parent=cal_card)
+        self._jump_today_btn.clicked.connect(self._jump_to_today)
+        cal_footer.addWidget(self._jump_today_btn)
+        cal_card.body_layout.addLayout(cal_footer)
+
+        main_split.addWidget(cal_card, 42)
+        layout.addLayout(main_split, 1)
+
+    def _jump_to_today(self) -> None:
+        now_local = datetime.now().astimezone()
+        today_qd = QDate(now_local.year, now_local.month, now_local.day)
+        self._calendar.set_today(today_qd)
+        self._calendar.setSelectedDate(today_qd)
+        self._calendar.setCurrentPage(today_qd.year(), today_qd.month())
+        self._update_calendar_banner()
+
+    def _update_calendar_banner(self) -> None:
+        sel = self._calendar.selectedDate()
+        sel_py = py_date(sel.year(), sel.month(), sel.day())
+        today_qd = self._calendar.today_date()
+        today_py = py_date(today_qd.year(), today_qd.month(), today_qd.day())
+
+        day_name = sel_py.strftime("%A")
+        full_dmy = sel_py.strftime("%d %B %Y")
+        iso_week = sel_py.isocalendar()[1]
+        day_of_year = sel_py.timetuple().tm_yday
+        days_in_year = py_date(sel_py.year, 12, 31).timetuple().tm_yday
+
+        style_badge(self._cal_day_badge, "coral")
+        self._cal_day_badge.setText(day_name)
+        self._cal_date_big.setText(full_dmy)
+        self._cal_meta_lbl.setText(f"Week {iso_week} · Day {day_of_year} of {days_in_year}")
+
+        delta = (sel_py - today_py).days
+        if delta == 0:
+            self._cal_rel_badge.setText("TODAY")
+            style_badge(self._cal_rel_badge, "aqua")
+        elif delta == 1:
+            self._cal_rel_badge.setText("TOMORROW")
+            style_badge(self._cal_rel_badge, "gold")
+        elif delta == -1:
+            self._cal_rel_badge.setText("YESTERDAY")
+            style_badge(self._cal_rel_badge, "neutral")
+        elif delta > 0:
+            self._cal_rel_badge.setText(f"+{delta} DAYS")
+            style_badge(self._cal_rel_badge, "gold")
+        else:
+            self._cal_rel_badge.setText(f"{abs(delta)}D AGO")
+            style_badge(self._cal_rel_badge, "neutral")
+
+        self._cal_footer_lbl.setText(f"Selected: {day_name}, {full_dmy}")
 
     def _tick_clock(self) -> None:
         cur_mtime = self._stat_localtime()
@@ -347,11 +710,21 @@ class ViceClockSyncApp(QMainWindow):
             f"{now_local.strftime('%A, %d %B %Y')}  ·  {tz_active} ({offset_fmt})"
         )
 
+        today_qd = QDate(now_local.year, now_local.month, now_local.day)
+        old_today = self._calendar.today_date()
+        if today_qd != old_today:
+            was_on_today = self._calendar.selectedDate() == old_today
+            self._calendar.set_today(today_qd)
+            if was_on_today:
+                self._calendar.setSelectedDate(today_qd)
+                self._calendar.setCurrentPage(today_qd.year(), today_qd.month())
+            self._update_calendar_banner()
+
         for tz_name, lbl in self._world_labels:
             if ZoneInfo is not None:
                 try:
                     dt = datetime.now(ZoneInfo(tz_name))
-                    lbl.setText(dt.strftime("%H:%M  (%a)"))
+                    lbl.setText(dt.strftime("%H:%M (%a)"))
                     continue
                 except Exception:
                     pass
@@ -467,7 +840,7 @@ class ViceClockSyncApp(QMainWindow):
 def main() -> None:
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication(sys.argv)
-    apply_app_theme(app)
+    apply_app_theme(app, extra_qss=_CALENDAR_EXTRA_QSS)
     win = ViceClockSyncApp()
     win.show()
     sys.exit(app.exec_())

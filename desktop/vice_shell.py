@@ -318,8 +318,8 @@ class TaskbarWidget(QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self._layout = QHBoxLayout(self)
-        self._layout.setContentsMargins(6, 2, 6, 2)
-        self._layout.setSpacing(6)
+        self._layout.setContentsMargins(4, 2, 4, 2)
+        self._layout.setSpacing(4)
         self._layout.addStretch(1)
         self._buttons = {}
         self._window_titles = {}
@@ -330,6 +330,7 @@ class TaskbarWidget(QWidget):
         self._spy_stop = False
         self._spy_proc = None
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.setMinimumWidth(0)
 
         self._polled.connect(self._apply_poll_result)
         self._debounce = QTimer(self)
@@ -470,6 +471,10 @@ class TaskbarWidget(QWidget):
     def _icon_for_title(title: str, wm_class: str = "") -> QIcon:
         low_title = (title or "").lower()
         low_class = (wm_class or "").lower()
+        if "vice os — system info" in low_title or "vicefetch" in low_title:
+            ic = _theme_icon("vice-tool-fetch", "utilities-terminal")
+            if not ic.isNull():
+                return ic
         if any(k in low_class for k in ("xfce4-terminal", "xterm")) or "vice os - " in low_title:
             ic = _theme_icon("utilities-terminal", "terminal")
             if not ic.isNull():
@@ -488,6 +493,7 @@ class TaskbarWidget(QWidget):
             (("vice command",), ("vice-tool-cheatsheets", "utilities-terminal")),
             (("vice net shield", "net shield"), ("vice-tool-net-shield", "network-vpn")),
             (("vice cyber", "cyber deck"), ("vice-tool-cyber-deck", "security-high")),
+            (("vice payload lab", "payload lab"), ("vice-tool-payload-lab", "security-high")),
             (("vice privacy", "identity cloak", "mac cloak"), ("vice-tool-mac-cloak", "changes-prevent")),
             (("vice office", "office studio"), ("vice-tool-office-hub", "x-office-document")),
             (("vice world clock", "clock sync"), ("vice-tool-clock-sync", "preferences-system-time")),
@@ -511,23 +517,47 @@ class TaskbarWidget(QWidget):
                     return ic
         return _theme_icon("application-x-executable", "applications-other")
 
+    def _available_taskbar_width(self) -> int:
+        parent = self.parentWidget()
+        if parent is not None and parent.width() > 0:
+            layout = parent.layout()
+            if layout is not None:
+                margins = layout.contentsMargins()
+                spacing = max(0, layout.spacing())
+                used = margins.left() + margins.right()
+                other_count = 0
+                for idx in range(layout.count()):
+                    item = layout.itemAt(idx)
+                    w = item.widget() if item is not None else None
+                    if w is not None and w is not self and w.isVisibleTo(parent):
+                        w_est = max(w.width(), w.sizeHint().width()) if parent.isVisible() else w.sizeHint().width()
+                        used += w_est
+                        other_count += 1
+                used += other_count * spacing
+                parent_avail = max(48, parent.width() - used - 8)
+                if self.width() <= 100:
+                    return parent_avail
+                return min(max(48, self.width() - 8), parent_avail)
+        return max(48, self.width() - 8)
+
     def _update_button_layout(self):
         count = len(self._buttons)
         if count <= 0:
             return
-        avail = max(120, self.width() - 12)
-        spacing = max(0, count - 1) * 6
-        per_btn_max = max(34, min(220, (avail - spacing) // count))
+        avail = self._available_taskbar_width()
+        spacing = max(0, count - 1) * 4
+        per_btn_max = max(24, min(210, (avail - spacing) // count))
         for wid, btn in self._buttons.items():
             title = self._window_titles.get(wid, btn.toolTip() or btn.text())
             btn.setMaximumWidth(per_btn_max)
-            text_budget = per_btn_max - 42
-            if text_budget < 16:
+            text_budget = per_btn_max - 36
+            if text_budget < 14:
                 label = ""
             else:
                 bold_font = QFont(btn.font())
                 bold_font.setBold(True)
-                label = QFontMetrics(bold_font).elidedText(title, Qt.ElideRight, text_budget)
+                elided = QFontMetrics(bold_font).elidedText(title, Qt.ElideRight, text_budget)
+                label = elided.replace("&", "&&")
             if btn.text() != label:
                 btn.setText(label)
 
@@ -565,6 +595,8 @@ class TaskbarWidget(QWidget):
                 btn.setObjectName("TaskButton")
                 btn.setCheckable(True)
                 btn.setFocusPolicy(Qt.NoFocus)
+                btn.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+                btn.setMinimumWidth(0)
                 btn.setFixedHeight(32)
                 btn.setIconSize(QSize(16, 16))
                 btn.clicked.connect(lambda _checked=False, w=wid: self._toggle_window(w))
@@ -640,12 +672,19 @@ def _read_registry_counts() -> tuple:
             try:
                 with open(path, "r", encoding="utf-8") as fp:
                     data = json.load(fp)
-                cur = int(data.get("current_count") or len(data.get("tools", [])))
-                tgt = int(data.get("target_count") or 500)
+                cur = int(next(
+                    (v for v in (
+                        data.get("current_count"),
+                        data.get("implemented_count"),
+                        len(data.get("tools", [])),
+                    ) if v),
+                    375,
+                ))
+                tgt = int(data.get("target_count") or data.get("total_slots") or 500)
                 return cur, tgt
             except Exception:
                 pass
-    return 250, 500
+    return 375, 500
 
 
 class StartMenuPopup(_StyledWidget):
@@ -711,7 +750,7 @@ class StartMenuPopup(_StyledWidget):
         self.setFocusPolicy(Qt.StrongFocus)
 
         root = QHBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(1, 1, 1, 1)
         root.setSpacing(0)
 
         # 1. Left Favorites & Power Rail (Cinnamon-style)
@@ -723,8 +762,9 @@ class StartMenuPopup(_StyledWidget):
         rail_layout.setSpacing(8)
 
         cur_tools, tgt_tools = _read_registry_counts()
+        pct_tools = int(round((cur_tools / max(1, tgt_tools)) * 100))
         pinned_rail = [
-            (f"Vice Tool Hub ({cur_tools}/{tgt_tools})", ["python3 /opt/vice-os/vice_tool_hub.py"],
+            (f"Vice Tool Hub ({cur_tools} / {tgt_tools} ({pct_tools}%))", ["python3 /opt/vice-os/vice_tool_hub.py"],
              ("vice-tool-hub", "view-app-grid"), "RailHubButton"),
             ("Vice Office Studio", ["python3 /opt/vice-os/vice_tool_office_hub.py"],
              ("vice-tool-office-hub", "x-office-document"), "RailButton"),
@@ -782,7 +822,9 @@ class StartMenuPopup(_StyledWidget):
         self._hub_pill = QPushButton(f"Tool Hub · {cur_tools}/{tgt_tools}", main_area)
         self._hub_pill.setObjectName("StartHubPill")
         self._hub_pill.setFocusPolicy(Qt.NoFocus)
-        self._hub_pill.setToolTip(f"Open Vice Tool Hub ({cur_tools}/{tgt_tools} GTA VI & Debian Tools)")
+        self._hub_pill.setToolTip(
+            f"Open Vice Tool Hub ({cur_tools} / {tgt_tools} ({pct_tools}%) GTA VI & Debian Tools)"
+        )
         hub_ic = _theme_icon("vice-tool-hub", "view-app-grid")
         if not hub_ic.isNull():
             self._hub_pill.setIcon(hub_ic)
@@ -1028,8 +1070,11 @@ class StartMenuPopup(_StyledWidget):
         h = min(540, geo.height() - pc.DOCK_HEIGHT - 20)
         self.setGeometry(geo.x() + 10, geo.y() + geo.height() - pc.DOCK_HEIGHT - h - 8, w, h)
         cur_tools, tgt_tools = _read_registry_counts()
+        pct_tools = int(round((cur_tools / max(1, tgt_tools)) * 100))
         self._hub_pill.setText(f"Tool Hub · {cur_tools}/{tgt_tools}")
-        self._hub_pill.setToolTip(f"Open Vice Tool Hub ({cur_tools}/{tgt_tools} GTA VI & Debian Tools)")
+        self._hub_pill.setToolTip(
+            f"Open Vice Tool Hub ({cur_tools} / {tgt_tools} ({pct_tools}%) GTA VI & Debian Tools)"
+        )
         if not self._apps or self._apps_dirs_mtime() != self._last_apps_mtime:
             self.reload_apps()
         self._search.clear()
@@ -1417,6 +1462,37 @@ class _VolumeButton(QPushButton):
         super().wheelEvent(event)
 
 
+def _format_sysinfo(cpu_text: str, ram_text: str, disk_text: str, compact: bool = False) -> tuple:
+    """Return (concise_taskbar_text, detailed_tooltip_text) for the sysinfo tray button."""
+    full_parts = [p for p in (cpu_text, ram_text, disk_text) if p]
+    full_tip = " · ".join(full_parts) + " — Click for Task Manager"
+
+    cpu_m = re.search(r"(\d+%)", cpu_text or "")
+    cpu_short = f"CPU {cpu_m.group(1)}" if cpu_m else (cpu_text or "CPU N/A")
+
+    ram_m = re.search(r"(\d+)\s*MB\s*/\s*(\d+)\s*MB", ram_text or "")
+    if ram_m:
+        used_mb, total_mb = int(ram_m.group(1)), int(ram_m.group(2))
+        if total_mb >= 1024:
+            if compact:
+                ram_short = f"{used_mb / 1024:.1f}/{total_mb / 1024:.1f}G"
+            else:
+                ram_short = f"RAM {used_mb / 1024:.1f}/{total_mb / 1024:.1f}G"
+        else:
+            ram_short = f"{used_mb}/{total_mb}M" if compact else f"RAM {used_mb}/{total_mb}M"
+    else:
+        ram_short = (ram_text or "").replace("RAM: ", "RAM ")
+
+    disk_m = re.search(r"(\d+%)", disk_text or "")
+    if disk_m:
+        disk_short = disk_m.group(1) if compact else f"Disk {disk_m.group(1)}"
+    else:
+        disk_short = ""
+
+    short_parts = [p for p in (cpu_short, ram_short, disk_short) if p]
+    return (" · ".join(short_parts) or "Sys", full_tip)
+
+
 class BottomTaskbar(_StyledWidget):
     """Unified Mint Cinnamon-style bottom panel: Start button, pinned icons, live taskbar, tray & clock."""
 
@@ -1461,13 +1537,14 @@ class BottomTaskbar(_StyledWidget):
         screen.geometryChanged.connect(self._reposition)
 
         layout = QHBoxLayout()
-        layout.setContentsMargins(8, 2, 8, 2)
-        layout.setSpacing(6)
+        layout.setContentsMargins(6, 2, 6, 2)
+        layout.setSpacing(4)
 
         # 1. GTA VI x Debian Start Button (bottom-left)
         self.apps_btn = QPushButton("Menu", self)
         self.apps_btn.setObjectName("StartButton")
         self.apps_btn.setFocusPolicy(Qt.NoFocus)
+        self.apps_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.apps_btn.setFixedHeight(34)
         self.apps_btn.setToolTip("Vice OS Start Menu (Windows Key)")
         logo_icon = _logo_icon()
@@ -1506,10 +1583,12 @@ class BottomTaskbar(_StyledWidget):
         layout.addWidget(self.taskbar, 1)
 
         # 4. Right Utility Tray: Metrics, Net, Audio, Battery, Clock, Show Desktop
-        self.sysinfo = QPushButton("CPU: 0% · RAM: 0MB", self)
+        self.sysinfo = QPushButton("CPU 0% · RAM 0G", self)
         self.sysinfo.setObjectName("SysInfo")
         self.sysinfo.setFocusPolicy(Qt.NoFocus)
+        self.sysinfo.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.sysinfo.setFixedHeight(30)
+        self.sysinfo.setMaximumWidth(235)
         self.sysinfo.setToolTip("Open Task Manager")
         self.sysinfo.clicked.connect(
             lambda: _launch_candidates(["xfce4-taskmanager", "python3 /opt/vice-os/vice_task_manager.py"])
@@ -1519,14 +1598,17 @@ class BottomTaskbar(_StyledWidget):
         self.net_btn = QPushButton(self)
         self.net_btn.setObjectName("QuickUtilButton")
         self.net_btn.setFocusPolicy(Qt.NoFocus)
+        self.net_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.net_btn.setFixedHeight(30)
         self.net_btn.setToolTip("Network Connections")
         net_icon = _theme_icon("network-wired", "network-wireless")
         if not net_icon.isNull():
             self.net_btn.setIcon(net_icon)
             self.net_btn.setIconSize(QSize(16, 16))
+            self.net_btn.setFixedSize(30, 30)
         else:
             self.net_btn.setText("Net")
+            self.net_btn.setMaximumWidth(48)
         self.net_btn.clicked.connect(
             lambda: _launch_candidates(["nm-connection-editor", "python3 /opt/vice-os/vice_network_monitor.py"])
         )
@@ -1538,6 +1620,7 @@ class BottomTaskbar(_StyledWidget):
         self.audio_btn = _VolumeButton(self, wheel_cb=self._on_audio_wheel)
         self.audio_btn.setObjectName("QuickUtilButton")
         self.audio_btn.setFocusPolicy(Qt.NoFocus)
+        self.audio_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.audio_btn.setFixedHeight(30)
         self.audio_btn.clicked.connect(self.toggle_volume_popup)
         self.audio_btn.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -1553,7 +1636,9 @@ class BottomTaskbar(_StyledWidget):
                     self._battery_btn = QPushButton(bat_text, self)
                     self._battery_btn.setObjectName("BatteryButton")
                     self._battery_btn.setFocusPolicy(Qt.NoFocus)
+                    self._battery_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
                     self._battery_btn.setFixedHeight(30)
+                    self._battery_btn.setMaximumWidth(94)
                     b_icon = _battery_icon(bat_text)
                     if not b_icon.isNull():
                         self._battery_btn.setIcon(b_icon)
@@ -1569,7 +1654,10 @@ class BottomTaskbar(_StyledWidget):
         self.clock = QPushButton("00:00", self)
         self.clock.setObjectName("Clock")
         self.clock.setFocusPolicy(Qt.NoFocus)
-        self.clock.setFixedHeight(34)
+        self.clock.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.clock.setFixedHeight(36)
+        self.clock.setMinimumWidth(68)
+        self.clock.setMaximumWidth(96)
         self.clock.setToolTip("World Clock & Host Time Sync — Click to open")
         self.clock.clicked.connect(
             lambda: _launch_candidates([
@@ -1583,7 +1671,8 @@ class BottomTaskbar(_StyledWidget):
         self.show_desk_btn.setObjectName("ShowDesktopButton")
         self.show_desk_btn.setCheckable(True)
         self.show_desk_btn.setFocusPolicy(Qt.NoFocus)
-        self.show_desk_btn.setFixedSize(26, 30)
+        self.show_desk_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.show_desk_btn.setFixedSize(26, 32)
         self.show_desk_btn.setIcon(_make_show_desktop_icon())
         self.show_desk_btn.setIconSize(QSize(16, 16))
         self.show_desk_btn.setToolTip("Show Desktop (Super+D)")
@@ -1646,6 +1735,7 @@ class BottomTaskbar(_StyledWidget):
         if not icon.isNull():
             self.net_btn.setIcon(icon)
             self.net_btn.setIconSize(QSize(16, 16))
+            self.net_btn.setFixedSize(30, 30)
             if self.net_btn.text():
                 self.net_btn.setText("")
         if self.net_btn.toolTip() != tip:
@@ -1705,9 +1795,12 @@ class BottomTaskbar(_StyledWidget):
         if not icon.isNull():
             self.audio_btn.setIcon(icon)
             self.audio_btn.setIconSize(QSize(18, 18))
+            self.audio_btn.setFixedSize(30, 30)
             if self.audio_btn.text():
                 self.audio_btn.setText("")
         else:
+            self.audio_btn.setMinimumWidth(0)
+            self.audio_btn.setMaximumWidth(52)
             self.audio_btn.setText("Mute" if muted else f"{vol}%")
         status = "Muted" if muted else f"{vol}%"
         tip = f"Volume: {status} (Click: controls, Scroll: adjust, Right-click: mixer)" if avail else "Audio Mixer (pavucontrol)"
@@ -1765,6 +1858,15 @@ class BottomTaskbar(_StyledWidget):
         self.setFixedWidth(geo.width())
         self.setFixedHeight(h)
         self.setGeometry(geo.x(), geo.y() + geo.height() - h, geo.width(), h)
+        if hasattr(self, "sysinfo"):
+            self.sysinfo.setMaximumWidth(175 if geo.width() < 1120 else 235)
+        if hasattr(self, "taskbar"):
+            self.taskbar._update_button_layout()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "taskbar"):
+            self.taskbar._update_button_layout()
 
     @staticmethod
     def _localtime_sig():
@@ -1801,15 +1903,19 @@ class BottomTaskbar(_StyledWidget):
         try:
             cpu_text = get_cpu_usage()
             ram_text = get_ram_usage()
-            parts = [cpu_text, ram_text]
             if self._disk_label is None:
                 self._init_disk_label()
-            if self._disk_label:
-                parts.append(self._disk_label)
-            sysinfo_text = " · ".join(parts)
+            compact = self.width() > 0 and self.width() < 1120
+            sysinfo_text, sysinfo_tip = _format_sysinfo(
+                cpu_text, ram_text, self._disk_label or "", compact=compact
+            )
+            layout_dirty = False
             if sysinfo_text != self._last_sysinfo_text:
                 self._last_sysinfo_text = sysinfo_text
                 self.sysinfo.setText(sysinfo_text)
+                layout_dirty = True
+            if self.sysinfo.toolTip() != sysinfo_tip:
+                self.sysinfo.setToolTip(sysinfo_tip)
             if self._battery_btn is not None and _POWER_MODULE is not None:
                 bat_text = _POWER_MODULE._read_battery_status()
                 if bat_text != self._last_bat_text:
@@ -1820,6 +1926,10 @@ class BottomTaskbar(_StyledWidget):
                         self._battery_btn.setIcon(b_icon)
                         self._battery_btn.setIconSize(QSize(16, 16))
                     self._battery_btn.setToolTip(f"Battery: {bat_text} — Click for Power Manager")
+                    layout_dirty = True
+            if layout_dirty and self.layout() is not None:
+                self.layout().activate()
+                self.taskbar._update_button_layout()
         except Exception as e:
             log_error(f"Failed to update system info: {e}")
             self.sysinfo.setText("System info")

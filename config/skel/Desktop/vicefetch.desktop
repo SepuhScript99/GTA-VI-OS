@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Vice OS Fetch
+Comment=GTA VI x Debian System Banner
+Exec=xfce4-terminal --disable-server --title="Vice OS — System Info (GTA VI x Debian)" --geometry=104x30 -e "/usr/local/bin/vicefetch --hold"
+Icon=vice-tool-fetch
+Terminal=false
+Categories=System;Utility;

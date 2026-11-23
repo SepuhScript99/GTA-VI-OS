@@ -1,49 +1,54 @@
-# Vice OS Tools Progress (`250 / 500`)
+# Vice OS Tools Progress (`375 / 500`)
 
-**Overall Progress:** **250 / 500 (50%)** — Batch 2 Complete
+**Overall Progress:** **375 / 500 (75%)** — Batch 3 Complete
 **Theme:** GTA VI Leonida Sunset (`config/tools_registry.json` & `desktop/vice_theme.py`)
-**Target Suite:** Debian 12 (Bookworm `main`) + Native PyQt5 Vice OS Originals
+**Target Suite:** Debian 12 (Bookworm `main`) + Native PyQt5 & CLI Vice OS Originals
 
 ```text
-Progress: [##########..........] 250 / 500 (50%)
+Progress: [###############.....] 375 / 500 (75%)
 Batch 1 : [####################] 100 / 100 (Complete)
 Batch 2 : [####################] 150 / 150 (Complete)
+Batch 3 : [####################] 125 / 125 (Complete)
 ```
 
 ---
 
-## Category Breakdown (Batch 2 Cumulative)
+## Category Breakdown (Batch 3 Cumulative)
 
 | Category | Count | Native / Curated | Notes |
 | --- | ---: | --- | --- |
-| GTA VI Originals | 15 | 15 `vice-native` GUI apps | Bespoke Leonida Sunset PyQt5 suite (`vice_tool_*.py` on `vice_theme.py`) |
-| Office | 10 | 10 Debian Bookworm tools | LibreOffice Writer/Calc/Impress/Draw/Math (GTK3 themed), qpdfview, Evince, Simple Scan, Poppler, Hunspell |
-| System | 32 | 32 Debian Bookworm tools | Monitors, hardware probes, Printers (`system-config-printer`), Bluetooth (`blueman`/`bluez`), Timeshift, Chrony |
-| Network | 44 | 44 Debian Bookworm tools | Wireshark, Nmap, DNS recon/DoT (`stubby`/`unbound`), packet dissectors, SSH/Mosh, bandwidth monitors |
-| Security | 55 | 55 Debian Bookworm tools | OpenVPN, WireGuard, Tor/Privoxy/ProxyChains, UFW/GUFW/nftables, ClamAV, Firejail, pentest & forensics suites |
-| Developer | 32 | 32 Debian Bookworm tools | Compilers, reverse engineering (`gdb-multiarch`/`nasm`/`binutils`/`elfutils`), hex editors, linters, SQLite |
-| Files & Disk | 24 | 24 Debian Bookworm tools | GNOME Disks, NTFS/exFAT/FAT/Btrfs tools, LUKS `cryptsetup`, S.M.A.R.T., NVMe, recovery, and rsync GUIs |
-| Media | 20 | 20 Debian Bookworm tools | FFmpeg, mpv, Celluloid, PipeWire mixer, Flameshot, Gcolor3, EasyTAG, image optimizers, and EXIF tools |
+| GTA VI Originals | 17 | 17 `vice-native` apps | Bespoke Leonida Sunset PyQt5 & CLI suite (`vice_tool_*.py`, `vicefetch.sh` on `vice_theme.py`) |
+| Office | 11 | 11 Debian Bookworm tools | LibreOffice Writer/Calc/Impress/Draw/Math (GTK3 themed), qpdfview, Evince, Simple Scan, Poppler, Hunspell, qpdf |
+| System | 34 | 34 Debian Bookworm tools | Monitors, hardware probes, Printers, Bluetooth (`blueman`/`bluez-tools`), `rfkill`, Timeshift, Chrony |
+| Network | 71 | 71 Debian Bookworm tools | Wireshark, Nmap, ZMap, DNS/SNMP/LDAP recon, IPv6 discovery, packet crafters, `iptraf-ng`/`dnstop`/`tcptrack`, SSH/Mosh |
+| Security | 131 | 131 Debian Bookworm tools | OpenVPN, WireGuard, Tor/Nyx/ProxyChains, Web fuzzers (`ffuf`/`wfuzz`/`wapiti`/`weevely`), Crackers, Wi-Fi/BT, Forensics, Crypto, Tunneling |
+| Developer | 43 | 43 Debian Bookworm tools | Compilers, RE & disassemblers (`gdb-multiarch`/`cgdb`/`yasm`/`ZydisDisasm`/`dwarfdump`/`hexyl`/`vbindiff`), ADB/Fastboot, Flawfinder, SQLite |
+| Files & Disk | 28 | 28 Debian Bookworm tools | GNOME Disks, Forensic imagers (`dc3dd`/`dcfldd`/`ewf`/`squashfs-tools`), `nwipe`, NTFS/exFAT/FAT/Btrfs, LUKS, S.M.A.R.T., recovery |
+| Media | 22 | 22 Debian Bookworm tools | FFmpeg, mpv, Celluloid, PipeWire mixer, Flameshot, Gcolor3, EasyTAG, `exiv2`, `zbar-tools`, image optimizers, EXIF tools |
 | Productivity | 18 | 18 Debian Bookworm tools | Firefox ESR, Zim, CherryTree, SpeedCrunch, Qalculate!, Galculator, Calcurse, Taskwarrior, tldr, archivers |
-| **Total** | **250** | **15 Native + 235 Debian** | **All 250 receive custom 64x64 GTA VI icons** |
+| **Total** | **375** | **17 Native + 358 Debian/Kali** | **All 375 receive custom 64x64 GTA VI icons** |
 
 ---
 
-## Batch 2 Highlights (ISO #10)
+## Batch 3 Highlights (ISO #13 — Kali Linux & GTA VI x Debian)
 
-- **5 New Native GTA VI PyQt5 Applications (`vice_theme.py` Design System)**:
-  - `vice-tool-net-shield`: OpenVPN / WireGuard / Tor / Privoxy / Secure DNS & UFW Shield Console.
-  - `vice-tool-cyber-deck`: Ethical recon & security workbench (`nmap`, `sslscan`, `dnsrecon`, `lynis`, `binwalk`, `yara`).
-  - `vice-tool-mac-cloak`: Interface MAC spoofer, active connection watchdog, and `exiftool`/`mat2` metadata scrubber.
-  - `vice-tool-office-hub`: Unified GTA VI Office Studio for LibreOffice apps, recent docs, and Dark/Light LibreOffice mode.
-  - `vice-tool-clock-sync`: Live host/internet timezone sync (`vice-timesync`), searchable IANA timezone picker, and Chrony telemetry.
-- **Debian LibreOffice Suite**: `libreoffice-writer`, `libreoffice-calc`, `libreoffice-impress`, `libreoffice-draw`, `libreoffice-math` + `libreoffice-gtk3` + `sifr`/`colibre` icon styles, themed with dark GTA VI chrome and crisp white paper sheets, plus GTA VI icon badges in `/usr/share/applications`.
-- **Safe Network Defaults**: `tor`, `privoxy`, `stubby`, `unbound`, `openvpn`, `clamav-daemon`, and `clamav-freshclam` remain **disabled by default at boot** so normal browsing works out of the box and users enable privacy tunnels on demand via `Vice Net Shield`.
-- **Standard Debian Desktop Essentials**: Printing (`cups`, `system-config-printer`), Bluetooth (`bluez`, `blueman`), Disks & Filesystems (`udisks2`, `gnome-disk-utility`, `ntfs-3g`, `exfatprogs`, `dosfstools`, `btrfs-progs`), Snapshots (`timeshift`), NTP (`chrony`), Screenshots & Color (`flameshot`, `gcolor3`, `redshift`), Portals & Shell (`xdg-desktop-portal-gtk`, `bash-completion`, `zram-tools`, `earlyoom`).
+- **2 New Native GTA VI Applications (`17` Total Originals)**:
+  - `vice-tool-fetch` (**Vice OS Fetch — GTA VI x Debian**): Truecolor Leonida Sunset Debian Open-Use Swirl + `VI` CLI banner (`system_scripts/vicefetch.sh` -> `/usr/local/bin/vicefetch`), Desktop shortcut (`vicefetch.desktop`), and custom `/etc/vice-os/vice_ascii.txt` integration for `neofetch`.
+  - `vice-tool-payload-lab` (**Vice Cyber Encoder & Recon Lab**): Multi-tab PyQt5 security workbench (`desktop/vice_tool_payload_lab.py`) for Base64/Base32/URL/Hex/HTML/ROT13/JWT decoding, MD5/SHA/SHA3/HMAC hashing, IPv4/IPv6 CIDR calculation, and regex + HTTP security header auditing.
+- **123 Verified Lean Kali Linux / Pentest Packages (`bookworm/main`, ~79.4 MB Installed-Size)**:
+  - **Recon, Scanning, OSINT & Monitoring (27)**: `arping`, `braa`, `firewalk`, `ike-scan`, `ipcalc-ng`, `ndisc6`, `onesixtyone`, `snmp` (`snmpwalk`), `tcptraceroute`, `zmap`, `dnsmap`, `dnstracer`, `ldnsutils` (`drill`), `sublist3r`, `ldap-utils` (`ldapsearch`), `smb-nat`, `smbmap`, `p0f`, `ipv6toolkit` (`scan6`), `thc-ipv6`, `heartbleeder`, `ssh-audit`, `ssl-cert-check`, `zbar-tools` (`zbarimg`), `dnstop`, `iptraf-ng`, `tcptrack`.
+  - **Web Pentesting & Transfer (9)**: `cadaver`, `ffuf`, `httping`, `siege`, `w3m`, `wapiti`, `weevely`, `wfuzz`, `aria2` (`aria2c`).
+  - **Password, Cracking & Auth (13)**: `bruteforce-luks`, `bruteforce-salted-openssl`, `bruteforce-wallet`, `chntpw`, `cisco7crack`, `cmospwd`, `ophcrack-cli`, `samdump2`, `sipcrack`, `sucrack`, `princeprocessor`, `apg`, `sshpass`.
+  - **Wireless & Bluetooth (14)**: `airgraph-ng`, `bluez-hcidump`, `bluez-tools`, `btscanner`, `bully`, `cowpatty`, `hcxdumptool`, `hcxtools`, `iw`, `mdk3`, `mdk4`, `pixiewps`, `rfkill`, `wireless-tools` (`iwconfig`).
+  - **Sniffing, MITM & Packet Crafting (12)**: `dsniff`, `netsed`, `sslsniff`, `sslsplit`, `dhcpdump`, `pcapfix`, `netsniff-ng`, `yersinia`, `packit`, `python3-scapy` (`scapy`), `sendip`, `t50`.
+  - **Forensics, Carving, Imaging & Stego (19)**: `scalpel`, `fatcat`, `ext4magic`, `reglookup`, `rifiuti2`, `afflib-tools`, `dc3dd`, `dcfldd`, `ewf-tools`, `ssdeep`, `tlsh-tools`, `unhide`, `exiv2`, `qpdf`, `squashfs-tools`, `gifshuffle`, `outguess`, `stegsnow`, `pngcheck`.
+  - **Reverse Engineering, Binary & Mobile (13)**: `cgdb`, `checksec`, `dwarfdump`, `gdbserver`, `pax-utils` (`scanelf`), `yasm`, `zydis-tools` (`ZydisDisasm`), `hexyl`, `vbindiff`, `uefitool-cli` (`UEFIExtract`), `adb`, `fastboot`, `rlwrap`.
+  - **Crypto, Privacy, Tunneling & Hardening (16)**: `ccrypt`, `scrypt`, `b3sum`, `hashdeep`, `rhash`, `minisign`, `gnutls-bin` (`certtool`), `nwipe`, `nyx`, `icmptx`, `proxytunnel`, `tinyproxy-bin`, `debsums`, `fwknop-client`, `flawfinder`, `zzuf`.
+- **Zero Bloat & Zero Boot Daemons**: Every Batch 3 package was verified live against Debian 12 `bookworm/main` with zero interactive debconf traps, zero background `.service` daemons, and zero duplicates (`bash validation/validate_packages.sh` clean).
 
 ---
 
-## Full Tool Catalog (`250 / 500`)
+## Full Tool Catalog (`375 / 500`)
 
 | # | ID | Name | Category | Package | Exec | Mode | GTA VI Icon |
 | ---: | --- | --- | --- | --- | --- | --- | --- |
@@ -297,14 +302,139 @@ Batch 2 : [####################] 150 / 150 (Complete)
 | 248 | `unzip` | UnZip Archive Extractor | Productivity | `unzip` | `unzip` | Terminal | `vice-tool-unzip` |
 | 249 | `zstd` | Zstandard Compressor | Productivity | `zstd` | `zstd` | Terminal | `vice-tool-zstd` |
 | 250 | `tealdeer` | tealdeer (tldr) Cheatsheets | Productivity | `tealdeer` | `tldr` | Terminal | `vice-tool-tealdeer` |
+| 251 | `vice-tool-fetch` | Vice OS Fetch (GTA VI x Debian) | GTA VI Originals | `vice-native` | `xfce4-terminal --disable-server --title="Vice OS — System Info (GTA VI x Debian)" --geometry=104x30 -e "/usr/local/bin/vicefetch --hold"` | GUI | `vice-tool-fetch` |
+| 252 | `vice-tool-payload-lab` | Vice Cyber Encoder & Recon Lab | GTA VI Originals | `vice-native` | `python3 /opt/vice-os/vice_tool_payload_lab.py` | GUI | `vice-tool-payload-lab` |
+| 253 | `arping` | ARPing Layer-2 Probe | Network | `arping` | `arping` | Terminal | `vice-tool-arping` |
+| 254 | `braa` | Braa Mass SNMP Scanner | Network | `braa` | `braa` | Terminal | `vice-tool-braa` |
+| 255 | `firewalk` | Firewalk ACL Prober | Network | `firewalk` | `firewalk` | Terminal | `vice-tool-firewalk` |
+| 256 | `ike-scan` | IKE-Scan VPN Fingerprinter | Security | `ike-scan` | `ike-scan` | Terminal | `vice-tool-ike-scan` |
+| 257 | `ipcalc-ng` | ipcalc-ng CIDR Subnet Calc | Network | `ipcalc-ng` | `ipcalc-ng` | Terminal | `vice-tool-ipcalc-ng` |
+| 258 | `ndisc6` | NDisc6 IPv6 Neighbor Recon | Network | `ndisc6` | `ndisc6` | Terminal | `vice-tool-ndisc6` |
+| 259 | `onesixtyone` | Onesixtyone SNMP Scanner | Network | `onesixtyone` | `onesixtyone` | Terminal | `vice-tool-onesixtyone` |
+| 260 | `snmp` | Net-SNMP Recon Suite (snmpwalk) | Network | `snmp` | `snmpwalk` | Terminal | `vice-tool-snmp` |
+| 261 | `tcptraceroute` | TCPTraceroute Path Prober | Network | `tcptraceroute` | `tcptraceroute` | Terminal | `vice-tool-tcptraceroute` |
+| 262 | `zmap` | ZMap Single-Packet Scanner | Network | `zmap` | `zmap` | Terminal | `vice-tool-zmap` |
+| 263 | `dnsmap` | DNSmap Subdomain Scanner | Network | `dnsmap` | `dnsmap` | Terminal | `vice-tool-dnsmap` |
+| 264 | `dnstracer` | DNSTracer Delegation Tracer | Network | `dnstracer` | `dnstracer` | Terminal | `vice-tool-dnstracer` |
+| 265 | `ldnsutils` | LDNS Drill DNSSEC Inspector | Network | `ldnsutils` | `drill` | Terminal | `vice-tool-ldnsutils` |
+| 266 | `sublist3r` | Sublist3r OSINT Subdomains | Security | `sublist3r` | `sublist3r` | Terminal | `vice-tool-sublist3r` |
+| 267 | `ldap-utils` | LDAPsearch Directory Recon | Network | `ldap-utils` | `ldapsearch` | Terminal | `vice-tool-ldap-utils` |
+| 268 | `smb-nat` | SMB-NAT NetBIOS Auditor | Security | `smb-nat` | `smb-nat` | Terminal | `vice-tool-smb-nat` |
+| 269 | `smbmap` | SMBMap Share Enumerator | Security | `smbmap` | `smbmap` | Terminal | `vice-tool-smbmap` |
+| 270 | `p0f` | p0f Passive OS Fingerprinter | Security | `p0f` | `p0f` | Terminal | `vice-tool-p0f` |
+| 271 | `ipv6toolkit` | IPv6Toolkit (scan6) Scanner | Network | `ipv6toolkit` | `scan6` | Terminal | `vice-tool-ipv6toolkit` |
+| 272 | `thc-ipv6` | THC-IPv6 Attack Toolkit | Security | `thc-ipv6` | `atk6-alive6` | Terminal | `vice-tool-thc-ipv6` |
+| 273 | `heartbleeder` | Heartbleeder TLS Auditor | Security | `heartbleeder` | `heartbleeder` | Terminal | `vice-tool-heartbleeder` |
+| 274 | `ssh-audit` | SSH-Audit Server & Client Check | Security | `ssh-audit` | `ssh-audit` | Terminal | `vice-tool-ssh-audit` |
+| 275 | `ssl-cert-check` | SSL-Cert-Check Expiry Auditor | Security | `ssl-cert-check` | `ssl-cert-check` | Terminal | `vice-tool-ssl-cert-check` |
+| 276 | `zbar-tools` | ZBar QR & Barcode Decoder | Media | `zbar-tools` | `zbarimg` | Terminal | `vice-tool-zbar-tools` |
+| 277 | `cadaver` | Cadaver WebDAV CLI Client | Security | `cadaver` | `cadaver` | Terminal | `vice-tool-cadaver` |
+| 278 | `ffuf` | FFuf Fast Web Fuzzer | Security | `ffuf` | `ffuf` | Terminal | `vice-tool-ffuf` |
+| 279 | `httping` | HTTPing Latency & TLS Probe | Network | `httping` | `httping` | Terminal | `vice-tool-httping` |
+| 280 | `siege` | Siege HTTP Load & Stress Tester | Security | `siege` | `siege` | Terminal | `vice-tool-siege` |
+| 281 | `w3m` | w3m Terminal Web Inspector | Network | `w3m` | `w3m` | Terminal | `vice-tool-w3m` |
+| 282 | `wapiti` | Wapiti Web Vulnerability Scanner | Security | `wapiti` | `wapiti` | Terminal | `vice-tool-wapiti` |
+| 283 | `weevely` | Weevely Stealth PHP Shell | Security | `weevely` | `weevely` | Terminal | `vice-tool-weevely` |
+| 284 | `wfuzz` | Wfuzz Web Payload Fuzzer | Security | `wfuzz` | `wfuzz` | Terminal | `vice-tool-wfuzz` |
+| 285 | `aria2` | aria2c Multi-Source Client | Network | `aria2` | `aria2c` | Terminal | `vice-tool-aria2` |
+| 286 | `bruteforce-luks` | Bruteforce-LUKS Volume Auditor | Security | `bruteforce-luks` | `bruteforce-luks` | Terminal | `vice-tool-bruteforce-luks` |
+| 287 | `bruteforce-salted-openssl` | OpenSSL Salted Cipher Auditor | Security | `bruteforce-salted-openssl` | `bruteforce-salted-openssl` | Terminal | `vice-tool-bruteforce-salted-openssl` |
+| 288 | `bruteforce-wallet` | Bruteforce-Wallet Key Recovery | Security | `bruteforce-wallet` | `bruteforce-wallet` | Terminal | `vice-tool-bruteforce-wallet` |
+| 289 | `chntpw` | chntpw Windows SAM Editor | Security | `chntpw` | `chntpw` | Terminal | `vice-tool-chntpw` |
+| 290 | `cisco7crack` | Cisco7Crack Type-7 Decoder | Security | `cisco7crack` | `cisco7crack` | Terminal | `vice-tool-cisco7crack` |
+| 291 | `cmospwd` | CmosPwd BIOS Recovery Tool | Security | `cmospwd` | `cmospwd` | Terminal | `vice-tool-cmospwd` |
+| 292 | `ophcrack-cli` | Ophcrack Rainbow Table CLI | Security | `ophcrack-cli` | `ophcrack-cli` | Terminal | `vice-tool-ophcrack-cli` |
+| 293 | `samdump2` | samdump2 SAM Hash Dumper | Security | `samdump2` | `samdump2` | Terminal | `vice-tool-samdump2` |
+| 294 | `sipcrack` | SIPcrack VoIP Digest Auditor | Security | `sipcrack` | `sipcrack` | Terminal | `vice-tool-sipcrack` |
+| 295 | `sucrack` | Sucrack Local Auth Auditor | Security | `sucrack` | `sucrack` | Terminal | `vice-tool-sucrack` |
+| 296 | `princeprocessor` | Princeprocessor Wordlist Gen | Security | `princeprocessor` | `princeprocessor` | Terminal | `vice-tool-princeprocessor` |
+| 297 | `apg` | APG Automated Password Gen | Security | `apg` | `apg` | Terminal | `vice-tool-apg` |
+| 298 | `sshpass` | SSHPass Non-Interactive Auth | Network | `sshpass` | `sshpass` | Terminal | `vice-tool-sshpass` |
+| 299 | `airgraph-ng` | Airgraph-ng Wi-Fi Grapher | Security | `airgraph-ng` | `airgraph-ng` | Terminal | `vice-tool-airgraph-ng` |
+| 300 | `bluez-hcidump` | HCIDump Bluetooth Sniffer | Security | `bluez-hcidump` | `hcidump` | Terminal | `vice-tool-bluez-hcidump` |
+| 301 | `bluez-tools` | BlueZ-Tools (bt-adapter) | System | `bluez-tools` | `bt-adapter` | Terminal | `vice-tool-bluez-tools` |
+| 302 | `btscanner` | BTscanner Bluetooth Enum | Security | `btscanner` | `btscanner` | Terminal | `vice-tool-btscanner` |
+| 303 | `bully` | Bully WPS Pixie-Dust Auditor | Security | `bully` | `bully` | Terminal | `vice-tool-bully` |
+| 304 | `cowpatty` | coWPAtty WPA-PSK Auditor | Security | `cowpatty` | `cowpatty` | Terminal | `vice-tool-cowpatty` |
+| 305 | `hcxdumptool` | hcxdumptool PMKID Capture | Security | `hcxdumptool` | `hcxdumptool` | Terminal | `vice-tool-hcxdumptool` |
+| 306 | `hcxtools` | hcxtools (hcxpcapngtool) | Security | `hcxtools` | `hcxpcapngtool` | Terminal | `vice-tool-hcxtools` |
+| 307 | `iw` | iw Modern nl80211 Wireless CLI | Network | `iw` | `iw` | Terminal | `vice-tool-iw` |
+| 308 | `mdk3` | MDK3 802.11 Stress Tester | Security | `mdk3` | `mdk3` | Terminal | `vice-tool-mdk3` |
+| 309 | `mdk4` | MDK4 Next-Gen Wi-Fi Tester | Security | `mdk4` | `mdk4` | Terminal | `vice-tool-mdk4` |
+| 310 | `pixiewps` | Pixiewps Offline WPS Auditor | Security | `pixiewps` | `pixiewps` | Terminal | `vice-tool-pixiewps` |
+| 311 | `rfkill` | RFKill Radio State Controller | System | `rfkill` | `rfkill` | Terminal | `vice-tool-rfkill` |
+| 312 | `wireless-tools` | Wireless-Tools (iwconfig) | Network | `wireless-tools` | `iwconfig` | Terminal | `vice-tool-wireless-tools` |
+| 313 | `dsniff` | dSniff LAN Auditing Suite | Security | `dsniff` | `dsniff` | Terminal | `vice-tool-dsniff` |
+| 314 | `netsed` | NetSED Stream Packet Editor | Security | `netsed` | `netsed` | Terminal | `vice-tool-netsed` |
+| 315 | `sslsniff` | SSLsniff TLS MITM Auditor | Security | `sslsniff` | `sslsniff` | Terminal | `vice-tool-sslsniff` |
+| 316 | `sslsplit` | SSLsplit Transparent Proxy | Security | `sslsplit` | `sslsplit` | Terminal | `vice-tool-sslsplit` |
+| 317 | `dhcpdump` | DHCPdump Packet Decoder | Network | `dhcpdump` | `dhcpdump` | Terminal | `vice-tool-dhcpdump` |
+| 318 | `pcapfix` | PCAPfix Capture Repair Tool | Security | `pcapfix` | `pcapfix` | Terminal | `vice-tool-pcapfix` |
+| 319 | `netsniff-ng` | Netsniff-NG Zero-Copy Toolkit | Network | `netsniff-ng` | `netsniff-ng` | Terminal | `vice-tool-netsniff-ng` |
+| 320 | `yersinia` | Yersinia Layer-2 Protocol Suite | Security | `yersinia` | `yersinia` | Terminal | `vice-tool-yersinia` |
+| 321 | `packit` | Packit Custom Packet Injector | Network | `packit` | `packit` | Terminal | `vice-tool-packit` |
+| 322 | `python3-scapy` | Scapy Interactive Packet Shell | Security | `python3-scapy` | `scapy` | Terminal | `vice-tool-python3-scapy` |
+| 323 | `sendip` | SendIP Raw Packet Crafter | Network | `sendip` | `sendip` | Terminal | `vice-tool-sendip` |
+| 324 | `t50` | T50 Multi-Protocol Injector | Security | `t50` | `t50` | Terminal | `vice-tool-t50` |
+| 325 | `dnstop` | DNStop Live Query Monitor | Network | `dnstop` | `dnstop` | Terminal | `vice-tool-dnstop` |
+| 326 | `iptraf-ng` | IPTraf-NG Console LAN Monitor | Network | `iptraf-ng` | `iptraf-ng` | Terminal | `vice-tool-iptraf-ng` |
+| 327 | `tcptrack` | TCPTrack Live Connection Monitor | Network | `tcptrack` | `tcptrack` | Terminal | `vice-tool-tcptrack` |
+| 328 | `scalpel` | Scalpel High-Speed File Carver | Security | `scalpel` | `scalpel` | Terminal | `vice-tool-scalpel` |
+| 329 | `fatcat` | fatcat FAT Filesystem Explorer | Security | `fatcat` | `fatcat` | Terminal | `vice-tool-fatcat` |
+| 330 | `ext4magic` | ext4magic File Undelete Suite | Security | `ext4magic` | `ext4magic` | Terminal | `vice-tool-ext4magic` |
+| 331 | `reglookup` | RegLookup Windows Registry CLI | Security | `reglookup` | `reglookup` | Terminal | `vice-tool-reglookup` |
+| 332 | `rifiuti2` | Rifiuti2 Recycle Bin Parser | Security | `rifiuti2` | `rifiuti2` | Terminal | `vice-tool-rifiuti2` |
+| 333 | `afflib-tools` | AFFLib Forensic Image Tools | Security | `afflib-tools` | `affcat` | Terminal | `vice-tool-afflib-tools` |
+| 334 | `dc3dd` | dc3dd Forensic Disk Imager | Files & Disk | `dc3dd` | `dc3dd` | Terminal | `vice-tool-dc3dd` |
+| 335 | `dcfldd` | dcfldd Forensic DD Imager | Files & Disk | `dcfldd` | `dcfldd` | Terminal | `vice-tool-dcfldd` |
+| 336 | `ewf-tools` | EWF-Tools (ewfinfo) E01 Suite | Security | `ewf-tools` | `ewfinfo` | Terminal | `vice-tool-ewf-tools` |
+| 337 | `ssdeep` | ssdeep Fuzzy Hash Matcher | Security | `ssdeep` | `ssdeep` | Terminal | `vice-tool-ssdeep` |
+| 338 | `tlsh-tools` | TLSH Locality-Sensitive Hash | Security | `tlsh-tools` | `tlsh` | Terminal | `vice-tool-tlsh-tools` |
+| 339 | `unhide` | Unhide Hidden Process Detector | Security | `unhide` | `unhide` | Terminal | `vice-tool-unhide` |
+| 340 | `exiv2` | Exiv2 EXIF/XMP/IPTC Inspector | Media | `exiv2` | `exiv2` | Terminal | `vice-tool-exiv2` |
+| 341 | `qpdf` | qpdf PDF Structure & Crypto CLI | Office | `qpdf` | `qpdf` | Terminal | `vice-tool-qpdf` |
+| 342 | `squashfs-tools` | SquashFS (unsquashfs) Extractor | Files & Disk | `squashfs-tools` | `unsquashfs` | Terminal | `vice-tool-squashfs-tools` |
+| 343 | `gifshuffle` | Gifshuffle GIF Steganography | Security | `gifshuffle` | `gifshuffle` | Terminal | `vice-tool-gifshuffle` |
+| 344 | `outguess` | OutGuess DCT Steganography | Security | `outguess` | `outguess` | Terminal | `vice-tool-outguess` |
+| 345 | `stegsnow` | Stegsnow Whitespace Stego | Security | `stegsnow` | `stegsnow` | Terminal | `vice-tool-stegsnow` |
+| 346 | `pngcheck` | PNGcheck Chunk Integrity Tool | Security | `pngcheck` | `pngcheck` | Terminal | `vice-tool-pngcheck` |
+| 347 | `cgdb` | CGDB Split-Pane Curses Debugger | Developer | `cgdb` | `cgdb` | Terminal | `vice-tool-cgdb` |
+| 348 | `checksec` | Checksec Binary Hardening Audit | Security | `checksec` | `checksec` | Terminal | `vice-tool-checksec` |
+| 349 | `dwarfdump` | DWARFdump Debug Symbol Inspector | Developer | `dwarfdump` | `dwarfdump` | Terminal | `vice-tool-dwarfdump` |
+| 350 | `gdbserver` | GDBserver Remote Debug Target | Developer | `gdbserver` | `gdbserver` | Terminal | `vice-tool-gdbserver` |
+| 351 | `pax-utils` | PaX-Utils (scanelf) ELF Auditor | Security | `pax-utils` | `scanelf` | Terminal | `vice-tool-pax-utils` |
+| 352 | `yasm` | YASM Modular x86/x64 Assembler | Developer | `yasm` | `yasm` | Terminal | `vice-tool-yasm` |
+| 353 | `zydis-tools` | ZydisDisasm x86/64 Disassembler | Developer | `zydis-tools` | `ZydisDisasm` | Terminal | `vice-tool-zydis-tools` |
+| 354 | `hexyl` | Hexyl Colorized Hex Viewer | Developer | `hexyl` | `hexyl` | Terminal | `vice-tool-hexyl` |
+| 355 | `vbindiff` | VBinDiff Visual Binary Diff | Developer | `vbindiff` | `vbindiff` | Terminal | `vice-tool-vbindiff` |
+| 356 | `uefitool-cli` | UEFITool (UEFIExtract) Firmware | Security | `uefitool-cli` | `UEFIExtract` | Terminal | `vice-tool-uefitool-cli` |
+| 357 | `adb` | Android Debug Bridge (adb) | Developer | `adb` | `adb` | Terminal | `vice-tool-adb` |
+| 358 | `fastboot` | Android Fastboot Bootloader CLI | Developer | `fastboot` | `fastboot` | Terminal | `vice-tool-fastboot` |
+| 359 | `rlwrap` | rlwrap Readline Shell Wrapper | Developer | `rlwrap` | `rlwrap` | Terminal | `vice-tool-rlwrap` |
+| 360 | `ccrypt` | ccrypt Rijndael File Encryptor | Security | `ccrypt` | `ccrypt` | Terminal | `vice-tool-ccrypt` |
+| 361 | `scrypt` | scrypt Memory-Hard Encryptor | Security | `scrypt` | `scrypt` | Terminal | `vice-tool-scrypt` |
+| 362 | `b3sum` | b3sum BLAKE3 High-Speed Hash | Security | `b3sum` | `b3sum` | Terminal | `vice-tool-b3sum` |
+| 363 | `hashdeep` | Hashdeep Recursive File Auditor | Security | `hashdeep` | `hashdeep` | Terminal | `vice-tool-hashdeep` |
+| 364 | `rhash` | RHash Multi-Digest Calculator | Security | `rhash` | `rhash` | Terminal | `vice-tool-rhash` |
+| 365 | `minisign` | Minisign Ed25519 Signature CLI | Security | `minisign` | `minisign` | Terminal | `vice-tool-minisign` |
+| 366 | `gnutls-bin` | GnuTLS CertTool & TLS CLI | Security | `gnutls-bin` | `certtool` | Terminal | `vice-tool-gnutls-bin` |
+| 367 | `nwipe` | Nwipe Secure Disk Eraser | Files & Disk | `nwipe` | `nwipe` | Terminal | `vice-tool-nwipe` |
+| 368 | `nyx` | Nyx Tor Relay & Circuit Monitor | Security | `nyx` | `nyx` | Terminal | `vice-tool-nyx` |
+| 369 | `icmptx` | ICMPTX IP-over-ICMP Tunnel | Security | `icmptx` | `icmptx` | Terminal | `vice-tool-icmptx` |
+| 370 | `proxytunnel` | ProxyTunnel HTTP Pivot Client | Security | `proxytunnel` | `proxytunnel` | Terminal | `vice-tool-proxytunnel` |
+| 371 | `tinyproxy-bin` | Tinyproxy On-Demand HTTP Proxy | Security | `tinyproxy-bin` | `tinyproxy` | Terminal | `vice-tool-tinyproxy-bin` |
+| 372 | `debsums` | Debsums Package Integrity Check | Security | `debsums` | `debsums` | Terminal | `vice-tool-debsums` |
+| 373 | `fwknop-client` | fwknop Single Packet Auth CLI | Security | `fwknop-client` | `fwknop` | Terminal | `vice-tool-fwknop-client` |
+| 374 | `flawfinder` | Flawfinder C/C++ Security Audit | Developer | `flawfinder` | `flawfinder` | Terminal | `vice-tool-flawfinder` |
+| 375 | `zzuf` | zzuf Transparent App Fuzzer | Security | `zzuf` | `zzuf` | Terminal | `vice-tool-zzuf` |
 
 ---
 
-## Batches 3–4 Roadmap (`375 / 500` -> `500 / 500`)
+## Batch 4 Roadmap (`375 / 500` -> `500 / 500`)
 
 | Batch | Cumulative Target | Planned Focus |
 | --- | --- | --- |
 | **Batch 1 (Complete)** | **100 / 500 (20%)** | 10 GTA VI Native Apps + 90 Core Debian Bookworm Power Tools (`vice-tool-hub`, `vice-run-tool`, 64x64 GTA VI icons) |
-| **Batch 2 (Current)** | **250 / 500 (50%)** | +5 GTA VI Native Apps (Net Shield, Cyber Deck, Privacy Cloak, Office Studio, Clock Sync) + LibreOffice Suite + 140 Verified Bookworm Cybersecurity, VPN/Tor/DNS, and Standard Debian Tools |
-| **Batch 3 (Planned)** | **375 / 500 (75%)** | +5 GTA VI Native Dev/Media Apps (JSON/Regex Studio, Theme Forge, Audio Mixer Pro, Container Deck, Backup Scheduler) + 120 Compilers, Language Toolchains, Container/VM, Database & Creative CLI/GUI Utilities |
-| **Batch 4 (Planned)** | **500 / 500 (100%)** | +5 GTA VI Finale Suite Apps + 120 Hardware Diagnostics, Publishing, Accessibility, Science & Automation Tools completing full 500/500 catalog |
+| **Batch 2 (Complete)** | **250 / 500 (50%)** | +5 GTA VI Native Apps (Net Shield, Cyber Deck, Privacy Cloak, Office Studio, Clock Sync) + LibreOffice Suite + 140 Verified Bookworm Cybersecurity, VPN/Tor/DNS, and Standard Debian Tools |
+| **Batch 3 (Complete)** | **375 / 500 (75%)** | +2 GTA VI Native Apps (`vice-tool-fetch`, `vice-tool-payload-lab`) + 123 Verified Lean Kali Linux Recon, Web, Cracking, Wireless, MITM, Forensics, Reversing & Crypto Tools |
+| **Batch 4 (Planned)** | **500 / 500 (100%)** | +3–5 GTA VI Finale Native Apps + ~120 Language Toolchains, Container/VM Utilities, Hardware Diagnostics, Science & Automation Tools completing full 500/500 catalog |

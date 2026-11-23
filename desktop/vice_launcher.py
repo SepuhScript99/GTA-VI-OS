@@ -51,7 +51,7 @@ QPushButton#CategoryTab {{
     background: {_c['bg_surface']};
     color: {_c['text_secondary']};
     border: 1px solid {_c['border']};
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 4px 12px;
     font-size: 12px;
     font-weight: 600;
@@ -71,7 +71,7 @@ QPushButton#AppCard {{
     background: {_c['bg_surface']};
     color: {_c['text_primary']};
     border: 1px solid {_c['border']};
-    border-radius: 10px;
+    border-radius: 12px;
     padding: 0px;
     font-size: 12px;
     text-align: center;
@@ -103,7 +103,7 @@ CATEGORIES = {
                     "vice_diagnostics.py", "vice_log_viewer.py", "vice_log_rotation.py",
                     "vice_cron_manager.py", "vice_tool_qr_hash.py", "vice_tool_cheatsheets.py"],
     "Security": ["vice_tool_cyber_deck.py", "vice_tool_mac_cloak.py", "vice_tool_vault.py",
-                 "vice_firewall_manager.py"],
+                 "vice_tool_payload_lab.py", "vice_firewall_manager.py"],
     "System": ["vice_task_manager.py", "vice_system_monitor.py", "vice_system_report.py",
                "vice_service_manager.py", "vice_power_manager.py", "vice_driver_manager.py",
                "vice_update_manager.py", "vice_kernel_manager.py", "vice_cleanup.py",
@@ -232,6 +232,7 @@ APP_LABELS = {
     "vice_tool_mac_cloak.py": ("Vice Identity Cloak", "vice-tool-mac-cloak"),
     "vice_tool_office_hub.py": ("Vice Office Studio", "vice-tool-office-hub"),
     "vice_tool_clock_sync.py": ("Vice World Clock", "vice-tool-clock-sync"),
+    "vice_tool_payload_lab.py": ("Vice Payload Lab", "vice-tool-payload-lab"),
 }
 
 FAVORITES_FILE = os.path.expanduser("~/.config/vice-os/favorites.json")

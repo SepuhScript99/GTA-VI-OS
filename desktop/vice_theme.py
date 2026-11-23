@@ -101,32 +101,32 @@ _ICON_EXTRA_DIRS = (
 _BADGE_STYLES = {
     "neutral": (
         "background-color: #1B1E2D; color: #A6AEBF; "
-        "border: 1px solid #262A3D; border-radius: 6px; "
+        "border: 1px solid #262A3D; border-radius: 8px; "
         "padding: 3px 9px; font-size: 11px; font-weight: bold;"
     ),
     "gold": (
         "background-color: #252017; color: #F7C873; "
-        "border: 1px solid #4A3E24; border-radius: 6px; "
+        "border: 1px solid #4A3E24; border-radius: 8px; "
         "padding: 3px 9px; font-size: 11px; font-weight: bold;"
     ),
     "aqua": (
         "background-color: #122427; color: #36D6C3; "
-        "border: 1px solid #224B4F; border-radius: 6px; "
+        "border: 1px solid #224B4F; border-radius: 8px; "
         "padding: 3px 9px; font-size: 11px; font-weight: bold;"
     ),
     "coral": (
         "background-color: #291822; color: #FF9A62; "
-        "border: 1px solid #592C3D; border-radius: 6px; "
+        "border: 1px solid #592C3D; border-radius: 8px; "
         "padding: 3px 9px; font-size: 11px; font-weight: bold;"
     ),
     "success": (
         "background-color: #132520; color: #3ED598; "
-        "border: 1px solid #254D3E; border-radius: 6px; "
+        "border: 1px solid #254D3E; border-radius: 8px; "
         "padding: 3px 9px; font-size: 11px; font-weight: bold;"
     ),
     "danger": (
         "background-color: #2B171D; color: #F25C6E; "
-        "border: 1px solid #5C2833; border-radius: 6px; "
+        "border: 1px solid #5C2833; border-radius: 8px; "
         "padding: 3px 9px; font-size: 11px; font-weight: bold;"
     ),
 }
@@ -221,16 +221,20 @@ QMainWindow, QDialog, QMessageBox, QWidget#RootWidget {{
     color: {c['text_primary']};
 }}
 
+QDialog, QMessageBox {{
+    border-radius: 12px;
+}}
+
 QFrame#HeaderCard, QFrame#HeroBanner {{
     background-color: {c['bg_surface']};
     border: 1px solid {c['border']};
-    border-radius: 12px;
+    border-radius: 14px;
 }}
 
 QFrame#Card, QFrame#ToolCard, QFrame#SurfaceCard {{
     background-color: {c['bg_surface']};
     border: 1px solid {c['border']};
-    border-radius: 10px;
+    border-radius: 12px;
 }}
 
 QFrame#ToolCard:hover {{
@@ -283,7 +287,7 @@ QPushButton {{
     background-color: {c['bg_elevated']};
     color: {c['text_primary']};
     border: 1px solid {c['border']};
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 7px 14px;
     font-weight: normal;
     min-width: 56px;
@@ -293,6 +297,11 @@ QPushButton:hover {{
     background-color: {c['bg_hover']};
     border-color: {c['border_strong']};
     color: {c['text_primary']};
+}}
+
+QPushButton:focus {{
+    border: 1px solid {c['accent_coral']};
+    outline: none;
 }}
 
 QPushButton:pressed {{
@@ -311,7 +320,7 @@ QPushButton#PrimaryButton, QPushButton[variant="primary"] {{
         stop:0 {c['accent_coral']}, stop:1 {c['accent_peach']});
     color: #0D0E15;
     border: none;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 8px 18px;
     font-weight: bold;
 }}
@@ -336,7 +345,7 @@ QPushButton#DangerButton, QPushButton[variant="danger"] {{
     background-color: #2A161D;
     color: {c['danger']};
     border: 1px solid #592835;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 7px 14px;
     font-weight: bold;
 }}
@@ -351,7 +360,7 @@ QPushButton#CatTab, QPushButton#SegButton {{
     background-color: {c['bg_surface']};
     color: {c['text_secondary']};
     border: 1px solid {c['border']};
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 6px 12px;
     font-size: 12px;
     font-weight: 600;
@@ -374,7 +383,7 @@ QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QComboBox {{
     background-color: {c['bg_elevated']};
     color: {c['text_primary']};
     border: 1px solid {c['border']};
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 6px 10px;
     selection-background-color: #4A2438;
     selection-color: {c['text_primary']};
@@ -410,13 +419,14 @@ QComboBox QAbstractItemView {{
     background-color: {c['bg_elevated']};
     color: {c['text_primary']};
     border: 1px solid {c['border_strong']};
+    border-radius: 10px;
     outline: none;
     padding: 4px;
 }}
 
 QComboBox QAbstractItemView::item {{
     padding: 6px 10px;
-    border-radius: 5px;
+    border-radius: 6px;
 }}
 
 QComboBox QAbstractItemView::item:selected {{
@@ -427,7 +437,7 @@ QComboBox QAbstractItemView::item:selected {{
 QTabWidget::pane {{
     background-color: {c['bg_surface']};
     border: 1px solid {c['border']};
-    border-radius: 10px;
+    border-radius: 12px;
     top: -1px;
 }}
 
@@ -438,8 +448,8 @@ QTabBar::tab {{
     border-bottom: none;
     padding: 8px 18px;
     margin-right: 3px;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
+    border-top-left-radius: 9px;
+    border-top-right-radius: 9px;
     font-weight: normal;
 }}
 
@@ -460,14 +470,14 @@ QTableWidget, QTreeView, QListView, QListWidget {{
     alternate-background-color: #171A26;
     color: {c['text_primary']};
     border: 1px solid {c['border']};
-    border-radius: 9px;
+    border-radius: 10px;
     gridline-color: {c['border']};
     outline: none;
 }}
 
 QTreeView::item, QListView::item, QTableWidget::item, QListWidget::item {{
     padding: 6px 8px;
-    border-radius: 5px;
+    border-radius: 8px;
 }}
 
 QTreeView::item:hover, QListView::item:hover, QListWidget::item:hover {{
@@ -494,7 +504,7 @@ QHeaderView::section {{
 QGroupBox {{
     background-color: {c['bg_surface']};
     border: 1px solid {c['border']};
-    border-radius: 10px;
+    border-radius: 12px;
     margin-top: 14px;
     padding: 14px 12px 12px 12px;
     color: {c['text_primary']};
@@ -521,7 +531,11 @@ QCheckBox::indicator, QRadioButton::indicator {{
     height: 15px;
     border: 1px solid {c['border_strong']};
     background-color: {c['bg_elevated']};
-    border-radius: 4px;
+    border-radius: 5px;
+}}
+
+QCheckBox::indicator:focus, QRadioButton::indicator:focus {{
+    border: 1px solid {c['accent_coral']};
 }}
 
 QRadioButton::indicator {{
@@ -558,7 +572,7 @@ QSlider::handle:horizontal {{
 QProgressBar {{
     background-color: {c['bg_elevated']};
     border: 1px solid {c['border']};
-    border-radius: 7px;
+    border-radius: 8px;
     height: 14px;
     text-align: center;
     color: {c['text_primary']};
@@ -567,7 +581,7 @@ QProgressBar {{
 }}
 
 QProgressBar::chunk {{
-    border-radius: 6px;
+    border-radius: 7px;
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
         stop:0 {c['accent_coral']}, stop:1 {c['accent_peach']});
 }}
@@ -646,13 +660,13 @@ QMenu {{
     background-color: {c['bg_elevated']};
     color: {c['text_primary']};
     border: 1px solid {c['border_strong']};
-    border-radius: 8px;
-    padding: 5px;
+    border-radius: 12px;
+    padding: 6px;
 }}
 
 QMenu::item {{
     padding: 6px 16px;
-    border-radius: 5px;
+    border-radius: 8px;
 }}
 
 QMenu::item:selected {{
@@ -670,8 +684,8 @@ QToolTip {{
     background-color: {c['bg_elevated']};
     color: {c['text_primary']};
     border: 1px solid {c['border_strong']};
-    border-radius: 6px;
-    padding: 6px 9px;
+    border-radius: 9px;
+    padding: 6px 10px;
 }}
 """
     if extra_qss:

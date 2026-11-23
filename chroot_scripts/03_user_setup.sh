@@ -176,6 +176,15 @@ main() {
         log_info "Installed session configuration (/etc/vice-os/session.conf)."
     fi
 
+    # Install Vice OS ASCII banner for neofetch and terminal utilities
+    if [ -f /vice_payload/config/vice-os/vice_ascii.txt ]; then
+        mkdir -p /etc/vice-os
+        cp /vice_payload/config/vice-os/vice_ascii.txt /etc/vice-os/vice_ascii.txt
+        chown root:root /etc/vice-os/vice_ascii.txt
+        chmod 644 /etc/vice-os/vice_ascii.txt
+        log_info "Installed Vice OS ASCII banner (/etc/vice-os/vice_ascii.txt)."
+    fi
+
     # Install GUI Application Entries (Settings Menu)
     log_info "Installing XDG application entries..."
     mkdir -p /usr/share/applications
@@ -184,7 +193,7 @@ main() {
         chmod 644 /usr/share/applications/vice-os-settings.desktop
     fi
 
-    # Install Tool Registry & generate 250 GTA VI icons + .desktop launchers
+    # Install Tool Registry & generate 375 GTA VI icons + .desktop launchers
     log_info "Installing Vice OS tools registry and generating GTA VI tool icons..."
     if [ -f /vice_payload/config/tools_registry.json ]; then
         cp /vice_payload/config/tools_registry.json /opt/vice-os/tools_registry.json

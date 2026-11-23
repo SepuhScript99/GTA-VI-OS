@@ -103,7 +103,7 @@ def _resolve_tool_pixmap(slug: str, size: int = 44) -> QPixmap:
     painter.setRenderHint(QPainter.Antialiasing)
     painter.setBrush(QColor(COLORS["bg_elevated"]))
     painter.setPen(QColor(COLORS["border_strong"]))
-    painter.drawRoundedRect(2, 2, size - 4, size - 4, 10, 10)
+    painter.drawRoundedRect(2, 2, size - 4, size - 4, 12, 12)
     painter.setPen(QColor(COLORS["accent_peach"]))
     painter.setFont(QFont("Noto Sans", 11, QFont.Bold))
     painter.drawText(pm.rect(), Qt.AlignCenter, "VI")
@@ -150,7 +150,7 @@ class ViceToolHub(QMainWindow):
             title="Vice Tool Hub",
             subtitle="Curated Vice OS Originals and Debian Bookworm tools",
             icon_name="vice-tool-hub",
-            badge_text="0 / 500 — 0%",
+            badge_text="375 / 500 (75%)",
             badge_variant="coral",
             parent=root,
         )
@@ -164,7 +164,7 @@ class ViceToolHub(QMainWindow):
         progress_row.setSpacing(10)
         self._progress_bar = QProgressBar(root)
         self._progress_bar.setRange(0, 500)
-        self._progress_bar.setValue(0)
+        self._progress_bar.setValue(375)
         self._progress_bar.setFormat("%v / %m Tools Unlocked (%p%)")
         progress_row.addWidget(self._progress_bar, 1)
         layout.addLayout(progress_row)
@@ -281,15 +281,22 @@ class ViceToolHub(QMainWindow):
             log_error(f"Failed loading {path}: {exc}")
             self._status_lbl.setText(f"Error reading {path}: {exc}")
 
-        target = int(self._registry.get("target_count", 500) or 500)
-        current = int(self._registry.get("current_count", len(self._tools)) or len(self._tools))
-        batch = self._registry.get("batch", 1)
+        target = int(self._registry.get("target_count") or self._registry.get("total_slots") or 500)
+        current = int(next(
+            (v for v in (
+                self._registry.get("current_count"),
+                self._registry.get("implemented_count"),
+                len(self._tools),
+            ) if v),
+            375,
+        ))
+        batch = self._registry.get("batch", 3)
         theme = self._registry.get("theme", "GTA VI Leonida")
         pct = int(round((current / max(1, target)) * 100))
 
         self._progress_bar.setMaximum(max(1, target))
         self._progress_bar.setValue(min(current, target))
-        self._header.set_badge(f"{current} / {target} — {pct}%", "coral")
+        self._header.set_badge(f"{current} / {target} ({pct}%)", "coral")
 
         gta_count = sum(1 for t in self._tools if t.get("gta_themed"))
         power_count = max(0, len(self._tools) - gta_count)

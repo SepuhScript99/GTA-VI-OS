@@ -1,13 +1,14 @@
 # GTA VI OS (Vice OS) Openbox-3 Theme — Vice-Dark (Leonida Coastal Dusk)
-# Calm slate-midnight window frames with crisp structural hairlines and sunset accents.
+# Calm slate-midnight window frames with crisp structural hairlines, rounded-compositor
+# friendly titlebar padding, and sunset accents.
 
 # --- Window Geometry & Typography ---
 border.width: 1
-padding.width: 10
-padding.height: 7
+padding.width: 12
+padding.height: 8
 window.client.padding.width: 0
 window.client.padding.height: 0
-window.handle.width: 3
+window.handle.width: 2
 
 window.label.text.justify: left
 

@@ -33,7 +33,7 @@ main() {
         mkdir -p "$dest_dir"
 
         # 1. Copy all contents recursively, including dotfiles and nested app dirs
-        #    (e.g. .config/galculator/ and .config/libreoffice/4/user/)
+        #    (e.g. .config/galculator/, .config/neofetch/, and .config/libreoffice/4/user/)
         cp -r "$skel_src_dir"/. "$dest_dir"/
         chown -R "$owner" "$dest_dir"
 
@@ -54,8 +54,16 @@ main() {
         if [ -f "$dest_dir/.config/galculator/galculator.conf" ]; then
             log_info "Synced galculator dark config to $dest_dir/.config/galculator/"
         fi
+        if [ -f "$dest_dir/.config/neofetch/config.conf" ]; then
+            chmod 644 "$dest_dir/.config/neofetch/config.conf"
+            log_info "Synced neofetch GTA VI config to $dest_dir/.config/neofetch/"
+        fi
         if [ -f "$dest_dir/.config/libreoffice/4/user/registrymodifications.xcu" ]; then
             log_info "Synced LibreOffice GTA VI config to $dest_dir/.config/libreoffice/4/user/"
+        fi
+        if [ -f "$dest_dir/Desktop/vicefetch.desktop" ]; then
+            chmod 755 "$dest_dir/Desktop/vicefetch.desktop"
+            log_info "Synced Desktop/vicefetch.desktop to $dest_dir/Desktop/"
         fi
     }
 

@@ -54,11 +54,13 @@ main() {
             local bin_link="/usr/local/bin/$script_name"
             ln -sf "$dest_path" "$bin_link"
 
-            # Expose vice-run-tool and vice-timesync without .sh suffix for launchers & Hub
+            # Expose vice-run-tool, vice-timesync, and vicefetch without .sh suffix for launchers & Hub
             if [ "$script_name" = "vice-run-tool.sh" ]; then
                 ln -sf "$dest_path" "/usr/local/bin/vice-run-tool"
             elif [ "$script_name" = "vice-timesync.sh" ]; then
                 ln -sf "$dest_path" "/usr/local/bin/vice-timesync"
+            elif [ "$script_name" = "vicefetch.sh" ]; then
+                ln -sf "$dest_path" "/usr/local/bin/vicefetch"
             fi
 
             log_info "Installed: $category/$script_name"
