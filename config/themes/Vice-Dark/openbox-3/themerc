@@ -4,10 +4,10 @@
 # --- Window Geometry & Typography ---
 border.width: 1
 padding.width: 10
-padding.height: 6
+padding.height: 7
 window.client.padding.width: 0
 window.client.padding.height: 0
-window.handle.width: 4
+window.handle.width: 5
 
 window.label.text.justify: left
 

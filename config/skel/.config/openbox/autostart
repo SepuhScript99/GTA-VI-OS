@@ -78,10 +78,15 @@ process_autostart_dir() {
                     continue
                 fi
 
-                # Skip components started explicitly above
+                # Skip components started explicitly above (and nm-applet if no XEmbed tray is installed)
                 case "$app_name" in
                     vice-os-compositor.desktop|vice-os-wallpaper.desktop|vice-os-shell.desktop|vice-os-notifications.desktop|polkit-gnome-authentication-agent-1.desktop)
                         continue
+                        ;;
+                    nm-applet.desktop)
+                        if ! command -v stalonetray >/dev/null 2>&1; then
+                            continue
+                        fi
                         ;;
                 esac
 

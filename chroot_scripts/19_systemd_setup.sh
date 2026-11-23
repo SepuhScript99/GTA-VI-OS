@@ -30,14 +30,34 @@ configure_pipewire_dropin() {
 # Vice OS PipeWire clock tuning (inherits full Debian /usr/share/pipewire/pipewire.conf)
 context.properties = {
     default.clock.rate = 48000
-    default.clock.allowed-rates = [ 44100 48000 96000 ]
-    default.clock.quantum = 1024
-    default.clock.min-quantum = 32
-    default.clock.max-quantum = 2048
+    default.clock.allowed-rates = [ 44100 48000 ]
+    default.clock.quantum = 2048
+    default.clock.min-quantum = 1024
+    default.clock.max-quantum = 4096
 }
 PWCONF
     chown root:root /etc/pipewire/pipewire.conf.d/10-vice-audio.conf
     chmod 644 /etc/pipewire/pipewire.conf.d/10-vice-audio.conf
+
+    mkdir -p /etc/pipewire/pipewire-pulse.conf.d
+    cat <<'PULSECONF' > /etc/pipewire/pipewire-pulse.conf.d/10-vice-pulse.conf
+# Vice OS PipeWire-Pulse buffering tuning for VM and desktop playback
+pulse.properties = {
+    pulse.min.req = 1024/48000
+    pulse.default.req = 2048/48000
+    pulse.min.quantum = 1024/48000
+}
+PULSECONF
+    chown root:root /etc/pipewire/pipewire-pulse.conf.d/10-vice-pulse.conf
+    chmod 644 /etc/pipewire/pipewire-pulse.conf.d/10-vice-pulse.conf
+
+    local wp_src="/vice_payload/config/wireplumber/main.lua.d/51-vice-vm-alsa.lua"
+    if [ -f "$wp_src" ]; then
+        mkdir -p /etc/wireplumber/main.lua.d
+        cp "$wp_src" /etc/wireplumber/main.lua.d/51-vice-vm-alsa.lua
+        chown root:root /etc/wireplumber/main.lua.d/51-vice-vm-alsa.lua
+        chmod 644 /etc/wireplumber/main.lua.d/51-vice-vm-alsa.lua
+    fi
 
     # Ensure global PipeWire user sockets/services are enabled
     systemctl --global enable pipewire.socket pipewire-pulse.socket pipewire.service pipewire-pulse.service wireplumber.service 2>/dev/null || true

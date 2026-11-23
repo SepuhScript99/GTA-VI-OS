@@ -25,7 +25,7 @@ QPushButton#StartButton {
     color: #ffffff;
     border: 1px solid rgba(255, 77, 166, 170);
     border-radius: 9px;
-    padding: 3px 10px;
+    padding: 2px 10px;
     font-weight: bold;
     font-size: 12px;
     min-width: 36px;
@@ -46,7 +46,7 @@ QPushButton#PinButton {
     color: #d6cee8;
     border: 1px solid transparent;
     border-radius: 8px;
-    padding: 3px;
+    padding: 2px;
     min-width: 0px;
 }
 
@@ -60,9 +60,9 @@ QPushButton#TaskButton {
     color: #cfc6e6;
     border: 1px solid rgba(68, 52, 102, 165);
     border-radius: 8px;
-    padding: 3px 10px;
-    min-width: 90px;
-    max-width: 185px;
+    padding: 2px 10px;
+    min-width: 56px;
+    max-width: 230px;
     font-family: "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK KR", "DejaVu Sans", sans-serif;
     font-size: 12px;
     text-align: left;
@@ -87,7 +87,7 @@ QPushButton#QuickUtilButton {
     color: #d6cee8;
     border: 1px solid rgba(62, 48, 94, 145);
     border-radius: 8px;
-    padding: 3px 8px;
+    padding: 2px 8px;
     min-width: 0px;
     font-size: 12px;
 }
@@ -98,19 +98,64 @@ QPushButton#QuickUtilButton:hover {
     border: 1px solid #ff4da6;
 }
 
+QPushButton#BatteryButton {
+    background-color: rgba(28, 22, 48, 195);
+    color: #00e5c3;
+    border: 1px solid rgba(0, 229, 195, 125);
+    border-radius: 8px;
+    padding: 2px 8px;
+    min-width: 0px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+QPushButton#BatteryButton:hover {
+    background-color: rgba(46, 35, 74, 235);
+    color: #ffffff;
+    border: 1px solid #ff4da6;
+}
+
+QPushButton#VolumeMuteButton {
+    background-color: #261d40;
+    color: #f4f1fa;
+    border: 1px solid #5c488a;
+    border-radius: 8px;
+    padding: 4px 12px;
+    min-width: 68px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+QPushButton#VolumeMuteButton:hover {
+    background-color: #342757;
+    color: #ffffff;
+    border: 1px solid #ff8a5b;
+}
+
+QPushButton#VolumeMuteButton:checked {
+    background-color: #c92a57;
+    color: #ffffff;
+    border: 1px solid #ff4da6;
+}
+
 QPushButton#ShowDesktopButton {
-    background-color: rgba(34, 26, 56, 190);
-    color: #b7aed1;
-    border: 1px solid rgba(62, 48, 94, 160);
-    border-radius: 6px;
+    background-color: rgba(34, 26, 56, 200);
+    color: #cfc6e6;
+    border: 1px solid rgba(78, 60, 118, 175);
+    border-radius: 7px;
     padding: 2px;
-    min-width: 12px;
-    max-width: 18px;
+    min-width: 24px;
+    max-width: 28px;
 }
 
 QPushButton#ShowDesktopButton:hover {
     background-color: rgba(255, 77, 166, 80);
     border: 1px solid #ff4da6;
+}
+
+QPushButton#ShowDesktopButton:checked {
+    background-color: rgba(0, 229, 195, 65);
+    border: 1px solid #00e5c3;
 }
 
 QPushButton#PowerButton {
@@ -155,6 +200,36 @@ QPushButton#RailButton {
 QPushButton#RailButton:hover {
     background-color: rgba(54, 34, 71, 225);
     border: 1px solid rgba(255, 77, 166, 180);
+}
+
+QPushButton#RailHubButton {
+    background-color: rgba(24, 32, 54, 230);
+    border: 1px solid rgba(0, 229, 195, 160);
+    border-radius: 9px;
+    padding: 4px;
+    min-width: 0px;
+}
+
+QPushButton#RailHubButton:hover {
+    background-color: rgba(54, 34, 71, 235);
+    border: 1px solid #ff8a5b;
+}
+
+QPushButton#StartHubPill {
+    background-color: rgba(24, 32, 54, 235);
+    color: #00e5c3;
+    border: 1px solid rgba(0, 229, 195, 170);
+    border-radius: 8px;
+    padding: 3px 10px;
+    min-width: 0px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+QPushButton#StartHubPill:hover {
+    background-color: rgba(54, 34, 71, 240);
+    color: #ff8a5b;
+    border: 1px solid #ff4da6;
 }
 
 QListWidget#StartCatList {
@@ -335,10 +410,10 @@ QPushButton#Clock, QLabel#Clock {
     color: #f4f1fa;
     border: 1px solid transparent;
     border-radius: 7px;
-    padding: 3px 8px;
+    padding: 1px 8px;
     min-width: 0px;
     font-weight: bold;
-    font-size: 12px;
+    font-size: 11px;
 }
 
 QPushButton#Clock:hover {
@@ -349,12 +424,12 @@ QPushButton#Clock:hover {
 
 QPushButton#SysInfo, QLabel#SysInfo {
     background-color: transparent;
-    color: #b7aed1;
+    color: #cfc6e6;
     border: 1px solid transparent;
     border-radius: 7px;
-    padding: 3px 8px;
+    padding: 2px 8px;
     min-width: 0px;
-    font-size: 12px;
+    font-size: 11px;
 }
 
 QPushButton#SysInfo:hover {

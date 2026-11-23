@@ -12,8 +12,6 @@ import re
 import shlex
 import shutil
 
-sys.path.insert(0, '/opt/vice-os/lib')
-
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QLineEdit, QScrollArea, QGridLayout, QShortcut
@@ -21,7 +19,9 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QProcess, QSize
 from PyQt5.QtGui import QFont, QIcon, QKeySequence
 
-from python.vice_utils import log_info
+sys.path.insert(0, '/opt/vice-os/lib')
+
+from python.vice_utils import log_info  # noqa: E402
 
 WINDOW_WIDTH = 880
 WINDOW_HEIGHT = 580
@@ -56,31 +56,31 @@ QLabel { color: #f4f1fa; background: transparent; }
 """
 
 CATEGORIES = {
-    "Internet":    ["vice_network_monitor.py", "vice_vpn_manager.py", "vice_network_shares.py",
-                    "vice_wifi_connect.py", "vice_ssh_manager.py", "vice_speedtest.py"],
-    "Utilities":   ["vice_file_manager.py", "vice_text_editor.py", "vice_terminal.py",
-                    "vice_screenshot.py", "vice_clipboard.py", "vice_archive_manager.py",
-                    "vice_backup_scheduler.py", "vice_sysinfo_exporter.py",
-                    "vice_calculator.py", "vice_calendar.py",
-                    "vice_trash_manager.py", "vice_help_viewer.py",
-                    "vice_file_search.py", "vice_checksum.py"],
-    "Multimedia":  ["vice_audio_manager.py", "vice_font_manager.py", "vice_image_viewer.py",
-                    "vice_media_player.py", "vice_pdf_viewer.py", "vice_screen_recorder.py"],
-    "Graphics":    [],
-    "Office":      [],
+    "Internet": ["vice_network_monitor.py", "vice_vpn_manager.py", "vice_network_shares.py",
+                 "vice_wifi_connect.py", "vice_ssh_manager.py", "vice_speedtest.py"],
+    "Utilities": ["vice_file_manager.py", "vice_text_editor.py", "vice_terminal.py",
+                  "vice_screenshot.py", "vice_clipboard.py", "vice_archive_manager.py",
+                  "vice_backup_scheduler.py", "vice_sysinfo_exporter.py",
+                  "vice_calculator.py", "vice_calendar.py",
+                  "vice_trash_manager.py", "vice_help_viewer.py",
+                  "vice_file_search.py", "vice_checksum.py"],
+    "Multimedia": ["vice_audio_manager.py", "vice_font_manager.py", "vice_image_viewer.py",
+                   "vice_media_player.py", "vice_pdf_viewer.py", "vice_screen_recorder.py"],
+    "Graphics": [],
+    "Office": [],
     "Development": ["vice_software_center.py", "vice_package_search.py", "vice_iso_validator.py",
                     "vice_diagnostics.py", "vice_log_viewer.py", "vice_log_rotation.py",
                     "vice_cron_manager.py"],
-    "System":      ["vice_task_manager.py", "vice_system_monitor.py", "vice_system_report.py",
-                    "vice_service_manager.py", "vice_power_manager.py", "vice_driver_manager.py",
-                    "vice_update_manager.py", "vice_kernel_manager.py", "vice_cleanup.py",
-                    "vice_session_manager.py", "vice_disk_benchmark.py", "vice_disk_manager.py",
-                    "vice_disk_usage.py", "vice_user_manager.py", "vice_usb_manager.py",
-                    "vice_printer_manager.py", "vice_bluetooth_manager.py", "vice_firewall_manager.py"],
-    "Settings":    ["vice_settings.py", "vice_display_manager.py", "vice_keyboard_shortcuts.py",
-                    "vice_mouse_settings.py", "vice_accessibility.py", "vice_theme_manager.py",
-                    "vice_openbox_editor.py", "vice_startup_apps.py", "vice_wallpaper_picker.py",
-                    "vice_notif_history.py"],
+    "System": ["vice_task_manager.py", "vice_system_monitor.py", "vice_system_report.py",
+               "vice_service_manager.py", "vice_power_manager.py", "vice_driver_manager.py",
+               "vice_update_manager.py", "vice_kernel_manager.py", "vice_cleanup.py",
+               "vice_session_manager.py", "vice_disk_benchmark.py", "vice_disk_manager.py",
+               "vice_disk_usage.py", "vice_user_manager.py", "vice_usb_manager.py",
+               "vice_printer_manager.py", "vice_bluetooth_manager.py", "vice_firewall_manager.py"],
+    "Settings": ["vice_settings.py", "vice_display_manager.py", "vice_keyboard_shortcuts.py",
+                 "vice_mouse_settings.py", "vice_accessibility.py", "vice_theme_manager.py",
+                 "vice_openbox_editor.py", "vice_startup_apps.py", "vice_wallpaper_picker.py",
+                 "vice_notif_history.py"],
 }
 
 _XDG_CATEGORY_MAP = {
@@ -100,6 +100,7 @@ _XDG_CATEGORY_MAP = {
     "IDE": "Development",
     "System": "System",
     "Monitor": "System",
+    "Security": "System",
     "Settings": "Settings",
     "DesktopSettings": "Settings",
     "HardwareSettings": "Settings",
@@ -121,66 +122,66 @@ _EXCLUDED_VICE_SCRIPTS = {
 }
 
 APP_LABELS = {
-    "vice_settings.py":          ("Settings Center",     "preferences-system"),
-    "vice_task_manager.py":      ("Task Manager",        "utilities-system-monitor"),
-    "vice_system_monitor.py":    ("System Monitor",      "utilities-system-monitor"),
-    "vice_system_report.py":     ("System Report",       "dialog-information"),
-    "vice_service_manager.py":   ("Service Manager",     "system-run"),
-    "vice_power_manager.py":     ("Power Manager",       "battery"),
-    "vice_driver_manager.py":    ("Driver Manager",      "preferences-desktop"),
-    "vice_update_manager.py":    ("Update Manager",      "system-software-update"),
-    "vice_file_manager.py":      ("Vice Files",          "system-file-manager"),
-    "vice_text_editor.py":       ("Vice Editor",         "accessories-text-editor"),
-    "vice_terminal.py":          ("Vice Terminal",       "utilities-terminal"),
-    "vice_screenshot.py":        ("Screenshot",          "applets-screenshooter"),
-    "vice_clipboard.py":         ("Clipboard",           "edit-paste"),
-    "vice_archive_manager.py":   ("Archive Manager",     "package-x-generic"),
-    "vice_audio_manager.py":     ("Audio Manager",       "audio-volume-high"),
-    "vice_font_manager.py":      ("Font Manager",        "preferences-desktop-font"),
-    "vice_display_manager.py":   ("Display Manager",     "preferences-desktop-display"),
-    "vice_disk_manager.py":      ("Disk Manager",        "drive-harddisk"),
-    "vice_bluetooth_manager.py": ("Bluetooth",           "bluetooth"),
-    "vice_firewall_manager.py":  ("Firewall",            "security-high"),
-    "vice_software_center.py":   ("Software Center",     "system-software-install"),
-    "vice_package_search.py":    ("Package Search",      "system-search"),
-    "vice_iso_validator.py":     ("ISO Validator",       "media-optical"),
-    "vice_diagnostics.py":       ("Diagnostics",         "utilities-system-monitor"),
-    "vice_user_manager.py":      ("User Manager",        "system-users"),
-    "vice_notif_history.py":     ("Notifications",       "preferences-desktop-notification"),
-    "vice_keyboard_shortcuts.py": ("Keyboard",           "input-keyboard"),
-    "vice_mouse_settings.py":    ("Mouse & Touchpad",    "input-mouse"),
-    "vice_accessibility.py":     ("Accessibility",       "preferences-desktop-accessibility"),
-    "vice_usb_manager.py":       ("USB Manager",         "drive-removable-media"),
-    "vice_vpn_manager.py":       ("VPN Manager",         "network-vpn"),
-    "vice_network_shares.py":    ("Network Shares",      "folder-remote"),
-    "vice_backup_scheduler.py":  ("Backup Jobs",         "document-save"),
-    "vice_log_rotation.py":      ("Log Rotation",        "utilities-log-viewer"),
-    "vice_log_viewer.py":        ("Log Viewer",          "utilities-log-viewer"),
-    "vice_sysinfo_exporter.py":  ("Info Export",         "document-export"),
-    "vice_printer_manager.py":   ("Printer",             "printer"),
-    "vice_theme_manager.py":     ("Theme Manager",       "preferences-desktop-theme"),
-    "vice_openbox_editor.py":    ("Openbox Editor",      "preferences-system-windows"),
-    "vice_calendar.py":          ("Calendar",            "x-office-calendar"),
-    "vice_calculator.py":        ("Vice Calculator",     "accessories-calculator"),
-    "vice_image_viewer.py":      ("Vice Image Viewer",   "image-x-generic"),
-    "vice_startup_apps.py":      ("Startup Apps",        "preferences-system"),
-    "vice_media_player.py":      ("Vice Media Player",   "multimedia-player"),
-    "vice_file_search.py":       ("File Search",         "edit-find"),
-    "vice_disk_usage.py":        ("Disk Usage",          "drive-harddisk"),
-    "vice_cron_manager.py":      ("Cron Jobs",           "appointment-new"),
-    "vice_pdf_viewer.py":        ("Vice PDF Viewer",     "application-pdf"),
-    "vice_wifi_connect.py":      ("WiFi Connect",        "network-wireless"),
-    "vice_ssh_manager.py":       ("SSH Manager",         "network-server"),
-    "vice_screen_recorder.py":   ("Screen Recorder",     "camera-video"),
-    "vice_checksum.py":          ("Checksum",            "dialog-ok"),
-    "vice_wallpaper_picker.py":  ("Wallpapers",          "preferences-desktop-wallpaper"),
-    "vice_kernel_manager.py":    ("Kernel Manager",      "applications-system"),
-    "vice_cleanup.py":           ("System Cleanup",      "edit-clear"),
-    "vice_network_monitor.py":   ("Net Monitor",         "network-wired"),
-    "vice_trash_manager.py":     ("Trash",               "user-trash"),
-    "vice_help_viewer.py":       ("Vice Help",           "help-browser"),
-    "vice_speedtest.py":         ("Speed Test",          "network-transmit-receive"),
-    "vice_disk_benchmark.py":    ("Disk Benchmark",      "drive-harddisk"),
+    "vice_settings.py": ("Settings Center", "preferences-system"),
+    "vice_task_manager.py": ("Task Manager", "utilities-system-monitor"),
+    "vice_system_monitor.py": ("System Monitor", "utilities-system-monitor"),
+    "vice_system_report.py": ("System Report", "dialog-information"),
+    "vice_service_manager.py": ("Service Manager", "system-run"),
+    "vice_power_manager.py": ("Power Manager", "battery"),
+    "vice_driver_manager.py": ("Driver Manager", "preferences-desktop"),
+    "vice_update_manager.py": ("Update Manager", "system-software-update"),
+    "vice_file_manager.py": ("Vice Files", "system-file-manager"),
+    "vice_text_editor.py": ("Vice Editor", "accessories-text-editor"),
+    "vice_terminal.py": ("Vice Terminal", "utilities-terminal"),
+    "vice_screenshot.py": ("Screenshot", "applets-screenshooter"),
+    "vice_clipboard.py": ("Clipboard", "edit-paste"),
+    "vice_archive_manager.py": ("Archive Manager", "package-x-generic"),
+    "vice_audio_manager.py": ("Audio Manager", "audio-volume-high"),
+    "vice_font_manager.py": ("Font Manager", "preferences-desktop-font"),
+    "vice_display_manager.py": ("Display Manager", "preferences-desktop-display"),
+    "vice_disk_manager.py": ("Disk Manager", "drive-harddisk"),
+    "vice_bluetooth_manager.py": ("Bluetooth", "bluetooth"),
+    "vice_firewall_manager.py": ("Firewall", "security-high"),
+    "vice_software_center.py": ("Software Center", "system-software-install"),
+    "vice_package_search.py": ("Package Search", "system-search"),
+    "vice_iso_validator.py": ("ISO Validator", "media-optical"),
+    "vice_diagnostics.py": ("Diagnostics", "utilities-system-monitor"),
+    "vice_user_manager.py": ("User Manager", "system-users"),
+    "vice_notif_history.py": ("Notifications", "preferences-desktop-notification"),
+    "vice_keyboard_shortcuts.py": ("Keyboard", "input-keyboard"),
+    "vice_mouse_settings.py": ("Mouse & Touchpad", "input-mouse"),
+    "vice_accessibility.py": ("Accessibility", "preferences-desktop-accessibility"),
+    "vice_usb_manager.py": ("USB Manager", "drive-removable-media"),
+    "vice_vpn_manager.py": ("VPN Manager", "network-vpn"),
+    "vice_network_shares.py": ("Network Shares", "folder-remote"),
+    "vice_backup_scheduler.py": ("Backup Jobs", "document-save"),
+    "vice_log_rotation.py": ("Log Rotation", "utilities-log-viewer"),
+    "vice_log_viewer.py": ("Log Viewer", "utilities-log-viewer"),
+    "vice_sysinfo_exporter.py": ("Info Export", "document-export"),
+    "vice_printer_manager.py": ("Printer", "printer"),
+    "vice_theme_manager.py": ("Theme Manager", "preferences-desktop-theme"),
+    "vice_openbox_editor.py": ("Openbox Editor", "preferences-system-windows"),
+    "vice_calendar.py": ("Calendar", "x-office-calendar"),
+    "vice_calculator.py": ("Vice Calculator", "accessories-calculator"),
+    "vice_image_viewer.py": ("Vice Image Viewer", "image-x-generic"),
+    "vice_startup_apps.py": ("Startup Apps", "preferences-system"),
+    "vice_media_player.py": ("Vice Media Player", "multimedia-player"),
+    "vice_file_search.py": ("File Search", "edit-find"),
+    "vice_disk_usage.py": ("Disk Usage", "drive-harddisk"),
+    "vice_cron_manager.py": ("Cron Jobs", "appointment-new"),
+    "vice_pdf_viewer.py": ("Vice PDF Viewer", "application-pdf"),
+    "vice_wifi_connect.py": ("WiFi Connect", "network-wireless"),
+    "vice_ssh_manager.py": ("SSH Manager", "network-server"),
+    "vice_screen_recorder.py": ("Screen Recorder", "camera-video"),
+    "vice_checksum.py": ("Checksum", "dialog-ok"),
+    "vice_wallpaper_picker.py": ("Wallpapers", "preferences-desktop-wallpaper"),
+    "vice_kernel_manager.py": ("Kernel Manager", "applications-system"),
+    "vice_cleanup.py": ("System Cleanup", "edit-clear"),
+    "vice_network_monitor.py": ("Net Monitor", "network-wired"),
+    "vice_trash_manager.py": ("Trash", "user-trash"),
+    "vice_help_viewer.py": ("Vice Help", "help-browser"),
+    "vice_speedtest.py": ("Speed Test", "network-transmit-receive"),
+    "vice_disk_benchmark.py": ("Disk Benchmark", "drive-harddisk"),
 }
 
 FAVORITES_FILE = os.path.expanduser("~/.config/vice-os/favorites.json")
@@ -374,14 +375,31 @@ def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> l
 
 
 def _load_card_icon(icon_name: str) -> QIcon:
-    """Resolve an icon from filesystem path or Freedesktop icon theme."""
+    """Resolve an icon from filesystem path, theme, hicolor apps, or pixmaps."""
     if icon_name and os.path.isfile(icon_name):
         return QIcon(icon_name)
-    for candidate in (icon_name, "application-x-executable", "applications-other"):
-        if candidate:
-            icon = QIcon.fromTheme(candidate)
-            if not icon.isNull():
-                return icon
+    if icon_name:
+        icon = QIcon.fromTheme(icon_name)
+        if not icon.isNull():
+            return icon
+        base_dirs = (
+            "/usr/share/icons/hicolor/64x64/apps",
+            "/usr/share/icons/hicolor/48x48/apps",
+            "/usr/share/icons/hicolor/scalable/apps",
+            "/usr/share/pixmaps",
+            os.path.expanduser("~/.local/share/icons/hicolor/64x64/apps"),
+        )
+        for d in base_dirs:
+            for ext in (".png", ".svg", ".xpm", ""):
+                cand = os.path.join(d, f"{icon_name}{ext}")
+                if os.path.isfile(cand):
+                    ic = QIcon(cand)
+                    if not ic.isNull():
+                        return ic
+    for candidate in ("application-x-executable", "applications-other"):
+        icon = QIcon.fromTheme(candidate)
+        if not icon.isNull():
+            return icon
     return QIcon()
 
 

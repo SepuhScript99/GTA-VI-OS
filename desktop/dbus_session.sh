@@ -128,13 +128,16 @@ main() {
     log_info "Updating DBus activation environment..."
     export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-x11}"
     export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+    export QT_AUTO_SCREEN_SCALE_FACTOR="${QT_AUTO_SCREEN_SCALE_FACTOR:-1}"
+    export QT_QPA_PLATFORMTHEME="${QT_QPA_PLATFORMTHEME:-qt5ct}"
+    export MOZ_ENABLE_WAYLAND=0
     if command -v dbus-update-activation-environment > /dev/null 2>&1; then
         dbus-update-activation-environment --all --systemd 2>/dev/null || true
     fi
 
     # Safely import environment to systemd user session without hanging
     if command -v systemctl > /dev/null 2>&1; then
-        timeout 5 systemctl --user import-environment DISPLAY XAUTHORITY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS XDG_SESSION_TYPE 2>/dev/null || true
+        timeout 5 systemctl --user import-environment DISPLAY XAUTHORITY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS XDG_SESSION_TYPE QT_QPA_PLATFORMTHEME QT_AUTO_SCREEN_SCALE_FACTOR 2>/dev/null || true
     fi
 
     # 5. Load Xresources (CRITICAL: Openbox does not do this automatically)

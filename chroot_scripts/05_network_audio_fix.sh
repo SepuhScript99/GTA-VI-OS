@@ -47,6 +47,9 @@ RESOLV
         usermod -aG netdev vice 2>/dev/null || true
         usermod -aG audio vice 2>/dev/null || true
         usermod -aG video vice 2>/dev/null || true
+        if getent group pipewire >/dev/null 2>&1; then
+            usermod -aG pipewire vice 2>/dev/null || true
+        fi
         if getent group render >/dev/null 2>&1; then
             usermod -aG render vice 2>/dev/null || true
         fi

@@ -42,7 +42,8 @@ main() {
 
         # Use find to safely handle empty directories and avoid globbing issues
         while IFS= read -r -d '' script; do
-            local script_name=$(basename "$script")
+            local script_name
+            script_name=$(basename "$script")
             local dest_path="$dest_dir/$script_name"
 
             cp "$script" "$dest_path"
@@ -52,6 +53,11 @@ main() {
             # Create symlink in /usr/local/bin (force to ensure idempotency)
             local bin_link="/usr/local/bin/$script_name"
             ln -sf "$dest_path" "$bin_link"
+
+            # Expose vice-run-tool without .sh suffix for desktop launchers & Hub
+            if [ "$script_name" = "vice-run-tool.sh" ]; then
+                ln -sf "$dest_path" "/usr/local/bin/vice-run-tool"
+            fi
 
             log_info "Installed: $category/$script_name"
         done < <(find "$src_dir" -maxdepth 1 -name "*.sh" -print0)

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Leonida FM Radio
+Comment=Stream Synthwave, Lo-Fi, and GTA VI-inspired radio stations
+Exec=python3 /opt/vice-os/vice_tool_radio.py
+Icon=vice-tool-radio
+Terminal=false
+Categories=AudioVideo;Audio;

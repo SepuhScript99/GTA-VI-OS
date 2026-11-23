@@ -20,6 +20,59 @@ acpi
 acpid
 htop
 
+# Batch 1 Curated System, Network, Security & Disk Utilities
+ca-certificates
+btop
+iotop-c
+sysstat
+lsof
+lshw
+dmidecode
+pciutils
+usbutils
+inxi
+neofetch
+lm-sensors
+powertop
+iputils-ping
+iproute2
+curl
+wget
+nmap
+tcpdump
+tshark
+mtr-tiny
+whois
+bind9-dnsutils
+traceroute
+netcat-openbsd
+iperf3
+iftop
+nethogs
+socat
+httpie
+openssl
+gnupg
+lynis
+chkrootkit
+rkhunter
+age
+pass
+pwgen
+macchanger
+proxychains4
+ncdu
+duf
+parted
+smartmontools
+nvme-cli
+testdisk
+gddrescue
+rsync
+tree
+mc
+ranger
+
 # --- Desktop Environment (X11 & Openbox) ---
 xorg
 xserver-xorg-video-all
@@ -30,6 +83,7 @@ picom
 nitrogen
 thunar
 stalonetray
+trayer
 x11-xserver-utils
 x11-utils
 xbacklight
@@ -116,6 +170,14 @@ gstreamer1.0-plugins-good
 gstreamer1.0-plugins-bad
 gstreamer1.0-plugins-ugly
 gstreamer1.0-pipewire
+imagemagick
+mediainfo
+sox
+vorbis-tools
+flac
+opus-tools
+yt-dlp
+libimage-exiftool-perl
 
 # --- Python & UI Frameworks ---
 python3
@@ -150,6 +212,12 @@ poppler-utils
 xfce4-taskmanager
 unzip
 zip
+stacer
+bleachbit
+keepassxc
+baobab
+qrencode
+meld
 
 # --- Developer Tools ---
 gcc
@@ -157,3 +225,17 @@ python3-dev
 git
 cmake
 make
+neovim
+tmux
+ripgrep
+fd-find
+bat
+fzf
+jq
+tig
+gdb
+strace
+ltrace
+valgrind
+shellcheck
+sqlite3

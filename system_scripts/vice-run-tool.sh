@@ -1,0 +1,209 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+# ============================================================================
+# GTA VI OS (Vice OS) Interactive CLI Tool Launcher
+# Installed as /usr/local/bin/vice-run-tool
+# Usage: vice-run-tool <title> <cmd> [args...]
+# ============================================================================
+
+PINK='\033[38;2;255;77;166m'
+CORAL='\033[38;2;255;138;91m'
+CYAN='\033[38;2;0;229;255m'
+GOLD='\033[38;2;255;209;102m'
+MUTED='\033[38;2;180;168;210m'
+RED='\033[38;2;255;92;122m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+case ":$PATH:" in
+    *":/usr/sbin:"*) ;;
+    *) PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin" ;;
+esac
+export PATH
+
+print_usage() {
+    cat <<EOF
+GTA VI OS (Vice OS) Tool Launcher
+
+Usage:
+  vice-run-tool <title> <command> [args...]
+  vice-run-tool <command>
+
+Options:
+  -h, --help    Show this help message and exit
+EOF
+}
+
+cleanup_tty() {
+    stty sane 2>/dev/null || true
+}
+
+print_header() {
+    local title="$1"
+    local cmd_display="$2"
+    printf '%b======================================================================%b\n' "$PINK" "$RESET"
+    printf '%b%b  VICE OS // LEONIDA POWER TOOL%b  %b[%s]%b\n' "$BOLD" "$CORAL" "$RESET" "$CYAN" "$title" "$RESET"
+    printf '%b  Command:%b %b%s%b\n' "$MUTED" "$RESET" "$GOLD" "$cmd_display" "$RESET"
+    printf '%b  Dir:%b     %s\n' "$MUTED" "$RESET" "$PWD"
+    printf '%b======================================================================%b\n\n' "$PINK" "$RESET"
+}
+
+hold_terminal() {
+    if [ -t 0 ] && [ "${VICE_NO_HOLD:-0}" != "1" ]; then
+        printf '\n'
+        read -r -p "Press [Enter] to close this Vice OS window..." _ || true
+    fi
+}
+
+find_terminal_bin() {
+    local candidate
+    for candidate in xfce4-terminal x-terminal-emulator xterm; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+needs_args_prompt() {
+    local base
+    base=$(basename "$1")
+    case "$base" in
+        rg|fdfind|fd|batcat|bat|jq|yq|curl|wget|aria2c|axel|http|nmap|tcpdump|tshark|mtr|whois|dig|host|traceroute|nc|netcat|socat|iperf3|openssl|gpg|ufw|lynis|chkrootkit|rkhunter|age|pass|macchanger|proxychains4|strace|ltrace|valgrind|shellcheck|rsync|parted|ddrescue|smartctl|nvme|lsof|convert|magick|ffmpeg|ffprobe|mediainfo|sox|oggenc|flac|opusenc|qrencode|yt-dlp|7z|7za|tar|gzip|unzip|zip|grep|egrep|sed|awk|find|xargs|git|gcc|g++|make|cmake|ssh|scp|exiftool|pandoc|pdftotext|diff|colordiff)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+run_help_and_prompt() {
+    local bin="$1"
+    local rc=0
+
+    set +e
+    if "$bin" --help >/dev/null 2>&1; then
+        "$bin" --help 2>&1 | head -n 36
+    elif "$bin" -h >/dev/null 2>&1; then
+        "$bin" -h 2>&1 | head -n 36
+    else
+        "$bin" --help 2>&1 | head -n 36 || true
+    fi
+    set -e
+
+    if [ ! -t 0 ] || [ "${VICE_NO_HOLD:-0}" = "1" ]; then
+        return 0
+    fi
+
+    while true; do
+        printf '\n%bEnter args for "%s" (or "sh" for shell, Enter to close): %b' "$CYAN" "$bin" "$RESET"
+        local user_line=""
+        if ! read -r user_line; then
+            break
+        fi
+        if [ -z "$user_line" ]; then
+            break
+        fi
+        if [ "$user_line" = "sh" ] || [ "$user_line" = "bash" ]; then
+            bash -i || true
+            continue
+        fi
+        local extra_args=()
+        read -r -a extra_args <<< "$user_line"
+        printf '\n'
+        set +e
+        "$bin" "${extra_args[@]}"
+        rc=$?
+        set -e
+        printf '\n%b[EXIT %d]%b\n' "$GOLD" "$rc" "$RESET"
+    done
+    return "$rc"
+}
+
+main() {
+    if [ "$#" -eq 0 ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+        print_usage
+        exit 0
+    fi
+
+    local title
+    local cmd_args=()
+    if [ "$#" -eq 1 ]; then
+        title="$1"
+        cmd_args=("$1")
+    else
+        title="$1"
+        shift
+        cmd_args=("$@")
+    fi
+
+    if [ "${#cmd_args[@]}" -eq 1 ] && [[ "${cmd_args[0]}" == *" "* ]] && ! command -v "${cmd_args[0]}" >/dev/null 2>&1; then
+        local split_cmd=()
+        read -r -a split_cmd <<< "${cmd_args[0]}"
+        if [ "${#split_cmd[@]}" -gt 0 ]; then
+            cmd_args=("${split_cmd[@]}")
+        fi
+    fi
+
+    if [ -z "${VICE_IN_TERMINAL:-}" ] && { [ ! -t 0 ] || [ ! -t 1 ]; }; then
+        if [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
+            local term_bin=""
+            if term_bin=$(find_terminal_bin); then
+                local self_path
+                self_path=$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")
+                local term_base
+                term_base=$(basename "$term_bin")
+                if [ "$term_base" = "xfce4-terminal" ]; then
+                    exec "$term_bin" -T "Vice OS - $title" -x env VICE_IN_TERMINAL=1 "$self_path" "$title" "${cmd_args[@]}"
+                else
+                    exec "$term_bin" -T "Vice OS - $title" -e env VICE_IN_TERMINAL=1 "$self_path" "$title" "${cmd_args[@]}"
+                fi
+            fi
+        fi
+    fi
+
+    trap 'cleanup_tty' INT TERM EXIT
+
+    local cmd_display
+    cmd_display=$(printf '%s ' "${cmd_args[@]}")
+    cmd_display="${cmd_display% }"
+
+    print_header "$title" "$cmd_display"
+
+    if ! command -v "${cmd_args[0]}" >/dev/null 2>&1; then
+        printf '%b[ERROR] Command not found: %s%b\n' "$RED" "${cmd_args[0]}" "$RESET" >&2
+        printf '%bInstall the corresponding Debian package or check PATH.%b\n' "$MUTED" "$RESET" >&2
+        hold_terminal
+        exit 127
+    fi
+
+    local rc=0
+    if [ "${#cmd_args[@]}" -eq 1 ] && needs_args_prompt "${cmd_args[0]}"; then
+        set +e
+        run_help_and_prompt "${cmd_args[0]}"
+        rc=$?
+        set -e
+        cleanup_tty
+        exit "$rc"
+    fi
+
+    set +e
+    "${cmd_args[@]}"
+    rc=$?
+    set -e
+
+    cleanup_tty
+    printf '\n%b----------------------------------------------------------------------%b\n' "$PINK" "$RESET"
+    if [ "$rc" -eq 0 ]; then
+        printf '%b[DONE]%b %s exited cleanly (status 0).\n' "$CYAN" "$RESET" "$title"
+    else
+        printf '%b[INFO]%b %s finished with exit status %d.\n' "$GOLD" "$RESET" "$title" "$rc"
+    fi
+    hold_terminal
+    exit "$rc"
+}
+
+main "$@"

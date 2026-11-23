@@ -149,7 +149,9 @@ main() {
     if command -v systemctl > /dev/null 2>&1; then
         timeout 5 systemctl --user import-environment \
             XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS \
-            XDG_SESSION_TYPE XDG_CURRENT_DESKTOP WAYLAND_DISPLAY 2>/dev/null || true
+            XDG_SESSION_TYPE XDG_CURRENT_DESKTOP WAYLAND_DISPLAY \
+            QT_QPA_PLATFORM QT_QPA_PLATFORMTHEME QT_AUTO_SCREEN_SCALE_FACTOR \
+            MOZ_ENABLE_WAYLAND 2>/dev/null || true
     fi
 
     # 6. Start PipeWire/WirePlumber/pipewire-pulse and set default 85% unmuted levels

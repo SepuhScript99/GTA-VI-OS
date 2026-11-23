@@ -184,6 +184,33 @@ main() {
         chmod 644 /usr/share/applications/vice-os-settings.desktop
     fi
 
+    # Install Tool Registry & generate 100 GTA VI neon icons + .desktop launchers
+    log_info "Installing Vice OS tools registry and generating GTA VI tool icons..."
+    if [ -f /vice_payload/config/tools_registry.json ]; then
+        cp /vice_payload/config/tools_registry.json /opt/vice-os/tools_registry.json
+        chmod 644 /opt/vice-os/tools_registry.json
+    else
+        log_error "config/tools_registry.json not found in payload!"
+        exit 1
+    fi
+
+    if [ -f /vice_payload/assets/generate_tool_icons.py ]; then
+        cp /vice_payload/assets/generate_tool_icons.py /opt/vice-os/generate_tool_icons.py
+        chmod 755 /opt/vice-os/generate_tool_icons.py
+        mkdir -p /usr/share/icons/hicolor/64x64/apps /usr/share/pixmaps /usr/share/applications
+        python3 /vice_payload/assets/generate_tool_icons.py \
+            --registry /opt/vice-os/tools_registry.json \
+            --icon-dir /usr/share/icons/hicolor/64x64/apps \
+            --pixmap-dir /usr/share/pixmaps \
+            --desktop-dir /usr/share/applications
+    else
+        log_error "assets/generate_tool_icons.py not found in payload!"
+        exit 1
+    fi
+
+    gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
+    update-desktop-database /usr/share/applications 2>/dev/null || true
+
     log_info "Configuring Auto-login via getty..."
     mkdir -p /etc/systemd/system/getty@tty1.service.d
     cat <<'GETTY' > /etc/systemd/system/getty@tty1.service.d/override.conf
@@ -196,6 +223,8 @@ GETTY
     mkdir -p /etc/live/config.conf.d
     cat <<'LIVECONF' > /etc/live/config.conf.d/vice-os.conf
 # Prevent live-config from overriding Vice OS user/sudo/xinit startup
+LIVE_USERNAME="vice"
+LIVE_USER_FULLNAME="Vice OS"
 LIVE_CONFIG_NOX11AUTOLOGIN="true"
 LIVE_CONFIG_NOCOMPONENTS="xinit,user-setup,sudo"
 LIVECONF

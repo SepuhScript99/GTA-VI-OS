@@ -27,11 +27,11 @@ sys.path.insert(0, LIB_DIR)
 sys.path.insert(0, os.path.join(LIB_DIR, 'python'))
 sys.path.insert(0, DESKTOP_DIR)
 
-import panel_config
-import ob_menu
-import vice_setup_apps
-import wallpaper_manager
-import session_watchdog
+import panel_config  # noqa: E402
+import ob_menu  # noqa: E402
+import vice_setup_apps  # noqa: E402
+import wallpaper_manager  # noqa: E402
+import session_watchdog  # noqa: E402
 
 
 class TestPanelConfig(unittest.TestCase):
@@ -544,12 +544,12 @@ class TestViceAppsRuntimeSafety(unittest.TestCase):
                     imported = {a.name for a in node.names}
                     self.assertNotIn("QProcess", imported, f"{fname} imports QProcess from QtWidgets")
                 if isinstance(node, ast.Call):
-                    if (
-                        isinstance(node.func, ast.Attribute)
-                        and node.func.attr == "getlogin"
-                        and isinstance(node.func.value, ast.Name)
-                        and node.func.value.id == "os"
-                    ):
+                    if all((
+                        isinstance(node.func, ast.Attribute),
+                        getattr(node.func, "attr", None) == "getlogin",
+                        isinstance(getattr(node.func, "value", None), ast.Name),
+                        getattr(getattr(node.func, "value", None), "id", None) == "os",
+                    )):
                         self.fail(f"{fname} calls os.getlogin(), which fails without utmp/controlling tty")
                     if isinstance(node.func, ast.Name) and node.func.id == "QGraphicsDropShadowEffect":
                         for kw in node.keywords:
@@ -601,6 +601,103 @@ class TestViceAppsRuntimeSafety(unittest.TestCase):
 
         launcher_code = self._read("vice_launcher.py")
         self.assertNotIn("args = [term_bin, \"-e\"] + args", launcher_code)
+
+    @staticmethod
+    def _read_repo(*parts):
+        with open(os.path.join(REPO_ROOT, *parts), "r", encoding="utf-8") as fp:
+            return fp.read()
+
+    def test_iso9_pipewire_wireplumber_and_rtkit_fixes(self):
+        wp_lua = self._read_repo("config", "wireplumber", "main.lua.d", "51-vice-vm-alsa.lua")
+        for token in (
+            '["api.alsa.period-size"] = 2048',
+            '["api.alsa.period-num"] = 8',
+            '["api.alsa.headroom"] = 4096',
+            '["api.alsa.disable-batch"] = true',
+            '["session.suspend-timeout-seconds"] = 0',
+        ):
+            self.assertIn(token, wp_lua)
+
+        pw_setup = self._read_repo("chroot_scripts", "18_pipewire_setup.sh")
+        self.assertNotIn("cp \"$pipewire_src\" \"$pipewire_dest\"", pw_setup)
+        for token in (
+            "rm -f /etc/pipewire/pipewire.conf",
+            "/etc/pipewire/pipewire.conf.d/10-vice-audio.conf",
+            "/etc/pipewire/pipewire-pulse.conf.d/10-vice-pulse.conf",
+            "default.clock.quantum = 2048",
+            "default.clock.min-quantum = 1024",
+            "default.clock.max-quantum = 4096",
+            "pulse.min.req = 1024/48000",
+            "pulse.default.req = 2048/48000",
+            "51-vice-vm-alsa.lua",
+            "usermod -aG pipewire vice",
+            "/etc/security/limits.d/95-vice-audio.conf",
+            "/etc/polkit-1/rules.d/10-vice-rtkit.rules",
+        ):
+            self.assertIn(token, pw_setup)
+
+        systemd_setup = self._read_repo("chroot_scripts", "19_systemd_setup.sh")
+        self.assertIn("51-vice-vm-alsa.lua", systemd_setup)
+        self.assertIn("10-vice-pulse.conf", systemd_setup)
+
+        net_audio = self._read_repo("chroot_scripts", "05_network_audio_fix.sh")
+        self.assertIn("usermod -aG pipewire vice", net_audio)
+
+        ff_prefs = self._read_repo("config", "firefox", "vice-os.js")
+        self.assertNotIn('pref("media.cubeb.sandbox", false)', ff_prefs)
+
+    def test_iso9_desktop_ui_ca_certs_and_live_config_fixes(self):
+        pkgs = {
+            line.split("#", 1)[0].strip()
+            for line in self._read_repo("config", "packages.list").splitlines()
+            if line.split("#", 1)[0].strip()
+        }
+        self.assertIn("ca-certificates", pkgs)
+
+        user_setup = self._read_repo("chroot_scripts", "03_user_setup.sh")
+        self.assertIn('LIVE_USERNAME="vice"', user_setup)
+
+        shell_code = self._read("vice_shell.py")
+        for token in (
+            "self.setFixedHeight(h)",
+            "_make_show_desktop_icon",
+            '"BatteryButton"',
+            "_update_button_layout",
+            '"VolumeMuteButton"',
+            "Qt.Key_Escape",
+            '"Vice Tools"',
+            '"StartHubPill"',
+            "Tool Hub",
+            "_refresh_net_indicator",
+            'shutil.which("stalonetray")',
+        ):
+            self.assertIn(token, shell_code)
+
+        settings_code = self._read("vice_settings.py")
+        for token in (
+            "preferences-system",
+            "QScrollBar:vertical",
+            "_PAGE_ICONS",
+            "def closeEvent",
+        ):
+            self.assertIn(token, settings_code)
+
+        qss_code = self._read("style.qss")
+        self.assertIn("QPushButton#BatteryButton", qss_code)
+        self.assertIn("QPushButton#VolumeMuteButton", qss_code)
+        self.assertIn("max-width: 230px;", qss_code)
+
+        desktop_items = self._read_repo("config", "pcmanfm", "vice", "desktop-items-0.conf")
+        self.assertIn("desktop_fg=#ffffff", desktop_items)
+        self.assertIn("[vice-tool-hub.desktop]", desktop_items)
+        self.assertIn("[vice-radio.desktop]", desktop_items)
+
+        autostart = self._read_repo("config", "skel", ".config", "openbox", "autostart")
+        self.assertIn("nm-applet.desktop", autostart)
+        self.assertIn("command -v stalonetray", autostart)
+
+        for sess_name in ("dbus_session.sh", "wayland_session.sh"):
+            self.assertIn("QT_QPA_PLATFORMTHEME", self._read(sess_name))
 
 
 if __name__ == "__main__":
