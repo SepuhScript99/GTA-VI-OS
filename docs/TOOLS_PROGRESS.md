@@ -37,7 +37,7 @@ Batch 4A: [####################]  50 /  50 (Complete)
 - **Multi-Language LTS & Stable Dev Stack**:
   - **C & C++**: `build-essential`, `g++`, `clang`, `clangd`, `lld`, `ninja-build`, `pkg-config` (alongside `gcc`, `cmake`, `make`, `gdb`, `valgrind`, `cppcheck`).
   - **C# / .NET 8.0 LTS**: Official Microsoft `dotnet-sdk-8.0` via `packages.microsoft.com/debian/12/prod` (graceful `mono-devel` fallback).
-  - **JavaScript / TypeScript / Node.js 22 LTS**: Official NodeSource `nodejs` 22.x LTS (incl. `npm`/`npx`) + `node-typescript` (`tsc`, zero `npm` conflict).
+  - **JavaScript / TypeScript / Node.js 22 LTS**: Official NodeSource `nodejs` 22.x LTS (incl. `npm`/`npx`) + global TypeScript (`npm install -g typescript`, `tsc`; Debian `node-typescript` fallback).
   - **Python, Rust, Go, Java 17 LTS, PHP, Ruby & Lua**: `python3-pip`, `python3-venv`, `ipython3`, `rustc`, `cargo`, `rustfmt`, `golang-go`, `openjdk-17-jdk-headless`, `php-cli`, `ruby`, `lua5.4`, `fonts-jetbrains-mono`.
 - **Universal Hardware Firmware, Multi-VM Support & Native HW Auto-Detect**:
   - `vice-tool-hw-autodetect` (`/usr/local/bin/vice-hw-autodetect --status`) for automatic hypervisor, NetworkManager NIC, Wi-Fi, and driver setup.
@@ -439,7 +439,7 @@ Batch 4A: [####################]  50 /  50 (Complete)
 | 387 | `cargo` | Cargo Rust Package Manager | Developer | `cargo` | `cargo` | Terminal | `vice-tool-cargo` |
 | 388 | `rustfmt` | Rustfmt Code Formatter | Developer | `rustfmt` | `rustfmt` | Terminal | `vice-tool-rustfmt` |
 | 389 | `nodejs` | Node.js 22 LTS Runtime | Developer | `nodejs` | `node` | Terminal | `vice-tool-nodejs` |
-| 390 | `node-typescript` | TypeScript Compiler (tsc) | Developer | `node-typescript` | `tsc` | Terminal | `vice-tool-node-typescript` |
+| 390 | `node-typescript` | TypeScript (Latest LTS via Node.js) | Developer | `node-typescript` | `tsc --version` | Terminal | `vice-tool-node-typescript` |
 | 391 | `dotnet-sdk-8.0` | .NET 8.0 LTS SDK (C#) | Developer | `dotnet-sdk-8.0` | `dotnet` | Terminal | `vice-tool-dotnet-sdk-8.0` |
 | 392 | `golang-go` | Go Compiler & Toolchain | Developer | `golang-go` | `go` | Terminal | `vice-tool-golang-go` |
 | 393 | `openjdk-17-jdk-headless` | OpenJDK 17 LTS Compiler | Developer | `openjdk-17-jdk-headless` | `javac` | Terminal | `vice-tool-openjdk-17-jdk-headless` |

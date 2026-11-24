@@ -13,8 +13,9 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib', 'python')))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'desktop')))
 
-import vice_utils
-import panel_config
+import vice_utils  # noqa: E402
+import panel_config  # noqa: E402
+
 
 class TestLaunchCommand(unittest.TestCase):
     """Tests for the launch_command function."""
@@ -57,6 +58,7 @@ class TestLaunchCommand(unittest.TestCase):
         args, kwargs = mock_popen.call_args
         self.assertEqual(args[0], expected_args)
 
+
 class TestSystemMetrics(unittest.TestCase):
     """Tests for the SystemMetrics class."""
 
@@ -67,7 +69,7 @@ class TestSystemMetrics(unittest.TestCase):
         """Test that get_cpu_usage returns a string starting with 'CPU:'."""
         # We need to call it twice because the first call just establishes a baseline
         with patch('builtins.open', mock_open(read_data='cpu  10 20 30 40 50 60 70 80 90 100\n')):
-            self.metrics.get_cpu_usage() # Baseline
+            self.metrics.get_cpu_usage()  # Baseline
             usage = self.metrics.get_cpu_usage()
             self.assertIsInstance(usage, str)
             self.assertTrue(usage.startswith("CPU:"))
@@ -103,6 +105,7 @@ class TestSystemMetrics(unittest.TestCase):
         usage = self.metrics.get_ram_usage()
         self.assertEqual(usage, "RAM: N/A")
 
+
 class TestLogging(unittest.TestCase):
     """Tests for logging functions to ensure they don't crash."""
 
@@ -117,6 +120,7 @@ class TestLogging(unittest.TestCase):
 
     def test_log_error(self):
         vice_utils.log_error("Test error message")
+
 
 class TestBatteryStatus(unittest.TestCase):
     """Tests for the get_battery_status function."""

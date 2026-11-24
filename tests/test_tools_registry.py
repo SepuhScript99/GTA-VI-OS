@@ -64,10 +64,11 @@ EXPECTED_NATIVE_IDS = {
     "vice-tool-hw-autodetect",
 }
 
-EXTERNAL_REPO_PACKAGES = {
+EXTERNAL_DEV_PACKAGES = {
     "code",
     "dotnet-sdk-8.0",
     "nodejs",
+    "node-typescript",
 }
 
 BANNED_PACKAGES = {
@@ -362,6 +363,7 @@ class TestToolsRegistry(unittest.TestCase):
         pkgs_set = set(pkgs_list)
         self.assertNotIn("pulseaudio", pkgs_set, "Conflicting pulseaudio daemon must not be in packages.list")
         self.assertNotIn("npm", pkgs_set, "Conflicting Debian npm package must not be in packages.list (NodeSource nodejs provides npm)")
+        self.assertNotIn("node-typescript", pkgs_set, "Conflicting Debian node-typescript (Depends: nodejs:any) must not be in packages.list")
 
         install_sh = _read_text("chroot_scripts", "01_install_packages.sh")
         reg = _load_registry()
@@ -370,7 +372,8 @@ class TestToolsRegistry(unittest.TestCase):
         for tool in non_native:
             self.assertFalse(tool["gta_themed"], f"Debian tool {tool['id']} should have gta_themed=false")
             pkg = tool["package"]
-            in_external_installer = pkg in EXTERNAL_REPO_PACKAGES and pkg in install_sh
+            ts_wired = pkg == "node-typescript" and "npm install -g typescript" in install_sh
+            in_external_installer = pkg in EXTERNAL_DEV_PACKAGES and (pkg in install_sh or ts_wired)
             self.assertTrue(
                 pkg in pkgs_set or pkg in DEBIAN_BASE_PACKAGES or in_external_installer,
                 f"Tool {tool['id']} package '{pkg}' missing from config/packages.list and external installer",
@@ -391,6 +394,7 @@ class TestToolsRegistry(unittest.TestCase):
             "has_install_candidate code",
             "has_install_candidate dotnet-sdk-8.0",
             "apt-cache policy nodejs",
+            "npm install -g typescript",
         ):
             self.assertIn(token, install_sh, f"01_install_packages.sh missing dev repo/suite logic '{token}'")
 
@@ -408,7 +412,7 @@ class TestToolsRegistry(unittest.TestCase):
         required_dev_packages = (
             "g++", "clang", "clangd", "lld", "ninja-build", "pkg-config",
             "python3-pip", "ipython3", "rustc", "cargo", "rustfmt",
-            "node-typescript", "golang-go", "openjdk-17-jdk-headless", "php-cli", "ruby", "lua5.4",
+            "golang-go", "openjdk-17-jdk-headless", "php-cli", "ruby", "lua5.4",
             "autoconf", "automake", "libtool", "meson", "ccache", "bear", "astyle",
             "universal-ctags", "shfmt", "yamllint", "codespell", "python3-pytest",
             "python3-flake8", "black", "pylint", "pipx", "dos2unix", "colordiff",
@@ -422,9 +426,47 @@ class TestToolsRegistry(unittest.TestCase):
                 f"Missing Batch 4A registry entry for package '{pkg}'",
             )
 
-        for ext_id, ext_pkg in (("vscode", "code"), ("dotnet-sdk-8.0", "dotnet-sdk-8.0"), ("nodejs", "nodejs")):
+        for ext_id, ext_pkg in (
+            ("vscode", "code"),
+            ("dotnet-sdk-8.0", "dotnet-sdk-8.0"),
+            ("nodejs", "nodejs"),
+            ("node-typescript", "node-typescript"),
+        ):
             self.assertIn(ext_id, tools_by_id)
             self.assertEqual(tools_by_id[ext_id]["package"], ext_pkg)
+        self.assertEqual(tools_by_id["node-typescript"]["exec"], "tsc --version")
+
+    def test_iso15_bookworm_install_order_and_typescript_wiring(self):
+        pkgs_set = set(_load_packages_list())
+        self.assertNotIn("node-typescript", pkgs_set)
+        arm64_pkgs = {
+            line.split("#", 1)[0].strip()
+            for line in _read_text("config", "packages.arm64.list").splitlines()
+            if line.split("#", 1)[0].strip()
+        }
+        self.assertNotIn("node-typescript", arm64_pkgs)
+
+        install_sh = _read_text("chroot_scripts", "01_install_packages.sh")
+        main_body = install_sh.split("\nmain() {", 1)[1]
+        avail_pos = main_body.index('apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "${available_pkgs[@]}"')
+        clean_pos = main_body.index("apt-get clean", avail_pos)
+        repos_pos = main_body.index('configure_dev_repos "${build_arch}"')
+        suite_pos = main_body.index("install_dev_suite")
+        self.assertLess(avail_pos, clean_pos, "apt-get clean must follow available_pkgs installation")
+        self.assertLess(clean_pos, repos_pos, "configure_dev_repos must run AFTER Bookworm available_pkgs installation")
+        self.assertLess(repos_pos, suite_pos, "install_dev_suite must run AFTER configure_dev_repos")
+
+        dev_suite_body = install_sh.split("install_dev_suite() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn("npm install -g typescript", dev_suite_body)
+        self.assertIn("install_debian_nodejs_fallback", dev_suite_body)
+        self.assertIn("apt-get clean", dev_suite_body)
+
+        fallback_body = install_sh.split("install_debian_nodejs_fallback() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn("node-typescript", fallback_body)
+
+        self.assertNotIn("apt-cache policy nodejs 2>/dev/null | grep -q", install_sh)
+        self.assertIn("awk '/Candidate:/ {if (!c) c=$2} END {print c}'", install_sh)
+        self.assertIn('-o Dir::Etc::sourcelist="$list_path"', install_sh)
 
     def test_tool_exec_consistency_and_gui_launch_fixes(self):
         import shlex

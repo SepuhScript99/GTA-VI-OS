@@ -33,16 +33,15 @@ APT_OPTS=(
 has_install_candidate() {
     local pkg="$1"
     local candidate
-    candidate=$(apt-cache policy "$pkg" 2>/dev/null | awk '/Candidate:/ {print $2; exit}')
+    candidate=$(apt-cache policy "$pkg" 2>/dev/null | awk '/Candidate:/ {if (!c) c=$2} END {print c}')
     [ -n "$candidate" ] && [ "$candidate" != "(none)" ]
 }
 
 refresh_external_repo_list() {
     local list_path="$1"
     local label="$2"
-    local list_rel="sources.list.d/$(basename "$list_path")"
     if ! apt-get "${APT_OPTS[@]}" update \
-        -o Dir::Etc::sourcelist="$list_rel" \
+        -o Dir::Etc::sourcelist="$list_path" \
         -o Dir::Etc::sourceparts="-" \
         -o APT::Get::List-Cleanup="0"; then
         log_warn "External repo unreachable (${label}); removing ${list_path} and continuing with Debian fallback."
@@ -65,12 +64,14 @@ configure_dev_repos() {
 
     install -d -m 0755 /usr/share/keyrings /etc/apt/sources.list.d
 
-    local tmp_ms_key tmp_ns_key
+    local tmp_ms_key tmp_ns_key tmp_gnupg
     tmp_ms_key=$(mktemp)
     tmp_ns_key=$(mktemp)
+    tmp_gnupg=$(mktemp -d)
+    chmod 700 "$tmp_gnupg"
 
     if curl -fsSL --retry 3 --retry-delay 5 https://packages.microsoft.com/keys/microsoft.asc -o "$tmp_ms_key" \
-        && gpg --batch --yes --dearmor < "$tmp_ms_key" > /usr/share/keyrings/packages.microsoft.gpg; then
+        && gpg --homedir "$tmp_gnupg" --batch --yes --dearmor < "$tmp_ms_key" > /usr/share/keyrings/packages.microsoft.gpg; then
         chmod 644 /usr/share/keyrings/packages.microsoft.gpg
         printf 'deb [arch=%s signed-by=/usr/share/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main\n' \
             "$deb_arch" > /etc/apt/sources.list.d/vscode.list
@@ -80,25 +81,40 @@ configure_dev_repos() {
         refresh_external_repo_list "/etc/apt/sources.list.d/vscode.list" "Microsoft VS Code" || true
         refresh_external_repo_list "/etc/apt/sources.list.d/microsoft-prod.list" "Microsoft Debian 12 Prod (.NET 8.0)" || true
     else
+        rm -f /usr/share/keyrings/packages.microsoft.gpg
         log_warn "Failed to fetch Microsoft GPG key; skipping VS Code and Microsoft .NET apt repos."
     fi
 
     if curl -fsSL --retry 3 --retry-delay 5 https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o "$tmp_ns_key" \
-        && gpg --batch --yes --dearmor < "$tmp_ns_key" > /usr/share/keyrings/nodesource.gpg; then
+        && gpg --homedir "$tmp_gnupg" --batch --yes --dearmor < "$tmp_ns_key" > /usr/share/keyrings/nodesource.gpg; then
         chmod 644 /usr/share/keyrings/nodesource.gpg
         printf 'deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main\n' \
             > /etc/apt/sources.list.d/nodesource.list
         chmod 644 /etc/apt/sources.list.d/nodesource.list
         refresh_external_repo_list "/etc/apt/sources.list.d/nodesource.list" "NodeSource Node.js 22 LTS" || true
     else
+        rm -f /usr/share/keyrings/nodesource.gpg
         log_warn "Failed to fetch NodeSource GPG key; falling back to Debian Bookworm Node.js."
     fi
 
-    rm -f "$tmp_ms_key" "$tmp_ns_key"
+    rm -rf "$tmp_ms_key" "$tmp_ns_key" "$tmp_gnupg"
+}
+
+install_debian_nodejs_fallback() {
+    local fb_node=()
+    local pkg
+    for pkg in nodejs npm node-typescript; do
+        if has_install_candidate "$pkg"; then
+            fb_node+=("$pkg")
+        fi
+    done
+    if [ "${#fb_node[@]}" -gt 0 ]; then
+        apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "${fb_node[@]}" || true
+    fi
 }
 
 install_dev_suite() {
-    log_info "Installing official VS Code, .NET 8.0 LTS SDK, and Node.js 22 LTS..."
+    log_info "Installing official VS Code, .NET 8.0 LTS SDK, and Node.js 22 LTS + TypeScript..."
 
     if has_install_candidate code; then
         if ! apt-get "${APT_OPTS[@]}" install -y --no-install-recommends code; then
@@ -122,23 +138,32 @@ install_dev_suite() {
         fi
     fi
 
-    # NodeSource nodejs 22.x Provides: npm and Conflicts: npm (never install Debian npm alongside it)
-    if apt-cache policy nodejs 2>/dev/null | grep -q "nodesource"; then
-        if ! apt-get "${APT_OPTS[@]}" install -y --no-install-recommends nodejs; then
-            log_warn "NodeSource Node.js 22 LTS install failed; checking Debian fallback."
-            if has_install_candidate nodejs; then
-                apt-get "${APT_OPTS[@]}" install -y --no-install-recommends nodejs npm || true
+    # NodeSource nodejs 22.x Provides: npm and Conflicts: npm (never install Debian npm alongside it).
+    # Read apt-cache policy into a variable to avoid SIGPIPE under set -o pipefail.
+    local node_policy=""
+    node_policy=$(apt-cache policy nodejs 2>/dev/null || true)
+    if [[ "$node_policy" == *"nodesource"* ]]; then
+        if apt-get "${APT_OPTS[@]}" install -y --no-install-recommends nodejs; then
+            if command -v npm >/dev/null 2>&1; then
+                log_info "Installing global TypeScript compiler via npm..."
+                local npm_cache_dir
+                npm_cache_dir=$(mktemp -d)
+                npm_config_cache="$npm_cache_dir" npm install -g typescript --no-audit --no-fund || true
+                rm -rf "$npm_cache_dir" /root/.npm 2>/dev/null || true
+            else
+                log_warn "npm unavailable after NodeSource nodejs install; skipping global TypeScript."
             fi
+        else
+            log_warn "NodeSource Node.js 22 LTS install failed; checking Debian fallback."
+            rm -f /etc/apt/sources.list.d/nodesource.list /var/lib/apt/lists/*nodesource* 2>/dev/null || true
+            install_debian_nodejs_fallback
         fi
     else
-        log_warn "NodeSource Node.js 22 LTS repo unavailable; installing Debian Bookworm nodejs + npm fallback."
-        local fb_node=()
-        has_install_candidate nodejs && fb_node+=("nodejs")
-        has_install_candidate npm && fb_node+=("npm")
-        if [ "${#fb_node[@]}" -gt 0 ]; then
-            apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "${fb_node[@]}" || true
-        fi
+        log_warn "NodeSource Node.js 22 LTS repo unavailable; installing Debian Bookworm nodejs + npm + node-typescript fallback."
+        install_debian_nodejs_fallback
     fi
+
+    apt-get clean
 }
 
 main() {
@@ -186,8 +211,6 @@ main() {
         apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "${core_infra_pkgs[@]}"
     fi
 
-    configure_dev_repos "${build_arch}"
-
     log_info "Installing packages from list..."
     if [ ! -f /vice_payload/config/packages.list ]; then
         log_error "packages.list not found in payload!"
@@ -227,7 +250,9 @@ main() {
     if [ "${#available_pkgs[@]}" -gt 0 ]; then
         apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "${available_pkgs[@]}"
     fi
+    apt-get clean
 
+    configure_dev_repos "${build_arch}"
     install_dev_suite
 
     log_info "Generating locales..."

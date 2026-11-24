@@ -4293,11 +4293,11 @@
     },
     {
       "id": "node-typescript",
-      "name": "TypeScript Compiler (tsc)",
-      "description": "Strict statically typed JavaScript superset compiler powered by Node.js 22 LTS",
+      "name": "TypeScript (Latest LTS via Node.js)",
+      "description": "Strict statically typed JavaScript superset compiler installed globally via Node.js 22 LTS npm",
       "category": "Developer",
       "package": "node-typescript",
-      "exec": "tsc",
+      "exec": "tsc --version",
       "terminal": true,
       "gta_themed": false,
       "icon_glyph": "typescript"

@@ -425,7 +425,6 @@ ipython3
 rustc
 cargo
 rustfmt
-node-typescript
 golang-go
 openjdk-17-jdk-headless
 php-cli
