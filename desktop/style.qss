@@ -1,4 +1,4 @@
-/* GTA VI OS (Vice OS) Global Qt Stylesheet v4.1 — Leonida Coastal Dusk (Win11 Rounded) */
+/* GTA VI OS (Vice OS) Global Qt Stylesheet v4.2 — Leonida Coastal Dusk (Win11 Smooth) */
 
 /* --- Global Defaults --- */
 QWidget {
@@ -12,19 +12,20 @@ QWidget {
 QDialog, QMessageBox {
     background-color: #141621;
     color: #F5F6FA;
+    border: 1px solid #2C3147;
     border-radius: 12px;
 }
 
 /* --- Desktop Shell: Bottom 44px Cinnamon-Style Taskbar --- */
 QWidget#TopBar, QWidget#BottomTaskbar {
-    background-color: rgba(13, 14, 21, 242);
-    border-top: 1px solid #262A3D;
+    background-color: rgba(13, 14, 21, 244);
+    border-top: 1px solid #2C3147;
 }
 
 QPushButton#StartButton {
     background-color: #141621;
     color: #F5F6FA;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     border-radius: 9px;
     padding: 2px 10px;
     font-weight: bold;
@@ -34,7 +35,7 @@ QPushButton#StartButton {
 
 QPushButton#StartButton:hover {
     background-color: #1B1E2D;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
     color: #F5F6FA;
 }
 
@@ -55,13 +56,13 @@ QPushButton#PinButton {
 
 QPushButton#PinButton:hover {
     background-color: #1B1E2D;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
 }
 
 QPushButton#TaskButton {
     background-color: #141621;
     color: #A6AEBF;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     border-radius: 9px;
     padding: 2px 6px;
     min-width: 0px;
@@ -74,13 +75,13 @@ QPushButton#TaskButton {
 QPushButton#TaskButton:hover {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
 }
 
 QPushButton#TaskButton:checked {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
     border-bottom: 2px solid #FF5E7E;
     font-weight: normal;
 }
@@ -88,8 +89,8 @@ QPushButton#TaskButton:checked {
 QPushButton#QuickUtilButton {
     background-color: #141621;
     color: #A6AEBF;
-    border: 1px solid #262A3D;
-    border-radius: 8px;
+    border: 1px solid #2C3147;
+    border-radius: 9px;
     padding: 2px 6px;
     min-width: 0px;
     font-size: 12px;
@@ -98,14 +99,14 @@ QPushButton#QuickUtilButton {
 QPushButton#QuickUtilButton:hover {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
 }
 
 QPushButton#BatteryButton {
     background-color: #122427;
     color: #36D6C3;
     border: 1px solid #224B4F;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 2px 6px;
     min-width: 0px;
     font-size: 11px;
@@ -121,7 +122,7 @@ QPushButton#BatteryButton:hover {
 QPushButton#VolumeMuteButton {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
     border-radius: 9px;
     padding: 4px 12px;
     min-width: 68px;
@@ -144,8 +145,8 @@ QPushButton#VolumeMuteButton:checked {
 QPushButton#ShowDesktopButton {
     background-color: #141621;
     color: #A6AEBF;
-    border: 1px solid #262A3D;
-    border-radius: 8px;
+    border: 1px solid #2C3147;
+    border-radius: 9px;
     padding: 2px;
     min-width: 24px;
     max-width: 28px;
@@ -181,13 +182,13 @@ QPushButton#PowerButton:hover {
 /* --- Instant Mint Cinnamon-Style Start Menu & Volume Popups --- */
 QWidget#StartMenuPopup, QWidget#VolumePopup {
     background-color: rgba(20, 22, 33, 248);
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
     border-radius: 14px;
 }
 
 QWidget#StartRail {
     background-color: rgba(13, 14, 21, 248);
-    border-right: 1px solid #262A3D;
+    border-right: 1px solid #2C3147;
     border-top-left-radius: 13px;
     border-bottom-left-radius: 13px;
 }
@@ -202,12 +203,12 @@ QPushButton#RailButton {
 
 QPushButton#RailButton:hover {
     background-color: #1B1E2D;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
 }
 
 QPushButton#RailHubButton {
     background-color: #1B1E2D;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
     border-radius: 9px;
     padding: 4px;
     min-width: 0px;
@@ -221,7 +222,7 @@ QPushButton#RailHubButton:hover {
 QPushButton#StartHubPill {
     background-color: #1B1E2D;
     color: #F7C873;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
     border-radius: 9px;
     padding: 3px 10px;
     min-width: 0px;
@@ -237,7 +238,7 @@ QPushButton#StartHubPill:hover {
 
 QListWidget#StartCatList {
     background-color: #0D0E15;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     border-radius: 10px;
     padding: 4px;
     outline: none;
@@ -246,7 +247,7 @@ QListWidget#StartCatList {
 
 QListWidget#StartCatList::item {
     padding: 7px 10px;
-    border-radius: 8px;
+    border-radius: 9px;
     color: #A6AEBF;
 }
 
@@ -263,7 +264,7 @@ QListWidget#StartCatList::item:selected {
 
 QListWidget#StartAppList {
     background-color: #141621;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     border-radius: 10px;
     padding: 4px;
     outline: none;
@@ -272,7 +273,7 @@ QListWidget#StartAppList {
 
 QListWidget#StartAppList::item {
     padding: 7px 10px;
-    border-radius: 8px;
+    border-radius: 9px;
     color: #F5F6FA;
 }
 
@@ -288,13 +289,13 @@ QListWidget#StartAppList::item:selected {
 
 QWidget#Dock {
     background-color: rgba(20, 22, 33, 240);
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     border-radius: 14px;
 }
 
 QWidget#RunMenu {
     background-color: rgba(20, 22, 33, 248);
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
     border-radius: 12px;
 }
 
@@ -302,7 +303,7 @@ QWidget#RunMenu {
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QComboBox {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     border-radius: 9px;
     padding: 6px 10px;
     selection-background-color: #4A2438;
@@ -318,7 +319,7 @@ QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QComboBo
 QPushButton {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     border-radius: 9px;
     padding: 6px 14px;
     min-width: 56px;
@@ -327,7 +328,7 @@ QPushButton {
 QPushButton:hover {
     background-color: #23273A;
     color: #F5F6FA;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
 }
 
 QPushButton:focus {
@@ -364,13 +365,13 @@ QPushButton#PrimaryButton:hover {
 QToolButton {
     background-color: transparent;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 4px 6px;
 }
 
 QToolButton:hover {
     background-color: #1B1E2D;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
 }
 
 QToolButton:checked, QToolButton:pressed {
@@ -382,7 +383,7 @@ QToolButton:checked, QToolButton:pressed {
 QPushButton#DockButton {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     border-radius: 9px;
     padding: 6px 10px;
     font-weight: bold;
@@ -393,7 +394,7 @@ QPushButton#DockButton {
 QPushButton#DockButton:hover {
     background-color: #23273A;
     color: #FF9A62;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
 }
 
 QPushButton#DockButton:pressed {
@@ -407,7 +408,7 @@ QPushButton#ExitButton {
     background-color: transparent;
     color: #F25C6E;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 3px 8px;
     min-width: 0px;
     font-weight: bold;
@@ -430,7 +431,7 @@ QPushButton#Clock, QLabel#Clock {
     background-color: transparent;
     color: #F5F6FA;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 1px 6px;
     min-width: 0px;
     font-weight: bold;
@@ -440,14 +441,14 @@ QPushButton#Clock, QLabel#Clock {
 QPushButton#Clock:hover {
     background-color: #1B1E2D;
     color: #FF9A62;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
 }
 
 QPushButton#SysInfo, QLabel#SysInfo {
     background-color: transparent;
     color: #A6AEBF;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 2px 6px;
     min-width: 0px;
     font-size: 11px;
@@ -456,7 +457,7 @@ QPushButton#SysInfo, QLabel#SysInfo {
 QPushButton#SysInfo:hover {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
 }
 
 /* --- Dropdowns (ComboBox) --- */
@@ -475,15 +476,15 @@ QComboBox::down-arrow {
 QComboBox QAbstractItemView {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #353B54;
-    border-radius: 10px;
+    border: 1px solid #3B425E;
+    border-radius: 12px;
     outline: none;
     padding: 4px;
 }
 
 QComboBox QAbstractItemView::item {
     padding: 6px 10px;
-    border-radius: 6px;
+    border-radius: 8px;
 }
 
 QComboBox QAbstractItemView::item:selected {
@@ -500,7 +501,7 @@ QCheckBox, QRadioButton {
 QCheckBox::indicator, QRadioButton::indicator {
     width: 15px;
     height: 15px;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
     background-color: #1B1E2D;
     border-radius: 5px;
 }
@@ -543,7 +544,7 @@ QSlider::sub-page:horizontal {
 /* --- Group Boxes --- */
 QGroupBox {
     background-color: #141621;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     border-radius: 12px;
     margin-top: 12px;
     padding: 12px;
@@ -562,13 +563,13 @@ QGroupBox::title {
 /* --- Toolbars & Status Bars --- */
 QToolBar {
     background-color: #141621;
-    border-bottom: 1px solid #262A3D;
+    border-bottom: 1px solid #2C3147;
 }
 
 QStatusBar {
     background-color: #141621;
     color: #A6AEBF;
-    border-top: 1px solid #262A3D;
+    border-top: 1px solid #2C3147;
 }
 
 QStatusBar::item {
@@ -578,14 +579,14 @@ QStatusBar::item {
 /* --- Dock Widgets --- */
 QDockWidget::title {
     background-color: #1B1E2D;
-    border: 1px solid #262A3D;
-    border-radius: 8px;
+    border: 1px solid #2C3147;
+    border-radius: 9px;
     padding: 6px;
 }
 
 /* --- Tabs --- */
 QTabWidget::pane {
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     background-color: #141621;
     border-radius: 12px;
 }
@@ -593,7 +594,7 @@ QTabWidget::pane {
 QTabBar::tab {
     background-color: #141621;
     color: #A6AEBF;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     padding: 8px 18px;
     border-top-left-radius: 9px;
     border-top-right-radius: 9px;
@@ -608,7 +609,7 @@ QTabBar::tab:hover {
 
 QTabBar::tab:selected {
     background-color: #1B1E2D;
-    border-color: #353B54;
+    border-color: #3B425E;
     border-bottom: 2px solid #FF5E7E;
     color: #F5F6FA;
     font-weight: normal;
@@ -618,21 +619,21 @@ QTabBar::tab:selected {
 QProgressBar {
     text-align: center;
     background-color: #1B1E2D;
-    border: 1px solid #262A3D;
-    border-radius: 8px;
+    border: 1px solid #2C3147;
+    border-radius: 9px;
     color: #F5F6FA;
 }
 
 QProgressBar::chunk {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #FF5E7E, stop:1 #FF9A62);
-    border-radius: 7px;
+    border-radius: 8px;
 }
 
 /* --- List, Tree, & Table Views --- */
 QTreeView, QListView, QTableView, QListWidget {
     background-color: #141621;
     color: #F5F6FA;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     border-radius: 10px;
     outline: none;
 }
@@ -655,14 +656,14 @@ QHeaderView::section {
     background-color: #1B1E2D;
     color: #A6AEBF;
     padding: 6px;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     font-weight: bold;
 }
 
 /* --- Context Menus --- */
 QMenu {
     background-color: #1B1E2D;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
     border-radius: 12px;
     color: #F5F6FA;
     padding: 6px;
@@ -681,7 +682,7 @@ QMenu::item:selected {
 
 QMenu::separator {
     height: 1px;
-    background-color: #262A3D;
+    background-color: #2C3147;
     margin: 5px 10px;
 }
 
@@ -689,7 +690,7 @@ QMenu::separator {
 QToolTip {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
     border-radius: 9px;
     padding: 6px 10px;
 }

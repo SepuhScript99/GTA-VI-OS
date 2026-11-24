@@ -1,0 +1,115 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+# ============================================================================
+# NetworkManager Dispatcher Hook: Vice OS NIC Speed & Power-Save Tuning
+# Installed to /etc/NetworkManager/dispatcher.d/80-vice-net-tune (chmod 755)
+# Supports e1000, e1000e, virtio_net, vmxnet3, r8169, igb, iwlwifi, etc.
+# ============================================================================
+
+case ":$PATH:" in
+    *":/usr/sbin:"*) ;;
+    *) PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin" ;;
+esac
+export PATH
+
+IFACE="${1:-}"
+ACTION="${2:-}"
+SYS_NET_DIR="${VICE_NET_SYS_DIR:-/sys/class/net}"
+
+case "$IFACE" in
+    ""|lo|docker*|br-*|virbr*|veth*|tun*|tap*|wg*|vboxnet*|vmnet*)
+        exit 0
+        ;;
+esac
+
+if [ "$ACTION" != "up" ]; then
+    exit 0
+fi
+
+tune_ring_buffers() {
+    local dev="$1"
+    if ! command -v ethtool >/dev/null 2>&1; then
+        return 0
+    fi
+
+    local ring_info=""
+    ring_info=$(ethtool -g "$dev" 2>/dev/null || true)
+    if [ -z "$ring_info" ]; then
+        return 0
+    fi
+
+    # Parse Pre-set maximums RX/TX and clamp to 4096 (verified safe on e1000/vmxnet3/r8169)
+    local max_rx="" max_tx=""
+    max_rx=$(printf '%s\n' "$ring_info" | awk '/Pre-set maximums:/{in_max=1; next} /Current hardware settings:/{in_max=0} in_max && /^RX:/{print $2; exit}')
+    max_tx=$(printf '%s\n' "$ring_info" | awk '/Pre-set maximums:/{in_max=1; next} /Current hardware settings:/{in_max=0} in_max && /^TX:/{print $2; exit}')
+
+    local target_rx=4096 target_tx=4096
+    if [[ "$max_rx" =~ ^[0-9]+$ ]] && [ "$max_rx" -gt 0 ] && [ "$max_rx" -lt 4096 ]; then
+        target_rx="$max_rx"
+    fi
+    if [[ "$max_tx" =~ ^[0-9]+$ ]] && [ "$max_tx" -gt 0 ] && [ "$max_tx" -lt 4096 ]; then
+        target_tx="$max_tx"
+    fi
+
+    local args=()
+    if [[ "$max_rx" =~ ^[0-9]+$ ]] && [ "$max_rx" -gt 0 ]; then
+        args+=("rx" "$target_rx")
+    fi
+    if [[ "$max_tx" =~ ^[0-9]+$ ]] && [ "$max_tx" -gt 0 ]; then
+        args+=("tx" "$target_tx")
+    fi
+
+    if [ "${#args[@]}" -gt 0 ]; then
+        ethtool -G "$dev" "${args[@]}" >/dev/null 2>&1 || true
+    else
+        ethtool -G "$dev" rx 4096 tx 4096 >/dev/null 2>&1 || true
+    fi
+}
+
+tune_offloads_and_queue() {
+    local dev="$1"
+
+    if command -v ethtool >/dev/null 2>&1; then
+        # Keep segmentation/receive offloads ON (disabling TSO/GSO/SG cuts throughput 36-57%)
+        local feat
+        for feat in tso gso gro sg; do
+            ethtool -K "$dev" "$feat" on >/dev/null 2>&1 || true
+        done
+    fi
+
+    if command -v ip >/dev/null 2>&1; then
+        ip link set dev "$dev" txqueuelen 4096 >/dev/null 2>&1 || true
+    fi
+
+    if command -v tc >/dev/null 2>&1; then
+        tc qdisc replace dev "$dev" root fq_codel >/dev/null 2>&1 || true
+    fi
+}
+
+tune_wireless_powersave() {
+    local dev="$1"
+    if [ ! -d "${SYS_NET_DIR}/${dev}/wireless" ] && [ ! -d "${SYS_NET_DIR}/${dev}/phy80211" ]; then
+        return 0
+    fi
+
+    if command -v iw >/dev/null 2>&1; then
+        iw dev "$dev" set power_save off >/dev/null 2>&1 || true
+    fi
+    if command -v iwconfig >/dev/null 2>&1; then
+        iwconfig "$dev" power off >/dev/null 2>&1 || true
+    fi
+}
+
+main() {
+    if [ ! -e "${SYS_NET_DIR}/${IFACE}" ]; then
+        exit 0
+    fi
+
+    tune_ring_buffers "$IFACE"
+    tune_offloads_and_queue "$IFACE"
+    tune_wireless_powersave "$IFACE"
+    exit 0
+}
+
+main

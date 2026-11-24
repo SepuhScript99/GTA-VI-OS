@@ -5,11 +5,11 @@
 # We set this to "yes" to ensure the loopback (lo) interface is configured.
 CONFIGURE_INTERFACES=yes
 
-# Exclude physical interfaces from ifupdown management.
-# This prevents conflicts with NetworkManager, which handles physical hardware.
-EXCLUDE_INTERFACES="eth* wlan* en* wlp*"
+# Exclude physical, wireless, USB-tether, and WWAN interfaces from ifupdown management.
+# This prevents conflicts with NetworkManager, which handles all non-loopback hardware.
+EXCLUDE_INTERFACES="eth* wlan* en* wlp* usb* wwan* wwp*"
 
 # Do not wait for network interfaces to be fully configured during boot.
-# NetworkManager handles network connectivity asynchronously; waiting for 
+# NetworkManager handles network connectivity asynchronously; waiting for
 # ifupdown would just slow down the boot process unnecessarily.
 WAIT_FOR_INTERFACES=no

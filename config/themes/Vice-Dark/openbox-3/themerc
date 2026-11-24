@@ -13,11 +13,11 @@ window.handle.width: 2
 window.label.text.justify: left
 
 # --- Active Window ---
-window.active.border.color: #353B54
+window.active.border.color: #3B425E
 window.active.client.color: #0D0E15
 window.active.title.bg: flat solid
 window.active.title.bg.color: #141621
-window.active.title.separator.color: #262A3D
+window.active.title.separator.color: #2C3147
 
 window.active.label.bg: parentrelative
 window.active.label.text.color: #F5F6FA
@@ -25,7 +25,7 @@ window.active.label.text.color: #F5F6FA
 window.active.handle.bg: flat solid
 window.active.handle.bg.color: #141621
 window.active.grip.bg: flat solid
-window.active.grip.bg.color: #353B54
+window.active.grip.bg.color: #3B425E
 
 # Active Buttons
 window.active.button.unpressed.bg: parentrelative
@@ -56,11 +56,11 @@ window.active.button.disabled.bg: parentrelative
 window.active.button.disabled.image.color: #3C4259
 
 # --- Inactive Window ---
-window.inactive.border.color: #222638
+window.inactive.border.color: #252A3D
 window.inactive.client.color: #0D0E15
 window.inactive.title.bg: flat solid
 window.inactive.title.bg.color: #10121B
-window.inactive.title.separator.color: #1D2130
+window.inactive.title.separator.color: #202436
 
 window.inactive.label.bg: parentrelative
 window.inactive.label.text.color: #6E778C
@@ -68,7 +68,7 @@ window.inactive.label.text.color: #6E778C
 window.inactive.handle.bg: flat solid
 window.inactive.handle.bg.color: #10121B
 window.inactive.grip.bg: flat solid
-window.inactive.grip.bg.color: #262A3D
+window.inactive.grip.bg.color: #2C3147
 
 # Inactive Buttons
 window.inactive.button.unpressed.bg: parentrelative
@@ -99,7 +99,7 @@ window.inactive.button.disabled.image.color: #31364A
 
 # --- Menus ---
 menu.border.width: 1
-menu.border.color: #353B54
+menu.border.color: #3B425E
 menu.overlap.x: -2
 menu.overlap.y: 0
 
@@ -118,7 +118,7 @@ menu.items.active.bg.color: #2B2230
 menu.items.active.text.color: #FF9A62
 menu.items.active.disabled.text.color: #6E778C
 
-menu.separator.color: #262A3D
+menu.separator.color: #2C3147
 menu.separator.width: 1
 menu.separator.padding.width: 6
 menu.separator.padding.height: 4
@@ -133,4 +133,4 @@ osd.label.text.color: #F5F6FA
 osd.hilight.bg: flat solid
 osd.hilight.bg.color: #FF5E7E
 osd.unhilight.bg: flat solid
-osd.unhilight.bg.color: #262A3D
+osd.unhilight.bg.color: #2C3147

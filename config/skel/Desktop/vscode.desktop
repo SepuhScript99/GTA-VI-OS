@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Visual Studio Code
+Comment=Code Editing. Redefined (C/C++/C#/Python/Rust/JS)
+Exec=/usr/bin/code %F
+Icon=vice-tool-vscode
+Terminal=false
+Categories=Development;IDE;
+StartupNotify=true
+MimeType=text/plain;inode/directory;

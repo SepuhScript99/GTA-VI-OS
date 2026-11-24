@@ -1,54 +1,52 @@
-# Vice OS Tools Progress (`375 / 500`)
+# Vice OS Tools Progress (`425 / 500`)
 
-**Overall Progress:** **375 / 500 (75%)** — Batch 3 Complete
+**Overall Progress:** **425 / 500 (85%)** — Batch 4A Complete
 **Theme:** GTA VI Leonida Sunset (`config/tools_registry.json` & `desktop/vice_theme.py`)
-**Target Suite:** Debian 12 (Bookworm `main`) + Native PyQt5 & CLI Vice OS Originals
+**Target Suite:** Debian 12 (Bookworm `main`) + Official VS Code / .NET 8.0 / Node.js 22 LTS Repos + Native Vice OS Originals
 
 ```text
-Progress: [###############.....] 375 / 500 (75%)
+Progress: [#################...] 425 / 500 (85%)
 Batch 1 : [####################] 100 / 100 (Complete)
 Batch 2 : [####################] 150 / 150 (Complete)
 Batch 3 : [####################] 125 / 125 (Complete)
+Batch 4A: [####################]  50 /  50 (Complete)
 ```
 
 ---
 
-## Category Breakdown (Batch 3 Cumulative)
+## Category Breakdown (Batch 4A Cumulative)
 
 | Category | Count | Native / Curated | Notes |
 | --- | ---: | --- | --- |
-| GTA VI Originals | 17 | 17 `vice-native` apps | Bespoke Leonida Sunset PyQt5 & CLI suite (`vice_tool_*.py`, `vicefetch.sh` on `vice_theme.py`) |
+| GTA VI Originals | 18 | 18 `vice-native` apps | Bespoke Leonida Sunset PyQt5 & CLI suite (`vice_tool_*.py`, `vicefetch.sh`, `vice-hw-autodetect.sh`) |
 | Office | 11 | 11 Debian Bookworm tools | LibreOffice Writer/Calc/Impress/Draw/Math (GTK3 themed), qpdfview, Evince, Simple Scan, Poppler, Hunspell, qpdf |
-| System | 34 | 34 Debian Bookworm tools | Monitors, hardware probes, Printers, Bluetooth (`blueman`/`bluez-tools`), `rfkill`, Timeshift, Chrony |
-| Network | 71 | 71 Debian Bookworm tools | Wireshark, Nmap, ZMap, DNS/SNMP/LDAP recon, IPv6 discovery, packet crafters, `iptraf-ng`/`dnstop`/`tcptrack`, SSH/Mosh |
-| Security | 131 | 131 Debian Bookworm tools | OpenVPN, WireGuard, Tor/Nyx/ProxyChains, Web fuzzers (`ffuf`/`wfuzz`/`wapiti`/`weevely`), Crackers, Wi-Fi/BT, Forensics, Crypto, Tunneling |
-| Developer | 43 | 43 Debian Bookworm tools | Compilers, RE & disassemblers (`gdb-multiarch`/`cgdb`/`yasm`/`ZydisDisasm`/`dwarfdump`/`hexyl`/`vbindiff`), ADB/Fastboot, Flawfinder, SQLite |
-| Files & Disk | 28 | 28 Debian Bookworm tools | GNOME Disks, Forensic imagers (`dc3dd`/`dcfldd`/`ewf`/`squashfs-tools`), `nwipe`, NTFS/exFAT/FAT/Btrfs, LUKS, S.M.A.R.T., recovery |
-| Media | 22 | 22 Debian Bookworm tools | FFmpeg, mpv, Celluloid, PipeWire mixer, Flameshot, Gcolor3, EasyTAG, `exiv2`, `zbar-tools`, image optimizers, EXIF tools |
+| System | 39 | 39 Debian Bookworm tools | Monitors, HW/EDID/I2C/UEFI/backlight probes, Printers, Bluetooth, `rfkill`, `sysbench`, Timeshift, Chrony |
+| Network | 72 | 72 Debian Bookworm tools | Wireshark, Nmap, ZMap, DNS/SNMP/LDAP recon, IPv6 discovery, packet crafters, `nghttp`, `iptraf-ng`/`dnstop`/`tcptrack`, SSH/Mosh |
+| Security | 133 | 133 Debian Bookworm tools | OpenVPN, WireGuard, Tor/Nyx/ProxyChains, Web fuzzers, Crackers, Wi-Fi/BT, Forensics, Crypto, `mokutil`, `tpm2`, Tunneling |
+| Developer | 82 | 82 Debian/Official tools | VS Code, C/C++ (`g++`/`clang`/`clangd`/`lld`), `.NET 8.0` C#, Rust, Node.js 22 + TypeScript, Go, Java 17, Python, PHP, Ruby, Lua, Build/Lint/RE |
+| Files & Disk | 29 | 29 Debian Bookworm tools | GNOME Disks, Forensic imagers (`dc3dd`/`dcfldd`/`ewf`/`squashfs-tools`), `fio` IOPS bench, `nwipe`, NTFS/exFAT/FAT/Btrfs, LUKS, S.M.A.R.T. |
+| Media | 23 | 23 Debian Bookworm tools | FFmpeg, mpv, Celluloid, PipeWire mixer, `v4l-utils`, Flameshot, Gcolor3, EasyTAG, `exiv2`, `zbar-tools`, EXIF tools |
 | Productivity | 18 | 18 Debian Bookworm tools | Firefox ESR, Zim, CherryTree, SpeedCrunch, Qalculate!, Galculator, Calcurse, Taskwarrior, tldr, archivers |
-| **Total** | **375** | **17 Native + 358 Debian/Kali** | **All 375 receive custom 64x64 GTA VI icons** |
+| **Total** | **425** | **18 Native + 407 Debian/Official/Kali** | **All 425 receive custom 64x64 GTA VI icons** |
 
 ---
 
-## Batch 3 Highlights (ISO #13 — Kali Linux & GTA VI x Debian)
+## Batch 4A Highlights (ISO #14 — Pre-Installed IDE, Multi-Language LTS Stack & Universal HW)
 
-- **2 New Native GTA VI Applications (`17` Total Originals)**:
-  - `vice-tool-fetch` (**Vice OS Fetch — GTA VI x Debian**): Truecolor Leonida Sunset Debian Open-Use Swirl + `VI` CLI banner (`system_scripts/vicefetch.sh` -> `/usr/local/bin/vicefetch`), Desktop shortcut (`vicefetch.desktop`), and custom `/etc/vice-os/vice_ascii.txt` integration for `neofetch`.
-  - `vice-tool-payload-lab` (**Vice Cyber Encoder & Recon Lab**): Multi-tab PyQt5 security workbench (`desktop/vice_tool_payload_lab.py`) for Base64/Base32/URL/Hex/HTML/ROT13/JWT decoding, MD5/SHA/SHA3/HMAC hashing, IPv4/IPv6 CIDR calculation, and regex + HTTP security header auditing.
-- **123 Verified Lean Kali Linux / Pentest Packages (`bookworm/main`, ~79.4 MB Installed-Size)**:
-  - **Recon, Scanning, OSINT & Monitoring (27)**: `arping`, `braa`, `firewalk`, `ike-scan`, `ipcalc-ng`, `ndisc6`, `onesixtyone`, `snmp` (`snmpwalk`), `tcptraceroute`, `zmap`, `dnsmap`, `dnstracer`, `ldnsutils` (`drill`), `sublist3r`, `ldap-utils` (`ldapsearch`), `smb-nat`, `smbmap`, `p0f`, `ipv6toolkit` (`scan6`), `thc-ipv6`, `heartbleeder`, `ssh-audit`, `ssl-cert-check`, `zbar-tools` (`zbarimg`), `dnstop`, `iptraf-ng`, `tcptrack`.
-  - **Web Pentesting & Transfer (9)**: `cadaver`, `ffuf`, `httping`, `siege`, `w3m`, `wapiti`, `weevely`, `wfuzz`, `aria2` (`aria2c`).
-  - **Password, Cracking & Auth (13)**: `bruteforce-luks`, `bruteforce-salted-openssl`, `bruteforce-wallet`, `chntpw`, `cisco7crack`, `cmospwd`, `ophcrack-cli`, `samdump2`, `sipcrack`, `sucrack`, `princeprocessor`, `apg`, `sshpass`.
-  - **Wireless & Bluetooth (14)**: `airgraph-ng`, `bluez-hcidump`, `bluez-tools`, `btscanner`, `bully`, `cowpatty`, `hcxdumptool`, `hcxtools`, `iw`, `mdk3`, `mdk4`, `pixiewps`, `rfkill`, `wireless-tools` (`iwconfig`).
-  - **Sniffing, MITM & Packet Crafting (12)**: `dsniff`, `netsed`, `sslsniff`, `sslsplit`, `dhcpdump`, `pcapfix`, `netsniff-ng`, `yersinia`, `packit`, `python3-scapy` (`scapy`), `sendip`, `t50`.
-  - **Forensics, Carving, Imaging & Stego (19)**: `scalpel`, `fatcat`, `ext4magic`, `reglookup`, `rifiuti2`, `afflib-tools`, `dc3dd`, `dcfldd`, `ewf-tools`, `ssdeep`, `tlsh-tools`, `unhide`, `exiv2`, `qpdf`, `squashfs-tools`, `gifshuffle`, `outguess`, `stegsnow`, `pngcheck`.
-  - **Reverse Engineering, Binary & Mobile (13)**: `cgdb`, `checksec`, `dwarfdump`, `gdbserver`, `pax-utils` (`scanelf`), `yasm`, `zydis-tools` (`ZydisDisasm`), `hexyl`, `vbindiff`, `uefitool-cli` (`UEFIExtract`), `adb`, `fastboot`, `rlwrap`.
-  - **Crypto, Privacy, Tunneling & Hardening (16)**: `ccrypt`, `scrypt`, `b3sum`, `hashdeep`, `rhash`, `minisign`, `gnutls-bin` (`certtool`), `nwipe`, `nyx`, `icmptx`, `proxytunnel`, `tinyproxy-bin`, `debsums`, `fwknop-client`, `flawfinder`, `zzuf`.
-- **Zero Bloat & Zero Boot Daemons**: Every Batch 3 package was verified live against Debian 12 `bookworm/main` with zero interactive debconf traps, zero background `.service` daemons, and zero duplicates (`bash validation/validate_packages.sh` clean).
+- **Pre-Installed Visual Studio Code (`code`)**: Installed from Microsoft's official apt repository (`packages.microsoft.com/repos/code`) in `chroot_scripts/01_install_packages.sh`, pre-styled with GTA VI Leonida Dark colors and `JetBrains Mono` (`config/skel/.config/Code/User/settings.json`), native title bar for smooth `picom` corners, and Desktop shortcut (`config/skel/Desktop/vscode.desktop`).
+- **Multi-Language LTS & Stable Dev Stack**:
+  - **C & C++**: `build-essential`, `g++`, `clang`, `clangd`, `lld`, `ninja-build`, `pkg-config` (alongside `gcc`, `cmake`, `make`, `gdb`, `valgrind`, `cppcheck`).
+  - **C# / .NET 8.0 LTS**: Official Microsoft `dotnet-sdk-8.0` via `packages.microsoft.com/debian/12/prod` (graceful `mono-devel` fallback).
+  - **JavaScript / TypeScript / Node.js 22 LTS**: Official NodeSource `nodejs` 22.x LTS (incl. `npm`/`npx`) + `node-typescript` (`tsc`, zero `npm` conflict).
+  - **Python, Rust, Go, Java 17 LTS, PHP, Ruby & Lua**: `python3-pip`, `python3-venv`, `ipython3`, `rustc`, `cargo`, `rustfmt`, `golang-go`, `openjdk-17-jdk-headless`, `php-cli`, `ruby`, `lua5.4`, `fonts-jetbrains-mono`.
+- **Universal Hardware Firmware, Multi-VM Support & Native HW Auto-Detect**:
+  - `vice-tool-hw-autodetect` (`/usr/local/bin/vice-hw-autodetect --status`) for automatic hypervisor, NetworkManager NIC, Wi-Fi, and driver setup.
+  - 18 verified hardware/firmware/VM packages in `config/packages.list` (`firmware-iwlwifi`, `firmware-realtek`, `firmware-atheros`, `firmware-brcm80211`, `firmware-sof-signed`, `firmware-intel-sound`, `firmware-amd-graphics`, `intel-microcode`, `amd64-microcode`, `wpasupplicant`, `wireless-regdb`, `modemmanager`, `usb-modeswitch`, `qemu-guest-agent`, `spice-vdagent`, `xserver-xorg-input-all`, `xserver-xorg-input-libinput`, `mesa-vulkan-drivers`).
+- **29 Curated Lean Build, Lint, Benchmark & Hardware Diagnostics Tools**: `autoconf`, `automake`, `libtool`, `meson`, `ccache`, `bear`, `astyle`, `universal-ctags`, `shfmt`, `yamllint`, `codespell`, `python3-pytest`, `python3-flake8`, `black`, `pylint`, `pipx`, `dos2unix`, `colordiff`, `capstone-tool`, `i2c-tools`, `edid-decode`, `v4l-utils`, `brightnessctl`, `efibootmgr`, `mokutil`, `tpm2-tools`, `sysbench`, `fio`, `nghttp2-client`.
 
 ---
 
-## Full Tool Catalog (`375 / 500`)
+## Full Tool Catalog (`425 / 500`)
 
 | # | ID | Name | Category | Package | Exec | Mode | GTA VI Icon |
 | ---: | --- | --- | --- | --- | --- | --- | --- |
@@ -302,7 +300,7 @@ Batch 3 : [####################] 125 / 125 (Complete)
 | 248 | `unzip` | UnZip Archive Extractor | Productivity | `unzip` | `unzip` | Terminal | `vice-tool-unzip` |
 | 249 | `zstd` | Zstandard Compressor | Productivity | `zstd` | `zstd` | Terminal | `vice-tool-zstd` |
 | 250 | `tealdeer` | tealdeer (tldr) Cheatsheets | Productivity | `tealdeer` | `tldr` | Terminal | `vice-tool-tealdeer` |
-| 251 | `vice-tool-fetch` | Vice OS Fetch (GTA VI x Debian) | GTA VI Originals | `vice-native` | `xfce4-terminal --disable-server --title="Vice OS — System Info (GTA VI x Debian)" --geometry=104x30 -e "/usr/local/bin/vicefetch --hold"` | GUI | `vice-tool-fetch` |
+| 251 | `vice-tool-fetch` | Vice OS Fetch (GTA VI x Debian) | GTA VI Originals | `vice-native` | `xfce4-terminal --disable-server --title="Vice OS — System Info (GTA VI x Debian)" --geometry=116x30 -e "/usr/local/bin/vicefetch --hold"` | GUI | `vice-tool-fetch` |
 | 252 | `vice-tool-payload-lab` | Vice Cyber Encoder & Recon Lab | GTA VI Originals | `vice-native` | `python3 /opt/vice-os/vice_tool_payload_lab.py` | GUI | `vice-tool-payload-lab` |
 | 253 | `arping` | ARPing Layer-2 Probe | Network | `arping` | `arping` | Terminal | `vice-tool-arping` |
 | 254 | `braa` | Braa Mass SNMP Scanner | Network | `braa` | `braa` | Terminal | `vice-tool-braa` |
@@ -427,14 +425,65 @@ Batch 3 : [####################] 125 / 125 (Complete)
 | 373 | `fwknop-client` | fwknop Single Packet Auth CLI | Security | `fwknop-client` | `fwknop` | Terminal | `vice-tool-fwknop-client` |
 | 374 | `flawfinder` | Flawfinder C/C++ Security Audit | Developer | `flawfinder` | `flawfinder` | Terminal | `vice-tool-flawfinder` |
 | 375 | `zzuf` | zzuf Transparent App Fuzzer | Security | `zzuf` | `zzuf` | Terminal | `vice-tool-zzuf` |
+| 376 | `vice-tool-hw-autodetect` | Vice HW & VM Auto-Detect | GTA VI Originals | `vice-native` | `/usr/local/bin/vice-hw-autodetect --status` | Terminal | `vice-tool-hw-autodetect` |
+| 377 | `vscode` | Visual Studio Code | Developer | `code` | `code` | GUI | `vice-tool-vscode` |
+| 378 | `g++` | GCC G++ C++ Compiler | Developer | `g++` | `g++` | Terminal | `vice-tool-g++` |
+| 379 | `clang` | Clang C/C++ Compiler | Developer | `clang` | `clang` | Terminal | `vice-tool-clang` |
+| 380 | `clangd` | Clangd C/C++ Language Server | Developer | `clangd` | `clangd` | Terminal | `vice-tool-clangd` |
+| 381 | `lld` | LLD Fast LLVM Linker | Developer | `lld` | `lld` | Terminal | `vice-tool-lld` |
+| 382 | `ninja-build` | Ninja Fast Build System | Developer | `ninja-build` | `ninja` | Terminal | `vice-tool-ninja-build` |
+| 383 | `pkg-config` | pkg-config Library Resolver | Developer | `pkg-config` | `pkg-config` | Terminal | `vice-tool-pkg-config` |
+| 384 | `python3-pip` | Python pip3 Package Manager | Developer | `python3-pip` | `pip3` | Terminal | `vice-tool-python3-pip` |
+| 385 | `ipython3` | IPython Interactive Shell | Developer | `ipython3` | `ipython3` | Terminal | `vice-tool-ipython3` |
+| 386 | `rustc` | Rust Compiler (rustc) | Developer | `rustc` | `rustc` | Terminal | `vice-tool-rustc` |
+| 387 | `cargo` | Cargo Rust Package Manager | Developer | `cargo` | `cargo` | Terminal | `vice-tool-cargo` |
+| 388 | `rustfmt` | Rustfmt Code Formatter | Developer | `rustfmt` | `rustfmt` | Terminal | `vice-tool-rustfmt` |
+| 389 | `nodejs` | Node.js 22 LTS Runtime | Developer | `nodejs` | `node` | Terminal | `vice-tool-nodejs` |
+| 390 | `node-typescript` | TypeScript Compiler (tsc) | Developer | `node-typescript` | `tsc` | Terminal | `vice-tool-node-typescript` |
+| 391 | `dotnet-sdk-8.0` | .NET 8.0 LTS SDK (C#) | Developer | `dotnet-sdk-8.0` | `dotnet` | Terminal | `vice-tool-dotnet-sdk-8.0` |
+| 392 | `golang-go` | Go Compiler & Toolchain | Developer | `golang-go` | `go` | Terminal | `vice-tool-golang-go` |
+| 393 | `openjdk-17-jdk-headless` | OpenJDK 17 LTS Compiler | Developer | `openjdk-17-jdk-headless` | `javac` | Terminal | `vice-tool-openjdk-17-jdk-headless` |
+| 394 | `php-cli` | PHP CLI Interpreter | Developer | `php-cli` | `php` | Terminal | `vice-tool-php-cli` |
+| 395 | `ruby` | Ruby Language Interpreter | Developer | `ruby` | `ruby` | Terminal | `vice-tool-ruby` |
+| 396 | `lua5.4` | Lua 5.4 Scripting Shell | Developer | `lua5.4` | `lua5.4` | Terminal | `vice-tool-lua5.4` |
+| 397 | `autoconf` | GNU Autoconf | Developer | `autoconf` | `autoconf` | Terminal | `vice-tool-autoconf` |
+| 398 | `automake` | GNU Automake | Developer | `automake` | `automake` | Terminal | `vice-tool-automake` |
+| 399 | `libtool` | GNU Libtool | Developer | `libtool` | `libtoolize` | Terminal | `vice-tool-libtool` |
+| 400 | `meson` | Meson Build System | Developer | `meson` | `meson` | Terminal | `vice-tool-meson` |
+| 401 | `ccache` | ccache Compiler Cache | Developer | `ccache` | `ccache` | Terminal | `vice-tool-ccache` |
+| 402 | `bear` | Bear Compile Database Tool | Developer | `bear` | `bear` | Terminal | `vice-tool-bear` |
+| 403 | `astyle` | Artistic Style Formatter | Developer | `astyle` | `astyle` | Terminal | `vice-tool-astyle` |
+| 404 | `universal-ctags` | Universal Ctags Indexer | Developer | `universal-ctags` | `ctags-universal` | Terminal | `vice-tool-universal-ctags` |
+| 405 | `shfmt` | shfmt Shell Formatter | Developer | `shfmt` | `shfmt` | Terminal | `vice-tool-shfmt` |
+| 406 | `yamllint` | yamllint YAML Validator | Developer | `yamllint` | `yamllint` | Terminal | `vice-tool-yamllint` |
+| 407 | `codespell` | Codespell Source Checker | Developer | `codespell` | `codespell` | Terminal | `vice-tool-codespell` |
+| 408 | `python3-pytest` | Pytest Python Test Runner | Developer | `python3-pytest` | `pytest` | Terminal | `vice-tool-python3-pytest` |
+| 409 | `python3-flake8` | Flake8 Python Linter | Developer | `python3-flake8` | `flake8` | Terminal | `vice-tool-python3-flake8` |
+| 410 | `black` | Black Python Formatter | Developer | `black` | `black` | Terminal | `vice-tool-black` |
+| 411 | `pylint` | Pylint Static Analyzer | Developer | `pylint` | `pylint` | Terminal | `vice-tool-pylint` |
+| 412 | `pipx` | pipx Isolated CLI Runner | Developer | `pipx` | `pipx` | Terminal | `vice-tool-pipx` |
+| 413 | `dos2unix` | dos2unix Line-Ending Tool | Developer | `dos2unix` | `dos2unix` | Terminal | `vice-tool-dos2unix` |
+| 414 | `colordiff` | Colordiff Unified Diff | Developer | `colordiff` | `colordiff` | Terminal | `vice-tool-colordiff` |
+| 415 | `capstone-tool` | Capstone Disassembler CLI | Developer | `capstone-tool` | `cstool` | Terminal | `vice-tool-capstone-tool` |
+| 416 | `i2c-tools` | I2C Bus Hardware Probe | System | `i2c-tools` | `i2cdetect` | Terminal | `vice-tool-i2c-tools` |
+| 417 | `edid-decode` | EDID Display Timing Decoder | System | `edid-decode` | `edid-decode` | Terminal | `vice-tool-edid-decode` |
+| 418 | `v4l-utils` | Video4Linux Camera Control | Media | `v4l-utils` | `v4l2-ctl` | Terminal | `vice-tool-v4l-utils` |
+| 419 | `brightnessctl` | Backlight Brightness Control | System | `brightnessctl` | `brightnessctl` | Terminal | `vice-tool-brightnessctl` |
+| 420 | `efibootmgr` | UEFI Boot Manager CLI | System | `efibootmgr` | `efibootmgr` | Terminal | `vice-tool-efibootmgr` |
+| 421 | `mokutil` | UEFI Secure Boot MOK CLI | Security | `mokutil` | `mokutil` | Terminal | `vice-tool-mokutil` |
+| 422 | `tpm2-tools` | TPM 2.0 Security Tools | Security | `tpm2-tools` | `tpm2` | Terminal | `vice-tool-tpm2-tools` |
+| 423 | `sysbench` | Sysbench CPU & Memory Bench | System | `sysbench` | `sysbench` | Terminal | `vice-tool-sysbench` |
+| 424 | `fio` | FIO Storage I/O Benchmarker | Files & Disk | `fio` | `fio` | Terminal | `vice-tool-fio` |
+| 425 | `nghttp2-client` | nghttp HTTP/2 Analyzer | Network | `nghttp2-client` | `nghttp` | Terminal | `vice-tool-nghttp2-client` |
 
 ---
 
-## Batch 4 Roadmap (`375 / 500` -> `500 / 500`)
+## Batch 4 Roadmap (`425 / 500` -> `500 / 500`)
 
 | Batch | Cumulative Target | Planned Focus |
 | --- | --- | --- |
 | **Batch 1 (Complete)** | **100 / 500 (20%)** | 10 GTA VI Native Apps + 90 Core Debian Bookworm Power Tools (`vice-tool-hub`, `vice-run-tool`, 64x64 GTA VI icons) |
 | **Batch 2 (Complete)** | **250 / 500 (50%)** | +5 GTA VI Native Apps (Net Shield, Cyber Deck, Privacy Cloak, Office Studio, Clock Sync) + LibreOffice Suite + 140 Verified Bookworm Cybersecurity, VPN/Tor/DNS, and Standard Debian Tools |
 | **Batch 3 (Complete)** | **375 / 500 (75%)** | +2 GTA VI Native Apps (`vice-tool-fetch`, `vice-tool-payload-lab`) + 123 Verified Lean Kali Linux Recon, Web, Cracking, Wireless, MITM, Forensics, Reversing & Crypto Tools |
-| **Batch 4 (Planned)** | **500 / 500 (100%)** | +3–5 GTA VI Finale Native Apps + ~120 Language Toolchains, Container/VM Utilities, Hardware Diagnostics, Science & Automation Tools completing full 500/500 catalog |
+| **Batch 4A (Complete)** | **425 / 500 (85%)** | +1 Native Utility (`vice-tool-hw-autodetect`) + Official VS Code, .NET 8.0 LTS, Node.js 22 LTS + Multi-Language Compilers, Universal Firmware & 29 Lean Dev/HW Diagnostics Tools |
+| **Batch 4B (Planned)** | **500 / 500 (100%)** | +2–4 GTA VI Finale Native Apps + ~72 Container/VM, Science, Media, Security & Automation Tools completing full 500/500 catalog |

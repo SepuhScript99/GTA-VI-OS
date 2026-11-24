@@ -126,15 +126,31 @@ main() {
     # conflicts with NetworkManager on the Live ISO. See 05_network_audio_fix.sh.
     systemctl enable NetworkManager 2>/dev/null || true
 
-    # Install NetworkManager DNS configuration
-    if [ -f /vice_payload/config/NetworkManager/conf.d/10-dns.conf ]; then
+    # Install all NetworkManager conf.d configurations (DNS + zero-config autoconnect)
+    if [ -d /vice_payload/config/NetworkManager/conf.d ]; then
         mkdir -p /etc/NetworkManager/conf.d
-        cp /vice_payload/config/NetworkManager/conf.d/10-dns.conf /etc/NetworkManager/conf.d/
-        chown root:root /etc/NetworkManager/conf.d/10-dns.conf
-        chmod 644 /etc/NetworkManager/conf.d/10-dns.conf
-        log_info "Installed NetworkManager DNS configuration."
+        local nm_conf
+        for nm_conf in /vice_payload/config/NetworkManager/conf.d/*.conf; do
+            if [ -f "$nm_conf" ]; then
+                local nm_name
+                nm_name=$(basename "$nm_conf")
+                cp "$nm_conf" "/etc/NetworkManager/conf.d/$nm_name"
+                chown root:root "/etc/NetworkManager/conf.d/$nm_name"
+                chmod 644 "/etc/NetworkManager/conf.d/$nm_name"
+                log_info "Installed NetworkManager config: $nm_name"
+            fi
+        done
     else
-        log_warn "NetworkManager DNS config not found in payload!"
+        log_warn "NetworkManager conf.d directory not found in payload!"
+    fi
+
+    # Install NetworkManager NIC tuning dispatcher hook
+    if [ -f /vice_payload/config/NetworkManager/80-vice-net-tune ]; then
+        mkdir -p /etc/NetworkManager/dispatcher.d
+        cp /vice_payload/config/NetworkManager/80-vice-net-tune /etc/NetworkManager/dispatcher.d/80-vice-net-tune
+        chown root:root /etc/NetworkManager/dispatcher.d/80-vice-net-tune
+        chmod 755 /etc/NetworkManager/dispatcher.d/80-vice-net-tune
+        log_info "Installed NetworkManager NIC tuning dispatcher (80-vice-net-tune)."
     fi
 
     configure_fail2ban

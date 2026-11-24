@@ -30,6 +30,22 @@ main() {
     chmod 644 "$networking_dest"
     log_info "Installed custom networking configuration (Loopback enabled, no conflicts)."
 
+    # Keep /etc/network/interfaces strictly loopback-only so NetworkManager owns all NICs
+    mkdir -p /etc/network/interfaces.d
+    find /etc/network/interfaces.d -maxdepth 1 -type f ! -name 'lo*' -delete 2>/dev/null || true
+    cat <<'INTF' > /etc/network/interfaces
+# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
+
+source /etc/network/interfaces.d/*
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+INTF
+    chown root:root /etc/network/interfaces
+    chmod 644 /etc/network/interfaces
+
     log_success "Networking setup completed."
 }
 

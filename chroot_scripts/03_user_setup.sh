@@ -140,10 +140,12 @@ main() {
     fi
     chown -R vice:vice /home/vice/.config
 
-    # Pre-create standard XDG user directories
+    # Pre-create standard XDG user directories and VS Code user config path
     for d in Desktop Documents Downloads Music Pictures Videos; do
         mkdir -p "/etc/skel/$d" "/home/vice/$d"
+        chmod 755 "/etc/skel/$d" "/home/vice/$d"
     done
+    mkdir -p /etc/skel/.config/Code/User /home/vice/.config/Code/User
     chown -R vice:vice /home/vice
 
     # Copy Labwc (Wayland compositor) configuration to system skeleton and vice user
@@ -193,8 +195,8 @@ main() {
         chmod 644 /usr/share/applications/vice-os-settings.desktop
     fi
 
-    # Install Tool Registry & generate 375 GTA VI icons + .desktop launchers
-    log_info "Installing Vice OS tools registry and generating GTA VI tool icons..."
+    # Install Tool Registry & generate 425 GTA VI icons + .desktop launchers
+    log_info "Installing Vice OS tools registry and generating 425 GTA VI tool icons..."
     if [ -f /vice_payload/config/tools_registry.json ]; then
         cp /vice_payload/config/tools_registry.json /opt/vice-os/tools_registry.json
         chmod 644 /opt/vice-os/tools_registry.json
@@ -228,6 +230,14 @@ main() {
     if [ -f "/usr/share/applications/libreoffice-startcenter.desktop" ] && [ -f "/usr/share/icons/hicolor/64x64/apps/vice-tool-office-hub.png" ]; then
         sed -i "s|^Icon=.*|Icon=vice-tool-office-hub|" "/usr/share/applications/libreoffice-startcenter.desktop"
     fi
+
+    # Theme upstream VS Code .desktop entries with the generated GTA VI icon badge
+    local code_desktop
+    for code_desktop in /usr/share/applications/code.desktop /usr/share/applications/code-url-handler.desktop; do
+        if [ -f "$code_desktop" ] && [ -f "/usr/share/icons/hicolor/64x64/apps/vice-tool-vscode.png" ]; then
+            sed -i "s|^Icon=.*|Icon=vice-tool-vscode|" "$code_desktop"
+        fi
+    done
 
     # Replace missing su-to-root in Debian's stock lynis.desktop with vice-run-tool + GTA VI icon
     if [ -f "/usr/share/applications/lynis.desktop" ] && grep -q "su-to-root" "/usr/share/applications/lynis.desktop" 2>/dev/null; then

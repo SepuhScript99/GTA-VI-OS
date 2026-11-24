@@ -81,6 +81,21 @@ QPushButton#AppCard:hover {{
     color: {_c['accent_peach']};
     border-color: {_c['border_strong']};
 }}
+QPushButton#HubPill {{
+    background: {_c['bg_elevated']};
+    color: {_c['accent_gold']};
+    border: 1px solid {_c['border_strong']};
+    border-radius: 9px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: bold;
+    min-width: 0px;
+}}
+QPushButton#HubPill:hover {{
+    background: {_c['bg_active']};
+    color: {_c['accent_peach']};
+    border-color: {_c['accent_coral']};
+}}
 """
 )
 
@@ -250,6 +265,33 @@ _VICE_CAT_LOOKUP = {
 }
 
 
+def _read_registry_counts() -> tuple:
+    """Return (current_count, target_count) from tools_registry.json."""
+    repo_root = os.path.abspath(os.path.join(DESKTOP_DIR, ".."))
+    candidates = (
+        "/opt/vice-os/tools_registry.json",
+        os.path.join(repo_root, "config", "tools_registry.json"),
+    )
+    for path in candidates:
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as fp:
+                    data = json.load(fp)
+                cur = int(next(
+                    (v for v in (
+                        data.get("current_count"),
+                        data.get("implemented_count"),
+                        len(data.get("tools", [])),
+                    ) if v),
+                    425,
+                ))
+                tgt = int(data.get("target_count") or data.get("total_slots") or 500)
+                return cur, tgt
+            except Exception:
+                pass
+    return 425, 500
+
+
 def load_favorites():
     try:
         if os.path.exists(FAVORITES_FILE):
@@ -259,6 +301,7 @@ def load_favorites():
         pass
     return [
         "Firefox ESR",
+        "Visual Studio Code",
         "Thunar File Manager",
         "Xfce Terminal",
         "Vice Office Studio",
@@ -403,7 +446,7 @@ def _exec_dedup_key(entry: dict):
 def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> list:
     """Discover both standard XDG .desktop apps and curated Vice OS utilities."""
     apps = []
-    seen_labels = set()
+    seen_labels = {}
     seen_execs = {}
     seen_vice_scripts = set()
 
@@ -416,21 +459,28 @@ def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> l
             if not entry:
                 continue
             key = entry["label"].lower()
-            if key in seen_labels:
-                continue
             exec_key = _exec_dedup_key(entry)
             is_vice_tool = entry["id"].startswith("vice-tool-")
+            if key in seen_labels:
+                existing_idx = seen_labels[key]
+                existing_is_vice = apps[existing_idx]["id"].startswith("vice-tool-")
+                if is_vice_tool and not existing_is_vice:
+                    apps[existing_idx] = entry
+                    if exec_key:
+                        seen_execs[exec_key] = existing_idx
+                continue
             if exec_key and exec_key in seen_execs:
                 existing_idx = seen_execs[exec_key]
                 existing_is_vice = apps[existing_idx]["id"].startswith("vice-tool-")
                 if is_vice_tool and not existing_is_vice:
-                    seen_labels.discard(apps[existing_idx]["label"].lower())
-                    seen_labels.add(key)
+                    seen_labels.pop(apps[existing_idx]["label"].lower(), None)
+                    seen_labels[key] = existing_idx
                     apps[existing_idx] = entry
                 continue
-            seen_labels.add(key)
+            idx = len(apps)
+            seen_labels[key] = idx
             if exec_key:
-                seen_execs[exec_key] = len(apps)
+                seen_execs[exec_key] = idx
             for arg in entry.get("args", []):
                 base = os.path.basename(arg)
                 if base.startswith("vice_") and base.endswith(".py"):
@@ -446,7 +496,7 @@ def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> l
             label, icon = APP_LABELS.get(name, (default_label, "applications-other"))
             if label.lower() in seen_labels:
                 continue
-            seen_labels.add(label.lower())
+            seen_labels[label.lower()] = len(apps)
             seen_vice_scripts.add(name)
             apps.append({
                 "id": name,
@@ -456,6 +506,46 @@ def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> l
                 "comment": label,
                 "category": _VICE_CAT_LOOKUP.get(name, "Utilities"),
                 "args": [sys.executable, path],
+                "workdir": os.path.expanduser("~"),
+            })
+
+    if desktop_app_dirs is None:
+        code_bin = shutil.which("code")
+        if code_bin and "visual studio code" not in seen_labels:
+            seen_labels["visual studio code"] = len(apps)
+            apps.append({
+                "id": "vscode.desktop",
+                "name": "vscode.desktop",
+                "label": "Visual Studio Code",
+                "icon": "vice-tool-vscode",
+                "comment": "Code Editing. Redefined (C/C++/C#/Python/Rust/JS)",
+                "category": "Development",
+                "args": [code_bin],
+                "workdir": os.path.expanduser("~"),
+            })
+        hw_bin = shutil.which("vice-hw-autodetect") or (
+            "/usr/local/bin/vice-hw-autodetect"
+            if os.path.isfile("/usr/local/bin/vice-hw-autodetect")
+            else None
+        )
+        if hw_bin and not any(
+            k in seen_labels for k in ("vice hw & vm auto-detect", "vice hw auto-detect", "hw auto-detect")
+        ):
+            runner = shutil.which("vice-run-tool")
+            hw_args = (
+                [runner, "Vice HW & VM Auto-Detect", hw_bin, "--status"]
+                if runner
+                else ["xfce4-terminal", "--disable-server", "-x", hw_bin, "--status"]
+            )
+            seen_labels["vice hw & vm auto-detect"] = len(apps)
+            apps.append({
+                "id": "vice-tool-hw-autodetect.desktop",
+                "name": "vice-tool-hw-autodetect.desktop",
+                "label": "Vice HW & VM Auto-Detect",
+                "icon": "vice-tool-hw-autodetect",
+                "comment": "Universal Hardware, GPU, Wi-Fi & VM Driver Auto-Detection",
+                "category": "System",
+                "args": hw_args,
                 "workdir": os.path.expanduser("~"),
             })
 
@@ -478,8 +568,8 @@ class AppButton(QPushButton):
 
         label = app_info["label"]
         self.setToolTip(f"{label}\n{app_info.get('comment', '')}".strip())
-        self.setMinimumSize(166, 102)
-        self.setMaximumSize(188, 108)
+        self.setMinimumSize(170, 106)
+        self.setMaximumSize(192, 112)
 
         card_layout = QVBoxLayout(self)
         card_layout.setContentsMargins(10, 8, 10, 8)
@@ -546,6 +636,16 @@ class AppLauncher(QWidget):
         hint = QLabel("Right-click card to pin/unpin Favorites · Esc to close")
         hint.setStyleSheet(f"color: {c['text_secondary']}; font-size: 11px;")
         header.addWidget(hint)
+        cur_tools, tgt_tools = _read_registry_counts()
+        pct_tools = int(round((cur_tools / max(1, tgt_tools)) * 100))
+        hub_pill = QPushButton(f"Tool Hub · {cur_tools} / {tgt_tools} ({pct_tools}%)")
+        hub_pill.setObjectName("HubPill")
+        hub_pill.setFocusPolicy(Qt.NoFocus)
+        hub_pill.clicked.connect(lambda: self._launch({
+            "args": [sys.executable, os.path.join(DESKTOP_DIR, "vice_tool_hub.py")],
+            "workdir": os.path.expanduser("~"),
+        }))
+        header.addWidget(hub_pill)
         root.addLayout(header)
 
         self._search = QLineEdit()

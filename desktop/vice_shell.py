@@ -475,6 +475,10 @@ class TaskbarWidget(QWidget):
             ic = _theme_icon("vice-tool-fetch", "utilities-terminal")
             if not ic.isNull():
                 return ic
+        if "hw & vm auto-detect" in low_title or "hw auto-detect" in low_title:
+            ic = _theme_icon("vice-tool-hw-autodetect", "vice-tool-sys-deck", "computer")
+            if not ic.isNull():
+                return ic
         if any(k in low_class for k in ("xfce4-terminal", "xterm")) or "vice os - " in low_title:
             ic = _theme_icon("utilities-terminal", "terminal")
             if not ic.isNull():
@@ -489,11 +493,11 @@ class TaskbarWidget(QWidget):
             (("vice turbo",), ("vice-tool-turbo", "utilities-system-monitor")),
             (("vice media studio",), ("vice-tool-media-studio", "multimedia-video-player")),
             (("vice qr",), ("vice-tool-qr-hash", "applications-development")),
-            (("vice hardware",), ("vice-tool-sys-deck", "computer")),
+            (("vice payload lab", "payload lab", "cyber encoder"), ("vice-tool-payload-lab", "security-high")),
+            (("vice cyber", "cyber deck"), ("vice-tool-cyber-deck", "security-high")),
+            (("vice hardware", "hw & vm auto-detect", "hw auto-detect", "hardware"), ("vice-tool-hw-autodetect", "vice-tool-sys-deck", "computer")),
             (("vice command",), ("vice-tool-cheatsheets", "utilities-terminal")),
             (("vice net shield", "net shield"), ("vice-tool-net-shield", "network-vpn")),
-            (("vice cyber", "cyber deck"), ("vice-tool-cyber-deck", "security-high")),
-            (("vice payload lab", "payload lab"), ("vice-tool-payload-lab", "security-high")),
             (("vice privacy", "identity cloak", "mac cloak"), ("vice-tool-mac-cloak", "changes-prevent")),
             (("vice office", "office studio"), ("vice-tool-office-hub", "x-office-document")),
             (("vice world clock", "clock sync"), ("vice-tool-clock-sync", "preferences-system-time")),
@@ -515,7 +519,21 @@ class TaskbarWidget(QWidget):
                 ic = _theme_icon(*icons)
                 if not ic.isNull():
                     return ic
+        if "visual studio code" in low or re.search(r"\b(?:code|vscode)\b", low_class) or re.search(r"\bcode\b", low_title):
+            ic = _theme_icon("vice-tool-vscode", "code", "accessories-text-editor")
+            if not ic.isNull():
+                return ic
         return _theme_icon("application-x-executable", "applications-other")
+
+    @staticmethod
+    def _compute_button_width(avail: int, count: int, spacing_px: int = 4) -> int:
+        """Compute uniform TaskButton width (34..210px) bounded inside *avail*."""
+        if count <= 0:
+            return 210
+        spacing = max(0, count - 1) * spacing_px
+        raw_w = (avail - spacing) // count
+        floor_w = 34 if (34 * count + spacing) <= avail else max(22, raw_w)
+        return max(floor_w, min(210, raw_w))
 
     def _available_taskbar_width(self) -> int:
         parent = self.parentWidget()
@@ -545,18 +563,17 @@ class TaskbarWidget(QWidget):
         if count <= 0:
             return
         avail = self._available_taskbar_width()
-        spacing = max(0, count - 1) * 4
-        per_btn_max = max(24, min(210, (avail - spacing) // count))
+        per_btn_w = self._compute_button_width(avail, count)
         for wid, btn in self._buttons.items():
             title = self._window_titles.get(wid, btn.toolTip() or btn.text())
-            btn.setMaximumWidth(per_btn_max)
-            text_budget = per_btn_max - 36
-            if text_budget < 14:
+            btn.setFixedWidth(per_btn_w)
+            if per_btn_w < 54:
                 label = ""
             else:
+                text_budget = per_btn_w - 36
                 bold_font = QFont(btn.font())
                 bold_font.setBold(True)
-                elided = QFontMetrics(bold_font).elidedText(title, Qt.ElideRight, text_budget)
+                elided = QFontMetrics(bold_font).elidedText(title, Qt.ElideRight, max(12, text_budget))
                 label = elided.replace("&", "&&")
             if btn.text() != label:
                 btn.setText(label)
@@ -595,8 +612,7 @@ class TaskbarWidget(QWidget):
                 btn.setObjectName("TaskButton")
                 btn.setCheckable(True)
                 btn.setFocusPolicy(Qt.NoFocus)
-                btn.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-                btn.setMinimumWidth(0)
+                btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
                 btn.setFixedHeight(32)
                 btn.setIconSize(QSize(16, 16))
                 btn.clicked.connect(lambda _checked=False, w=wid: self._toggle_window(w))
@@ -678,13 +694,13 @@ def _read_registry_counts() -> tuple:
                         data.get("implemented_count"),
                         len(data.get("tools", [])),
                     ) if v),
-                    375,
+                    425,
                 ))
                 tgt = int(data.get("target_count") or data.get("total_slots") or 500)
                 return cur, tgt
             except Exception:
                 pass
-    return 375, 500
+    return 425, 500
 
 
 class StartMenuPopup(_StyledWidget):
@@ -758,14 +774,15 @@ class StartMenuPopup(_StyledWidget):
         rail.setObjectName("StartRail")
         rail.setFixedWidth(56)
         rail_layout = QVBoxLayout(rail)
-        rail_layout.setContentsMargins(8, 12, 8, 12)
-        rail_layout.setSpacing(8)
+        rail_layout.setContentsMargins(8, 10, 8, 10)
+        rail_layout.setSpacing(6)
 
         cur_tools, tgt_tools = _read_registry_counts()
         pct_tools = int(round((cur_tools / max(1, tgt_tools)) * 100))
         pinned_rail = [
             (f"Vice Tool Hub ({cur_tools} / {tgt_tools} ({pct_tools}%))", ["python3 /opt/vice-os/vice_tool_hub.py"],
              ("vice-tool-hub", "view-app-grid"), "RailHubButton"),
+            ("Visual Studio Code", ["code"], ("vice-tool-vscode", "code", "accessories-text-editor"), "RailButton"),
             ("Vice Office Studio", ["python3 /opt/vice-os/vice_tool_office_hub.py"],
              ("vice-tool-office-hub", "x-office-document"), "RailButton"),
             ("Vice Net Shield", ["python3 /opt/vice-os/vice_tool_net_shield.py"],

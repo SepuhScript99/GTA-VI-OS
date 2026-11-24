@@ -41,17 +41,11 @@ main() {
     rm -rf /var/cache/apt/*.bin 2>/dev/null || true
     rm -rf /var/cache/apt/archives/partial/* 2>/dev/null || true
 
-    # ── 4. Remove unnecessary kernel modules (keep common drivers & sound/GPU) ──
-    log_info "Removing unnecessary kernel modules..."
+    # ── 4. Remove unnecessary datacenter-only kernel modules (keep Ethernet/Wi-Fi/VM/sound/GPU) ──
+    log_info "Removing unnecessary datacenter kernel modules..."
     local modules_dir="/lib/modules"
     if [ -d "$modules_dir" ]; then
         for kv in "$modules_dir"/*/; do
-            if [ -d "$kv/kernel/drivers/net/ethernet/amd" ]; then
-                rm -rf "$kv/kernel/drivers/net/ethernet/amd" 2>/dev/null || true
-            fi
-            if [ -d "$kv/kernel/drivers/net/ethernet/atheros" ]; then
-                rm -rf "$kv/kernel/drivers/net/ethernet/atheros" 2>/dev/null || true
-            fi
             if [ -d "$kv/kernel/drivers/infiniband" ]; then
                 rm -rf "$kv/kernel/drivers/infiniband" 2>/dev/null || true
             fi
@@ -81,6 +75,14 @@ main() {
     )
     for svc in "${services_to_mask[@]}"; do
         systemctl mask "$svc" 2>/dev/null || true
+    done
+
+    # Re-verify core plug-and-play networking & hardware auto-detect remain enabled
+    systemctl enable NetworkManager.service NetworkManager-dispatcher.service vice-hw-autodetect.service 2>/dev/null || true
+    for disp in /etc/NetworkManager/dispatcher.d/80-vice-net-tune /etc/NetworkManager/dispatcher.d/90-vice-timesync; do
+        if [ -f "$disp" ]; then
+            chmod 755 "$disp"
+        fi
     done
 
     # Re-verify VPN/Tor/Proxy/DNS/AV daemons stay disabled at boot (on-demand via Vice Net Shield)

@@ -477,7 +477,9 @@ class TestLiveVmMediaFontDesktopRegression(unittest.TestCase):
         for cfg in ("picom.conf", "compton.conf"):
             text = self._read("config", cfg)
             self.assertIn('backend = "xrender";', text)
-            self.assertIn("shadow = false;", text)
+            self.assertIn("shadow = true;", text)
+            self.assertIn("shadow-radius = 12;", text)
+            self.assertIn("shadow-opacity = 0.42;", text)
             self.assertIn("fading = false;", text)
             self.assertIn("blur-background = false;", text)
             self.assertIn("unredir-if-possible = true;", text)
@@ -489,6 +491,7 @@ class TestLiveVmMediaFontDesktopRegression(unittest.TestCase):
 
     def test_desktop_shortcuts_polkit_and_runtime_deps(self):
         pkgs = self._load_packages()
+        install_sh = self._read("chroot_scripts", "01_install_packages.sh")
         for required in (
             "polkitd", "pkexec", "policykit-1-gnome",
             "librsvg2-common", "libqt5svg5", "python3-pyqt5.qtsvg",
@@ -503,6 +506,7 @@ class TestLiveVmMediaFontDesktopRegression(unittest.TestCase):
         desktop_dir = os.path.join(REPO_ROOT, "config", "skel", "Desktop")
         shortcuts = sorted(glob.glob(os.path.join(desktop_dir, "*.desktop")))
         self.assertGreaterEqual(len(shortcuts), 10)
+        external_bins = {"code"}
         for path in shortcuts:
             cp = configparser.ConfigParser(interpolation=None)
             cp.read(path, encoding="utf-8")
@@ -512,10 +516,14 @@ class TestLiveVmMediaFontDesktopRegression(unittest.TestCase):
             for field in ("Name", "Exec", "Icon", "Categories"):
                 self.assertTrue(entry.get(field, "").strip(), f"Empty {field} in {path}")
             exec_bin = entry["Exec"].split()[0]
+            exec_base = os.path.basename(exec_bin)
             if exec_bin == "python3":
                 script_target = os.path.basename(entry["Exec"].split()[1])
                 self.assertTrue(os.path.isfile(os.path.join(DESKTOP_DIR, script_target)),
                                 f"Shortcut {path} targets missing desktop script {script_target}")
+            elif exec_base in external_bins:
+                self.assertIn(exec_base, install_sh,
+                              f"Shortcut {path} external binary '{exec_base}' not installed by 01_install_packages.sh")
             else:
                 self.assertIn(exec_bin, pkgs, f"Shortcut {path} executable '{exec_bin}' not in packages.list")
 
@@ -988,9 +996,18 @@ class TestLeonidaOverhaulAndTimesync(unittest.TestCase):
         compton = self._read_repo("config", "compton.conf")
         self.assertEqual(picom, compton, "picom.conf and compton.conf must stay synchronized")
         for token in (
+            'backend = "xrender";',
+            "use-damage = true;",
             "detect-rounded-corners = true;",
-            "corner-radius = 12;",
+            "corner-radius = 10;",
+            "round-borders = 1;",
+            "shadow = true;",
+            "shadow-radius = 12;",
+            "shadow-opacity = 0.42;",
+            "shadow-offset-x = -12;",
+            "shadow-offset-y = -9;",
             "rounded-corners-exclude = [",
+            "shadow-exclude = [",
             '"window_type = \'dock\'"',
             '"window_type = \'desktop\'"',
             '"window_type = \'tooltip\'"',
@@ -1020,14 +1037,20 @@ class TestLeonidaOverhaulAndTimesync(unittest.TestCase):
         launcher_code = self._read_repo("desktop", "vice_launcher.py")
         self.assertIn("vice_tool_payload_lab.py", launcher_code)
         self.assertIn("Vice Payload Lab", launcher_code)
+        self.assertIn("Visual Studio Code", launcher_code)
+        self.assertIn("Vice HW & VM Auto-Detect", launcher_code)
 
         hub_code = self._read_repo("desktop", "vice_tool_hub.py")
-        self.assertIn("375 / 500 (75%)", hub_code)
+        self.assertIn("425 / 500 (85%)", hub_code)
         self.assertIn("implemented_count", hub_code)
+        self.assertIn("_render_timer", hub_code)
+        self.assertIn("_render_batch", hub_code)
 
         grid_cp = configparser.ConfigParser(interpolation=None)
         grid_cp.read(os.path.join(REPO_ROOT, "config", "pcmanfm", "vice", "desktop-items-0.conf"), encoding="utf-8")
         self.assertIn("vicefetch.desktop", grid_cp.sections())
+        self.assertIn("vscode.desktop", grid_cp.sections())
+        self.assertEqual((int(grid_cp["vscode.desktop"]["x"]), int(grid_cp["vscode.desktop"]["y"])), (242, 306))
         coords = []
         for sec in grid_cp.sections():
             if sec == "*":
@@ -1055,7 +1078,10 @@ class TestLeonidaOverhaulAndTimesync(unittest.TestCase):
         shell_code = self._read_repo("desktop", "vice_shell.py")
         for token in (
             "self.setMinimumWidth(0)",
-            "QSizePolicy.Ignored",
+            "QSizePolicy.Fixed, QSizePolicy.Fixed",
+            "def _compute_button_width",
+            "btn.setFixedWidth(per_btn_w)",
+            "if per_btn_w < 54:",
             "def _available_taskbar_width",
             'elided.replace("&", "&&")',
             "def _format_sysinfo",
@@ -1068,6 +1094,8 @@ class TestLeonidaOverhaulAndTimesync(unittest.TestCase):
             'time.strftime("%H:%M\\n%a %d/%m")',
             "vice-tool-fetch",
             "vice-tool-payload-lab",
+            "vice-tool-vscode",
+            "vice-tool-hw-autodetect",
         ):
             self.assertIn(token, shell_code)
 
@@ -1076,7 +1104,7 @@ class TestLeonidaOverhaulAndTimesync(unittest.TestCase):
         self.assertLess(non_taskbar_max, 1280)
         self.assertGreaterEqual(1280 - non_taskbar_max, 400, "Taskbar must retain >=400px at 1280x720")
 
-        # Unit-test _format_sysinfo and _read_registry_counts cleanly without needing live X11/PyQt5
+        # Unit-test _format_sysinfo, _read_registry_counts, and _compute_button_width cleanly without live X11/PyQt5
         import importlib
         try:
             vs_mod = importlib.import_module("vice_shell")
@@ -1115,17 +1143,123 @@ class TestLeonidaOverhaulAndTimesync(unittest.TestCase):
                 short_txt, tip = vs_mod._format_sysinfo("CPU: 14%", "RAM: 1200MB/3900MB", "Disk: 42%", compact=False)
                 compact_txt, _ = vs_mod._format_sysinfo("CPU: 14%", "RAM: 1200MB/3900MB", "Disk: 42%", compact=True)
                 counts = vs_mod._read_registry_counts()
+                bw1 = vs_mod.TaskbarWidget._compute_button_width(580, 1)
+                bw2 = vs_mod.TaskbarWidget._compute_button_width(580, 2)
+                bw12 = vs_mod.TaskbarWidget._compute_button_width(580, 12)
+                bw15 = vs_mod.TaskbarWidget._compute_button_width(580, 15)
             sys.modules.pop("vice_shell", None)
             sys.modules.pop("vice_theme", None)
         else:
             short_txt, tip = vs_mod._format_sysinfo("CPU: 14%", "RAM: 1200MB/3900MB", "Disk: 42%", compact=False)
             compact_txt, _ = vs_mod._format_sysinfo("CPU: 14%", "RAM: 1200MB/3900MB", "Disk: 42%", compact=True)
             counts = vs_mod._read_registry_counts()
+            bw1 = vs_mod.TaskbarWidget._compute_button_width(580, 1)
+            bw2 = vs_mod.TaskbarWidget._compute_button_width(580, 2)
+            bw12 = vs_mod.TaskbarWidget._compute_button_width(580, 12)
+            bw15 = vs_mod.TaskbarWidget._compute_button_width(580, 15)
 
         self.assertEqual(short_txt, "CPU 14% · RAM 1.2/3.8G · Disk 42%")
         self.assertLess(len(compact_txt), len(short_txt))
         self.assertIn("Click for Task Manager", tip)
-        self.assertEqual(counts, (375, 500))
+        self.assertEqual(counts, (425, 500))
+        self.assertEqual(bw1, 210, "Single open window TaskButton must not be crushed")
+        self.assertEqual(bw2, 210)
+        self.assertGreaterEqual(bw12, 34)
+        self.assertLessEqual(12 * bw12 + 11 * 4, 580)
+        self.assertGreaterEqual(bw15, 34)
+        self.assertLessEqual(15 * bw15 + 14 * 4, 580)
+
+    def test_iso14_net_speed_hw_autodetect_vscode_and_dark_firefox(self):
+        # 1. sysctl A/B speed optimization
+        sysctl = self._read_repo("config", "sysctl.conf")
+        for token in (
+            "net.core.default_qdisc=fq_codel",
+            "net.ipv4.tcp_congestion_control=cubic",
+            "net.ipv4.tcp_mtu_probing=1",
+            "net.ipv4.tcp_wmem=4096 262144 16777216",
+            "fs.inotify.max_user_watches=524288",
+        ):
+            self.assertIn(token, sysctl)
+
+        # 2. NetworkManager zero-config autoconnect & NIC dispatcher
+        autoconn = self._read_repo("config", "NetworkManager", "conf.d", "20-vice-autoconnect.conf")
+        for token in (
+            "plugins=ifupdown,keyfile",
+            "dhcp=internal",
+            "no-auto-default=",
+            "managed=true",
+            "wifi.scan-rand-mac-address=no",
+            "wifi.powersave=2",
+        ):
+            self.assertIn(token, autoconn)
+
+        tune_path = os.path.join(REPO_ROOT, "config", "NetworkManager", "80-vice-net-tune")
+        self.assertTrue(os.path.isfile(tune_path))
+        tune_code = self._read_repo("config", "NetworkManager", "80-vice-net-tune")
+        self.assertNotIn("\r\n", tune_code)
+        self.assertEqual(tune_code.splitlines()[0], "#!/bin/bash")
+        for token in ("set -Eeuo pipefail", "ethtool -G", "4096", "txqueuelen 4096", "fq_codel", "power_save off"):
+            self.assertIn(token, tune_code)
+
+        # 3. Universal Hardware & Multi-VM Auto-Detect script + systemd service
+        hw_path = os.path.join(REPO_ROOT, "system_scripts", "vice-hw-autodetect.sh")
+        self.assertTrue(os.path.isfile(hw_path))
+        hw_code = self._read_repo("system_scripts", "vice-hw-autodetect.sh")
+        self.assertNotIn("\r\n", hw_code)
+        self.assertEqual(hw_code.splitlines()[0], "#!/bin/bash")
+        for token in (
+            "set -Eeuo pipefail", "--apply", "--status", "--help", "--version",
+            "rfkill unblock all", "nmcli dev set", "vice-auto-", "80-vice-net-tune",
+            "oracle", "vmware", "kvm", "microsoft",
+        ):
+            self.assertIn(token, hw_code)
+
+        bash_bin = self._find_bash()
+        if bash_bin:
+            for sh_file in (tune_path, hw_path):
+                proc = subprocess.run([bash_bin, "-n", sh_file], capture_output=True, text=True, check=False)
+                self.assertEqual(proc.returncode, 0, f"bash -n failed on {sh_file}: {proc.stderr}")
+            for flag in ("--help", "--version", "--status"):
+                res = subprocess.run([bash_bin, hw_path, flag], capture_output=True, text=True, check=False)
+                self.assertEqual(res.returncode, 0, f"vice-hw-autodetect.sh {flag} failed: {res.stderr}")
+
+        hw_svc_path = os.path.join(REPO_ROOT, "config", "systemd", "vice-hw-autodetect.service")
+        self.assertTrue(os.path.isfile(hw_svc_path))
+        hw_cp = configparser.ConfigParser(interpolation=None)
+        hw_cp.read(hw_svc_path, encoding="utf-8")
+        self.assertEqual(hw_cp["Service"]["ExecStart"], "/usr/local/bin/vice-hw-autodetect --apply")
+        self.assertIn("NetworkManager.service", hw_cp["Unit"]["After"])
+
+        # 4. Chroot hooks for network/auto-detect + driver preservation + audio invariant
+        self.assertIn("80-vice-net-tune", self._read_repo("chroot_scripts", "02_system_tuning.sh"))
+        self.assertIn("NetworkManager-dispatcher.service", self._read_repo("chroot_scripts", "05_network_audio_fix.sh"))
+        self.assertIn("vice-hw-autodetect.service", self._read_repo("chroot_scripts", "19_systemd_setup.sh"))
+        self.assertIn("iface lo inet loopback", self._read_repo("chroot_scripts", "38_networking_setup.sh"))
+        self.assertIn("EXCLUDE_INTERFACES=", self._read_repo("config", "default", "networking"))
+        opt_sh = self._read_repo("chroot_scripts", "90_optimize.sh")
+        self.assertNotIn("drivers/net/ethernet/amd", opt_sh)
+        self.assertNotIn("drivers/net/ethernet/atheros", opt_sh)
+        self.assertIn("vice-hw-autodetect.service", opt_sh)
+
+        # 5. VS Code Leonida settings + Dark Firefox
+        code_cfg_path = os.path.join(REPO_ROOT, "config", "skel", ".config", "Code", "User", "settings.json")
+        self.assertTrue(os.path.isfile(code_cfg_path))
+        code_cfg = json.loads(self._read_repo("config", "skel", ".config", "Code", "User", "settings.json"))
+        self.assertEqual(code_cfg["window.titleBarStyle"], "native")
+        self.assertIn("JetBrains Mono", code_cfg["editor.fontFamily"])
+        self.assertEqual(code_cfg["workbench.colorCustomizations"]["editor.background"], "#0D0E15")
+        self.assertEqual(code_cfg["workbench.colorCustomizations"]["focusBorder"], "#FF5E7E")
+
+        ff_prefs = self._read_repo("config", "firefox", "vice-os.js")
+        for expected in (
+            'pref("ui.systemUsesDarkTheme", 1);',
+            'pref("layout.css.prefers-color-scheme.content-override", 0);',
+            'pref("browser.theme.toolbar-theme", 0);',
+            'pref("browser.theme.content-theme", 0);',
+            'pref("browser.in-content.dark-mode", true);',
+            'pref("extensions.activeThemeID", "firefox-compact-dark@mozilla.org");',
+        ):
+            self.assertIn(expected, ff_prefs)
 
     def test_iso13_interactive_calendar_clock_sync_and_vicefetch_neofetch(self):
         clock_code = self._read_repo("desktop", "vice_tool_clock_sync.py")

@@ -52,6 +52,14 @@ install_timesync_dispatcher() {
     else
         log_warn "NetworkManager dispatcher 90-vice-timesync not found in payload."
     fi
+
+    if [ -f /vice_payload/config/NetworkManager/80-vice-net-tune ]; then
+        mkdir -p /etc/NetworkManager/dispatcher.d
+        cp /vice_payload/config/NetworkManager/80-vice-net-tune /etc/NetworkManager/dispatcher.d/80-vice-net-tune
+        chown root:root /etc/NetworkManager/dispatcher.d/80-vice-net-tune
+        chmod 755 /etc/NetworkManager/dispatcher.d/80-vice-net-tune
+        log_info "Installed NetworkManager dispatcher: /etc/NetworkManager/dispatcher.d/80-vice-net-tune"
+    fi
 }
 
 configure_boot_service_defaults() {
@@ -67,6 +75,7 @@ configure_boot_service_defaults() {
         "chrony.service"
         "vice-timesync.service"
         "vice-timesync.timer"
+        "vice-hw-autodetect.service"
     )
     local unit
     for unit in "${default_enabled_units[@]}"; do
@@ -143,6 +152,23 @@ main() {
         fi
     done
 
+    # Also install top-level vice-hw-autodetect.service unit
+    if [ -f /vice_payload/config/systemd/vice-hw-autodetect.service ]; then
+        cp /vice_payload/config/systemd/vice-hw-autodetect.service "$dest_dir/vice-hw-autodetect.service"
+        chown root:root "$dest_dir/vice-hw-autodetect.service"
+        chmod 644 "$dest_dir/vice-hw-autodetect.service"
+        log_info "Installed unit: vice-hw-autodetect.service"
+    else
+        log_warn "vice-hw-autodetect.service not found in payload!"
+    fi
+
+    # Ensure /usr/local/bin/vice-hw-autodetect symlink is present even if 09 ran earlier
+    if [ -f /usr/local/system_scripts/vice-hw-autodetect.sh ]; then
+        chmod 755 /usr/local/system_scripts/vice-hw-autodetect.sh
+        mkdir -p /usr/local/bin
+        ln -sf /usr/local/system_scripts/vice-hw-autodetect.sh /usr/local/bin/vice-hw-autodetect
+    fi
+
     log_info "Enabling custom systemd units..."
 
     # ZRAM Setup
@@ -159,6 +185,11 @@ main() {
     # Vice OS Host Clock & Timezone Sync Service & Timer
     systemctl enable vice-timesync.service 2>/dev/null || { log_error "Failed to enable vice-timesync.service"; exit 1; }
     systemctl enable vice-timesync.timer 2>/dev/null || { log_error "Failed to enable vice-timesync.timer"; exit 1; }
+
+    # Vice OS Universal Hardware & Multi-VM Auto-Detect Service
+    if [ -f "$dest_dir/vice-hw-autodetect.service" ]; then
+        systemctl enable vice-hw-autodetect.service 2>/dev/null || { log_error "Failed to enable vice-hw-autodetect.service"; exit 1; }
+    fi
 
     install_timesync_dispatcher
     configure_boot_service_defaults

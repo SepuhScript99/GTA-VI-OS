@@ -1,0 +1,17 @@
+[Unit]
+Description=Vice OS Universal Hardware and Multi-VM Auto-Detect
+Documentation=file:///usr/local/system_scripts/vice-hw-autodetect.sh
+After=systemd-udevd.service NetworkManager.service
+Wants=NetworkManager.service
+Before=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vice-hw-autodetect --apply
+TimeoutStartSec=30
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

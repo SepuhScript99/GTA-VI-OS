@@ -23,6 +23,14 @@ pref("media.volume_scale", "1.0");
 pref("toolkit.cosmeticAnimations.enabled", false);
 pref("general.smoothScroll", true);
 
+// --- Leonida Dark Theme & Native Dark Chrome Integration ---
+pref("ui.systemUsesDarkTheme", 1);
+pref("layout.css.prefers-color-scheme.content-override", 0);
+pref("browser.theme.toolbar-theme", 0);
+pref("browser.theme.content-theme", 0);
+pref("browser.in-content.dark-mode", true);
+pref("extensions.activeThemeID", "firefox-compact-dark@mozilla.org");
+
 // --- Disable First-Run Clutter, Telemetry, and Studies ---
 pref("browser.startup.homepage_override.mstone", "ignore");
 pref("startup.homepage_welcome_url", "");

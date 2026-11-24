@@ -35,8 +35,8 @@ COLORS = {
     "bg_elevated": "#1B1E2D",
     "bg_hover": "#23273A",
     "bg_active": "#2B2230",
-    "border": "#262A3D",
-    "border_strong": "#353B54",
+    "border": "#2C3147",
+    "border_strong": "#3B425E",
     # Typography
     "text_primary": "#F5F6FA",
     "text_secondary": "#A6AEBF",
@@ -101,7 +101,7 @@ _ICON_EXTRA_DIRS = (
 _BADGE_STYLES = {
     "neutral": (
         "background-color: #1B1E2D; color: #A6AEBF; "
-        "border: 1px solid #262A3D; border-radius: 8px; "
+        "border: 1px solid #2C3147; border-radius: 9px; "
         "padding: 3px 9px; font-size: 11px; font-weight: bold;"
     ),
     "gold": (
@@ -222,6 +222,7 @@ QMainWindow, QDialog, QMessageBox, QWidget#RootWidget {{
 }}
 
 QDialog, QMessageBox {{
+    border: 1px solid {c['border']};
     border-radius: 12px;
 }}
 
@@ -419,14 +420,14 @@ QComboBox QAbstractItemView {{
     background-color: {c['bg_elevated']};
     color: {c['text_primary']};
     border: 1px solid {c['border_strong']};
-    border-radius: 10px;
+    border-radius: 12px;
     outline: none;
     padding: 4px;
 }}
 
 QComboBox QAbstractItemView::item {{
     padding: 6px 10px;
-    border-radius: 6px;
+    border-radius: 8px;
 }}
 
 QComboBox QAbstractItemView::item:selected {{
@@ -572,7 +573,7 @@ QSlider::handle:horizontal {{
 QProgressBar {{
     background-color: {c['bg_elevated']};
     border: 1px solid {c['border']};
-    border-radius: 8px;
+    border-radius: 9px;
     height: 14px;
     text-align: center;
     color: {c['text_primary']};
@@ -581,7 +582,7 @@ QProgressBar {{
 }}
 
 QProgressBar::chunk {{
-    border-radius: 7px;
+    border-radius: 8px;
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
         stop:0 {c['accent_coral']}, stop:1 {c['accent_peach']});
 }}

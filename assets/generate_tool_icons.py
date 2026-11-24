@@ -273,6 +273,29 @@ GLYPH_ALIASES = {
     "color": "palette",
     "backup": "backup",
     "timeshift": "backup",
+    "vscode": "vscode",
+    "ide": "vscode",
+    "cpp": "cpp",
+    "clang": "cpp",
+    "csharp": "csharp",
+    "dotnet": "csharp",
+    "rust": "rust",
+    "cargo": "rust",
+    "nodejs": "nodejs",
+    "node": "nodejs",
+    "javascript": "nodejs",
+    "typescript": "typescript",
+    "ts": "typescript",
+    "golang": "golang",
+    "go": "golang",
+    "java": "java",
+    "jdk": "java",
+    "php": "php",
+    "ruby": "ruby",
+    "lua": "lua",
+    "hw_detect": "hw_detect",
+    "hw-detect": "hw_detect",
+    "autodetect": "hw_detect",
 }
 
 CATEGORY_DEFAULT_GLYPH = {
@@ -337,6 +360,24 @@ def _resolve_glyph_kind(tool: dict) -> str:
     exact_id_map = {
         "vice-tool-fetch": "fetch",
         "vice-tool-payload-lab": "payload",
+        "vice-hw-autodetect": "hw_detect",
+        "code": "vscode",
+        "vscode": "vscode",
+        "g++": "cpp",
+        "clang": "cpp",
+        "clangd": "cpp",
+        "lld": "cpp",
+        "dotnet-sdk-8.0": "csharp",
+        "rustc": "rust",
+        "cargo": "rust",
+        "rustfmt": "rust",
+        "nodejs": "nodejs",
+        "node-typescript": "typescript",
+        "golang-go": "golang",
+        "openjdk-17-jdk-headless": "java",
+        "php-cli": "php",
+        "ruby": "ruby",
+        "lua5.4": "lua",
         "nmap": "radar",
         "masscan": "radar",
         "arp-scan": "radar",
@@ -412,6 +453,18 @@ def _resolve_glyph_kind(tool: dict) -> str:
         (("gpg", "ssh", "pass", "key"), "key"),
         (("git", "tig", "lazygit", "diff"), "branch"),
         (("sqlite", "psql", "db"), "database"),
+        (("vscode", "visual studio code"), "vscode"),
+        (("g++", "clang", "clangd", "lld", "c++"), "cpp"),
+        (("dotnet", "c#", "csharp"), "csharp"),
+        (("rust", "cargo"), "rust"),
+        (("typescript", "tsc"), "typescript"),
+        (("nodejs", "npm", "npx", "node.js"), "nodejs"),
+        (("golang",), "golang"),
+        (("openjdk", "javac", "java"), "java"),
+        (("php",), "php"),
+        (("ruby",), "ruby"),
+        (("lua",), "lua"),
+        (("hw-autodetect", "hw_detect", "autodetect"), "hw_detect"),
         (("gdb", "strace", "ltrace", "valgrind", "shellcheck", "python", "gcc", "make", "cmake"), "code"),
         (("ncdu", "parted", "gparted", "smart", "testdisk", "ddrescue", "lsblk", "baobab", "duf", "dust"), "disk"),
         (("tree",), "tree"),
@@ -960,6 +1013,129 @@ def _draw_glyph(draw: ImageDraw.ImageDraw, kind: str, c1: tuple, c2: tuple, hi: 
         draw.polygon([(78, 170), (110, 118), (138, 152), (158, 128), (180, 170)], fill=aqua)
         draw.polygon([(142, 66), (194, 66), (194, 118)], fill=coral)
 
+    elif kind == "vscode":
+        # Visual Studio Code geometric infinity-ribbon emblem
+        sky = (82, 183, 255, 255)
+        aqua = (54, 214, 195, 255)
+        draw.line([(68, 92), (166, 174)], fill=aqua, width=20)
+        draw.line([(68, 164), (166, 82)], fill=sky, width=22)
+        draw.polygon([(156, 62), (192, 76), (192, 180), (156, 194)], fill=sky)
+        draw.line([(162, 80), (162, 176)], fill=ALABASTER, width=6)
+
+    elif kind == "cpp":
+        # C++ bold C arc + dual plus marks
+        aqua = (54, 214, 195, 255)
+        peach = (255, 154, 98, 255)
+        draw.arc([58, 76, 138, 180], 45, 315, fill=aqua, width=15)
+        for px, col in [(154, ALABASTER), (188, peach)]:
+            draw.line([(px - 12, cy), (px + 12, cy)], fill=col, width=9)
+            draw.line([(px, cy - 12), (px, cy + 12)], fill=col, width=9)
+
+    elif kind == "csharp":
+        # C# / .NET bold C arc + sharp grid
+        coral = (255, 94, 126, 255)
+        gold = (247, 200, 115, 255)
+        draw.arc([58, 76, 140, 180], 45, 315, fill=coral, width=15)
+        for vx in (160, 182):
+            draw.line([(vx, 98), (vx, 158)], fill=ALABASTER, width=8)
+        for hy in (116, 140):
+            draw.line([(146, hy), (196, hy)], fill=gold, width=8)
+
+    elif kind == "rust":
+        # Rust industrial cog gear + inner R
+        peach = (255, 154, 98, 255)
+        for deg in range(0, 360, 45):
+            ang = math.radians(deg)
+            x1 = cx + math.cos(ang) * 52
+            y1 = cy + math.sin(ang) * 52
+            x2 = cx + math.cos(ang) * 72
+            y2 = cy + math.sin(ang) * 72
+            draw.line([(x1, y1), (x2, y2)], fill=peach, width=15)
+        draw.ellipse([70, 70, 186, 186], outline=peach, width=12)
+        draw.line([(106, 98), (106, 158)], fill=ALABASTER, width=10)
+        draw.arc([104, 98, 150, 132], 270, 90, fill=ALABASTER, width=10)
+        draw.line([(126, 130), (150, 158)], fill=(255, 94, 126, 255), width=10)
+
+    elif kind == "nodejs":
+        # Node.js hexagonal perimeter + crisp N core
+        emerald = (62, 213, 152, 255)
+        aqua = (54, 214, 195, 255)
+        pts = [(cx, 54), (192, 90), (192, 166), (cx, 202), (64, 166), (64, 90)]
+        draw.polygon(pts, outline=emerald, width=10)
+        draw.line([(98, 158), (98, 98), (158, 158), (158, 98)], fill=ALABASTER, width=11)
+        draw.ellipse([150, 90, 166, 106], fill=aqua)
+
+    elif kind == "typescript":
+        # TypeScript framed TS mark
+        aqua = (54, 214, 195, 255)
+        gold = (247, 200, 115, 255)
+        draw.rounded_rectangle([62, 62, 194, 194], radius=18, outline=aqua, width=10)
+        draw.line([(82, 102), (126, 102)], fill=ALABASTER, width=11)
+        draw.line([(104, 102), (104, 164)], fill=ALABASTER, width=11)
+        draw.line([(172, 104), (144, 104), (144, 132), (172, 132), (172, 162), (142, 162)], fill=gold, width=10)
+
+    elif kind == "golang":
+        # Go speed trails + bold GO emblem
+        aqua = (54, 214, 195, 255)
+        for sx, sy in [(56, 106), (50, 128), (56, 150)]:
+            draw.line([(sx, sy), (sx + 24, sy)], fill=aqua, width=7)
+        draw.arc([84, 86, 140, 170], 35, 325, fill=ALABASTER, width=10)
+        draw.line([(114, 128), (140, 128)], fill=ALABASTER, width=10)
+        draw.ellipse([148, 86, 200, 170], outline=aqua, width=10)
+
+    elif kind == "java":
+        # Java steaming cup + saucer
+        coral = (255, 94, 126, 255)
+        peach = (255, 154, 98, 255)
+        draw.rounded_rectangle([78, 112, 162, 174], radius=16, outline=ALABASTER, width=9)
+        draw.arc([150, 122, 184, 158], 270, 90, fill=ALABASTER, width=9)
+        draw.line([(68, 188), (178, 188)], fill=peach, width=9)
+        for sx in (104, 132):
+            draw.line([(sx, 98), (sx + 10, 80), (sx, 62)], fill=coral, width=8, joint="curve")
+
+    elif kind == "php":
+        # PHP pill frame + web script chevrons
+        sky = (82, 183, 255, 255)
+        coral = (255, 94, 126, 255)
+        draw.ellipse([54, 84, 202, 172], outline=sky, width=9)
+        draw.line([(98, 112), (78, 128), (98, 144)], fill=ALABASTER, width=8)
+        draw.line([(136, 106), (120, 150)], fill=coral, width=8)
+        draw.line([(158, 112), (178, 128), (158, 144)], fill=ALABASTER, width=8)
+
+    elif kind == "ruby":
+        # Ruby faceted gemstone
+        coral = (255, 94, 126, 255)
+        gold = (247, 200, 115, 255)
+        pts = [(90, 68), (166, 68), (196, 106), (cx, 192), (60, 106)]
+        draw.polygon(pts, fill=(130, 32, 58, 255), outline=coral, width=9)
+        draw.line([(62, 106), (194, 106)], fill=ALABASTER, width=7)
+        draw.line([(96, 106), (cx, 190), (160, 106)], fill=gold, width=7)
+        draw.line([(90, 68), (96, 106), (cx, 68), (160, 106), (166, 68)], fill=ALABASTER, width=6)
+
+    elif kind == "lua":
+        # Lua planet + orbital ring + moon
+        sky = (82, 183, 255, 255)
+        aqua = (54, 214, 195, 255)
+        peach = (255, 154, 98, 255)
+        draw.arc([52, 56, 200, 204], 125, 345, fill=aqua, width=7)
+        draw.ellipse([68, 76, 172, 180], fill=(32, 58, 102, 255), outline=sky, width=9)
+        draw.ellipse([126, 94, 152, 120], fill=ALABASTER)
+        draw.ellipse([166, 64, 194, 92], fill=peach)
+
+    elif kind == "hw_detect":
+        # Universal Hardware Auto-Detect silicon board + active probe core
+        aqua = (54, 214, 195, 255)
+        gold = (247, 200, 115, 255)
+        coral = (255, 94, 126, 255)
+        draw.rounded_rectangle([76, 76, 180, 180], radius=16, outline=ALABASTER, width=9)
+        for offset in (96, 128, 160):
+            draw.line([(offset, 52), (offset, 74)], fill=gold, width=8)
+            draw.line([(offset, 182), (offset, 204)], fill=gold, width=8)
+            draw.line([(52, offset), (74, offset)], fill=gold, width=8)
+            draw.line([(182, offset), (204, offset)], fill=gold, width=8)
+        draw.ellipse([98, 98, 158, 158], outline=aqua, width=8)
+        draw.polygon([(cx, 108), (148, cy), (cx, 148), (108, cy)], fill=coral)
+
     else:  # "gear" default
         for deg in range(0, 360, 45):
             ang = math.radians(deg)
@@ -1027,6 +1203,8 @@ def _desktop_categories(tool: dict) -> str:
     tid = tool_slug(str(tool.get("id", "")))
     if tid in NATIVE_XDG_CATEGORIES:
         return NATIVE_XDG_CATEGORIES[tid]
+    if tid == "vice-tool-vscode":
+        return "Development;IDE;"
     return XDG_CATEGORY_MAP.get(str(tool.get("category", "")), "Utility;")
 
 

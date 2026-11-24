@@ -208,9 +208,10 @@ get_user_host() {
 }
 
 get_os_info() {
-    local arch pretty deb_ver deb_label
+    local arch pretty repo_os deb_ver deb_label
     arch=$(uname -m 2>/dev/null || printf 'x86_64')
     pretty=""
+    repo_os="${SCRIPT_DIR}/../config/os-release"
     deb_ver=""
     if [ -r /etc/debian_version ]; then
         deb_ver=$(head -n 1 /etc/debian_version 2>/dev/null | tr -d '[:space:]' || true)
@@ -221,24 +222,24 @@ get_os_info() {
 
     if [ -n "$deb_ver" ] && [[ "$deb_ver" == 12* || "$deb_ver" == *bookworm* ]]; then
         deb_label="Debian 12 Bookworm"
-    elif [ -n "$deb_ver" ]; then
+    elif [ -n "$deb_ver" ] && [[ "$pretty" == *"GTA VI OS"* || "$pretty" == *"Vice OS"* ]]; then
         deb_label="Debian $deb_ver"
     else
         deb_label="Debian 12 Bookworm"
     fi
 
-    if [ -z "$pretty" ]; then
-        local sys_name
-        sys_name=$(uname -s 2>/dev/null || printf 'Linux')
-        if [[ "$sys_name" == *MINGW* || "$sys_name" == *MSYS* || "$sys_name" == *CYGWIN* ]]; then
-            printf 'Vice OS — GTA VI Edition (%s) %s' "$deb_label" "$arch"
-        else
-            printf 'Vice OS — GTA VI Edition (%s) %s' "$sys_name" "$arch"
-        fi
-    elif [[ "$pretty" == *"GTA VI OS"* || "$pretty" == *"Vice OS"* ]]; then
+    if [[ "$pretty" == *"GTA VI OS"* || "$pretty" == *"Vice OS"* ]]; then
         printf 'Vice OS — GTA VI Edition (%s) %s' "$deb_label" "$arch"
+    elif [ -r "$repo_os" ] && grep -qiE 'Vice OS|GTA VI OS' "$repo_os" 2>/dev/null; then
+        if [ -n "$pretty" ]; then
+            printf 'Vice OS — GTA VI Edition (%s; Host: %s) %s' "$deb_label" "$pretty" "$arch"
+        else
+            printf 'Vice OS — GTA VI Edition (%s) %s' "$deb_label" "$arch"
+        fi
+    elif [ -n "$pretty" ]; then
+        printf 'Vice OS — GTA VI Edition (%s; Host: %s) %s' "$deb_label" "$pretty" "$arch"
     else
-        printf '%s %s' "$pretty" "$arch"
+        printf 'Vice OS — GTA VI Edition (%s) %s' "$deb_label" "$arch"
     fi
 }
 

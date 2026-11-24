@@ -128,13 +128,21 @@ class ViceToolHub(QMainWindow):
         self._cat_buttons = {}
         self._icon_cache = {}
         self._current_cols = 2
+        self._pending_tools = []
+        self._rendered_count = 0
+        self._render_total = 0
 
         win_icon = load_tool_icon("vice-tool-hub", "view-app-grid")
         if not win_icon.isNull():
             self.setWindowIcon(win_icon)
 
+        self._render_timer = QTimer(self)
+        self._render_timer.setInterval(12)
+        self._render_timer.timeout.connect(self._render_next_batch)
+
         self._init_ui()
-        self._load_registry()
+        self._load_registry(defer_cards=True)
+        QTimer.singleShot(0, self._render_cards)
 
     def _init_ui(self) -> None:
         root = QWidget(self)
@@ -150,7 +158,7 @@ class ViceToolHub(QMainWindow):
             title="Vice Tool Hub",
             subtitle="Curated Vice OS Originals and Debian Bookworm tools",
             icon_name="vice-tool-hub",
-            badge_text="375 / 500 (75%)",
+            badge_text="425 / 500 (85%)",
             badge_variant="coral",
             parent=root,
         )
@@ -164,7 +172,7 @@ class ViceToolHub(QMainWindow):
         progress_row.setSpacing(10)
         self._progress_bar = QProgressBar(root)
         self._progress_bar.setRange(0, 500)
-        self._progress_bar.setValue(375)
+        self._progress_bar.setValue(425)
         self._progress_bar.setFormat("%v / %m Tools Unlocked (%p%)")
         progress_row.addWidget(self._progress_bar, 1)
         layout.addLayout(progress_row)
@@ -265,7 +273,7 @@ class ViceToolHub(QMainWindow):
             btn.setChecked(cat == category)
         self._render_cards()
 
-    def _load_registry(self) -> None:
+    def _load_registry(self, defer_cards: bool = False) -> None:
         path = _find_registry_path()
         try:
             with open(path, "r", encoding="utf-8") as fp:
@@ -288,9 +296,9 @@ class ViceToolHub(QMainWindow):
                 self._registry.get("implemented_count"),
                 len(self._tools),
             ) if v),
-            375,
+            425,
         ))
-        batch = self._registry.get("batch", 3)
+        batch = self._registry.get("batch", 4)
         theme = self._registry.get("theme", "GTA VI Leonida")
         pct = int(round((current / max(1, target)) * 100))
 
@@ -308,9 +316,12 @@ class ViceToolHub(QMainWindow):
         )
 
         self._rebuild_category_tabs()
-        self._render_cards()
-        if self._tools:
+        if defer_cards:
             self._status_lbl.setText(f"Loaded {len(self._tools)} tools from {path}")
+        else:
+            self._render_cards()
+            if self._tools:
+                self._status_lbl.setText(f"Loaded {len(self._tools)} tools from {path}")
 
     def _matches_filters(self, tool: dict) -> bool:
         cat = self._selected_category
@@ -343,6 +354,10 @@ class ViceToolHub(QMainWindow):
         return True
 
     def _clear_grid(self) -> None:
+        self._render_timer.stop()
+        self._pending_tools = []
+        self._rendered_count = 0
+        self._render_total = 0
         while self._grid.count():
             item = self._grid.takeAt(0)
             widget = item.widget()
@@ -373,17 +388,39 @@ class ViceToolHub(QMainWindow):
 
         cols = 3 if self.width() >= 1240 else 2
         self._current_cols = cols
+        for c in range(cols):
+            self._grid.setColumnStretch(c, 1)
 
-        for idx, tool in enumerate(filtered):
+        self._pending_tools = filtered
+        self._rendered_count = 0
+        self._render_total = len(filtered)
+        self._render_batch(limit=24)
+        if self._pending_tools:
+            self._render_timer.start()
+
+    def _render_batch(self, limit: int) -> None:
+        cols = self._current_cols
+        batch = self._pending_tools[:limit]
+        self._pending_tools = self._pending_tools[limit:]
+        for tool in batch:
+            idx = self._rendered_count
             card = self._build_card(tool)
             row, col = divmod(idx, cols)
             self._grid.addWidget(card, row, col)
+            self._rendered_count += 1
 
-        for c in range(cols):
-            self._grid.setColumnStretch(c, 1)
-        last_row = (len(filtered) - 1) // cols + 1
-        self._grid.setRowStretch(last_row, 1)
-        self._status_lbl.setText(f"Showing {len(filtered)} of {len(self._tools)} tools.")
+        if not self._pending_tools:
+            self._render_timer.stop()
+            last_row = max(0, (self._render_total - 1) // cols + 1)
+            self._grid.setRowStretch(last_row, 1)
+            self._status_lbl.setText(f"Showing {self._render_total} of {len(self._tools)} tools.")
+        else:
+            self._status_lbl.setText(
+                f"Loading {self._rendered_count} / {self._render_total} tools..."
+            )
+
+    def _render_next_batch(self) -> None:
+        self._render_batch(limit=36)
 
     def _build_card(self, tool: dict) -> QFrame:
         is_gta = bool(tool.get("gta_themed"))
@@ -425,6 +462,7 @@ class ViceToolHub(QMainWindow):
         pkg_text = str(tool.get("package", "system"))
         cat_text = str(tool.get("category", ""))
         meta_lbl = QLabel(f"{cat_text} · pkg: {pkg_text}", card)
+        meta_lbl.setWordWrap(True)
         meta_lbl.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 11px;")
         title_box.addWidget(meta_lbl)
         head.addLayout(title_box, 1)
@@ -439,7 +477,10 @@ class ViceToolHub(QMainWindow):
         foot.setSpacing(8)
         exec_str = str(tool.get("exec", ""))
         display_cmd = "Native Vice OS App" if is_gta else exec_str
+        if len(display_cmd) > 46:
+            display_cmd = display_cmd[:43] + "..."
         cmd_lbl = QLabel(display_cmd, card)
+        cmd_lbl.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         cmd_lbl.setStyleSheet(
             f"color: {COLORS['text_muted']}; font-family: {MONO_STACK}; font-size: 11px;"
         )
@@ -536,6 +577,7 @@ class ViceToolHub(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self._search_timer.stop()
+        self._render_timer.stop()
         event.accept()
 
 

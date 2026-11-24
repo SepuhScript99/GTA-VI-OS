@@ -71,8 +71,8 @@ QListWidget#SettingsNav {{
     padding: 6px;
 }}
 QListWidget#SettingsNav::item {{
-    padding: 6px 10px;
-    border-radius: 8px;
+    padding: 7px 11px;
+    border-radius: 9px;
     color: {_c['text_secondary']};
 }}
 QListWidget#SettingsNav::item:hover {{
@@ -88,8 +88,8 @@ QListWidget#SettingsNav::item:selected {{
 QStackedWidget#SettingsStack {{
     background-color: {_c['bg_surface']};
     border: 1px solid {_c['border']};
-    border-radius: 12px;
-    padding: 10px;
+    border-radius: 14px;
+    padding: 12px;
 }}
 QScrollBar:vertical {{
     width: 8px;
@@ -682,6 +682,7 @@ class AppLauncherPage(QWidget):
         title_col.setSpacing(4)
         pretty = app_file.replace("vice_tool_", "").replace("vice_", "").replace(".py", "").replace("_", " ").title()
         app_name = QLabel(f"Vice {pretty}", card)
+        app_name.setWordWrap(True)
         app_name.setStyleSheet(f"color: {c['text_primary']}; font-size: 18px; font-weight: bold;")
         title_col.addWidget(app_name)
 

@@ -6,20 +6,21 @@ window, dialog, messagedialog, .background {
 }
 
 dialog, messagedialog {
+    border: 1px solid #2C3147;
     border-radius: 12px;
 }
 
 headerbar, titlebar {
     background-color: #141621;
     color: #F5F6FA;
-    border-bottom: 1px solid #262A3D;
+    border-bottom: 1px solid #2C3147;
     box-shadow: none;
 }
 
 menubar {
     background-color: #141621;
     color: #F5F6FA;
-    border-bottom: 1px solid #262A3D;
+    border-bottom: 1px solid #2C3147;
     padding: 3px 6px;
 }
 
@@ -27,7 +28,7 @@ menubar > menuitem {
     background-color: transparent;
     color: #A6AEBF;
     border: none;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 4px 10px;
 }
 
@@ -39,7 +40,7 @@ menubar > menuitem:hover {
 toolbar {
     background-color: #141621;
     color: #F5F6FA;
-    border-bottom: 1px solid #262A3D;
+    border-bottom: 1px solid #2C3147;
     padding: 4px 6px;
 }
 
@@ -59,11 +60,11 @@ placessidebar row {
 placessidebar,
 placessidebar list {
     background-color: #141621;
-    border-right: 1px solid #262A3D;
+    border-right: 1px solid #2C3147;
 }
 
 placessidebar row {
-    border-radius: 8px;
+    border-radius: 9px;
     margin: 1px 4px;
 }
 
@@ -84,7 +85,7 @@ FmDesktop {
 entry, spinbutton {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     border-radius: 9px;
     padding: 5px 10px;
     box-shadow: none;
@@ -98,7 +99,7 @@ entry:focus, spinbutton:focus {
 button, combobox button {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     border-radius: 9px;
     padding: 5px 12px;
     box-shadow: none;
@@ -111,7 +112,7 @@ togglebutton label {
 
 button:hover, combobox button:hover {
     background-color: #23273A;
-    border-color: #353B54;
+    border-color: #3B425E;
     color: #F5F6FA;
 }
 
@@ -136,17 +137,17 @@ toolbar button {
     background-color: transparent;
     color: #F5F6FA;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: 9px;
 }
 
 toolbar button:hover {
     background-color: #1B1E2D;
-    border-color: #353B54;
+    border-color: #3B425E;
 }
 
 notebook > header {
     background-color: #141621;
-    border-bottom: 1px solid #262A3D;
+    border-bottom: 1px solid #2C3147;
 }
 
 notebook > header tab {
@@ -172,7 +173,7 @@ selection {
 menu, popover, popover.background {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
     border-radius: 12px;
     padding: 4px;
 }
@@ -191,7 +192,7 @@ menu menuitem:hover, menu menuitem:active {
 }
 
 separator {
-    background-color: #262A3D;
+    background-color: #2C3147;
     min-width: 1px;
     min-height: 1px;
 }
@@ -215,25 +216,25 @@ scrollbar slider:hover {
 tooltip, tooltip.background {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #353B54;
+    border: 1px solid #3B425E;
     border-radius: 9px;
 }
 
 progressbar {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border: 1px solid #262A3D;
-    border-radius: 8px;
+    border: 1px solid #2C3147;
+    border-radius: 9px;
 }
 
 progressbar progress {
     background-color: #FF5E7E;
-    border-radius: 7px;
+    border-radius: 8px;
 }
 
 scale trough {
     background-color: #1B1E2D;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     border-radius: 4px;
 }
 
@@ -242,10 +243,27 @@ scale highlight {
     border-radius: 4px;
 }
 
+checkbutton check,
+radiobutton radio {
+    background-color: #1B1E2D;
+    border: 1px solid #3B425E;
+}
+
+checkbutton check {
+    border-radius: 5px;
+}
+
+checkbutton check:checked,
+radiobutton radio:checked {
+    background-color: #FF5E7E;
+    border-color: #FF5E7E;
+    color: #0D0E15;
+}
+
 infobar {
     background-color: #141621;
     color: #F5F6FA;
-    border: 1px solid #262A3D;
+    border: 1px solid #2C3147;
     border-radius: 10px;
 }
 
@@ -267,13 +285,13 @@ infobar {
 #galculator button {
     background-color: #1B1E2D;
     color: #F5F6FA;
-    border-color: #262A3D;
+    border-color: #2C3147;
     border-radius: 9px;
 }
 
 #galculator button:hover {
     background-color: #23273A;
-    border-color: #353B54;
+    border-color: #3B425E;
 }
 
 /* --- Terminal Comfortable Inner Padding --- */

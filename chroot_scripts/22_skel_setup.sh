@@ -61,9 +61,17 @@ main() {
         if [ -f "$dest_dir/.config/libreoffice/4/user/registrymodifications.xcu" ]; then
             log_info "Synced LibreOffice GTA VI config to $dest_dir/.config/libreoffice/4/user/"
         fi
+        if [ -f "$dest_dir/.config/Code/User/settings.json" ]; then
+            chmod 644 "$dest_dir/.config/Code/User/settings.json"
+            log_info "Synced VS Code Leonida settings to $dest_dir/.config/Code/User/"
+        fi
         if [ -f "$dest_dir/Desktop/vicefetch.desktop" ]; then
             chmod 755 "$dest_dir/Desktop/vicefetch.desktop"
             log_info "Synced Desktop/vicefetch.desktop to $dest_dir/Desktop/"
+        fi
+        if [ -f "$dest_dir/Desktop/vscode.desktop" ]; then
+            chmod 755 "$dest_dir/Desktop/vscode.desktop"
+            log_info "Synced Desktop/vscode.desktop to $dest_dir/Desktop/"
         fi
     }
 

@@ -36,8 +36,43 @@ RESOLV
     chown root:root /etc/resolv.conf
     chmod 644 /etc/resolv.conf
 
+    # Ensure /etc/network/interfaces only configures loopback so NetworkManager manages all NICs
+    mkdir -p /etc/network/interfaces.d
+    find /etc/network/interfaces.d -maxdepth 1 -type f ! -name 'lo*' -delete 2>/dev/null || true
+    cat <<'INTF' > /etc/network/interfaces
+# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
+
+source /etc/network/interfaces.d/*
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+INTF
+    chown root:root /etc/network/interfaces
+    chmod 644 /etc/network/interfaces
+
+    # Install all NetworkManager conf.d drop-ins (DNS + zero-config autoconnect)
+    if [ -d /vice_payload/config/NetworkManager/conf.d ]; then
+        mkdir -p /etc/NetworkManager/conf.d
+        local nm_conf
+        for nm_conf in /vice_payload/config/NetworkManager/conf.d/*.conf; do
+            [ -f "$nm_conf" ] || continue
+            cp "$nm_conf" /etc/NetworkManager/conf.d/
+            chown root:root "/etc/NetworkManager/conf.d/$(basename "$nm_conf")"
+            chmod 644 "/etc/NetworkManager/conf.d/$(basename "$nm_conf")"
+        done
+    fi
+
+    # Ensure NetworkManager.conf does not block ifupdown or auto-default wired profiles
+    if [ -f /etc/NetworkManager/NetworkManager.conf ]; then
+        sed -i -E 's/^[[:space:]]*managed[[:space:]]*=[[:space:]]*false/managed=true/' /etc/NetworkManager/NetworkManager.conf
+        sed -i -E 's/^[[:space:]]*no-auto-default[[:space:]]*=.*$/no-auto-default=/' /etc/NetworkManager/NetworkManager.conf
+    fi
+
     # Ensure NetworkManager and essential system buses are enabled
     systemctl enable NetworkManager 2>/dev/null || true
+    systemctl enable NetworkManager-dispatcher.service 2>/dev/null || true
     systemctl enable dbus 2>/dev/null || true
 
     log_info "Configuring User Groups and Audio..."

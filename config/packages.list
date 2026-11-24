@@ -20,6 +20,26 @@ acpi
 acpid
 htop
 
+# Batch 4A Universal Hardware Firmware, Wireless, Input & Multi-VM Agents
+firmware-iwlwifi
+firmware-realtek
+firmware-atheros
+firmware-brcm80211
+firmware-sof-signed
+firmware-intel-sound
+firmware-amd-graphics
+intel-microcode
+amd64-microcode
+wpasupplicant
+wireless-regdb
+modemmanager
+usb-modeswitch
+qemu-guest-agent
+spice-vdagent
+xserver-xorg-input-all
+xserver-xorg-input-libinput
+mesa-vulkan-drivers
+
 # Batch 1 Curated System, Network, Security & Disk Utilities
 ca-certificates
 btop
@@ -256,6 +276,7 @@ fonts-noto-core
 fonts-noto-cjk
 fonts-liberation
 fonts-noto-color-emoji
+fonts-jetbrains-mono
 
 # --- Audio & Multimedia Codecs ---
 pulseaudio-utils
@@ -388,6 +409,57 @@ entr
 cppcheck
 sqlitebrowser
 yq
+
+# Batch 4A Multi-Language LTS Toolchain & Lean Dev/Hardware Tools
+# (VS Code 'code', '.NET 8.0 SDK', and 'Node.js 22 LTS' install via official repos in 01_install_packages.sh)
+build-essential
+g++
+clang
+clangd
+lld
+ninja-build
+pkg-config
+python3-pip
+python3-venv
+ipython3
+rustc
+cargo
+rustfmt
+node-typescript
+golang-go
+openjdk-17-jdk-headless
+php-cli
+ruby
+lua5.4
+autoconf
+automake
+libtool
+meson
+ccache
+bear
+astyle
+universal-ctags
+shfmt
+yamllint
+codespell
+python3-pytest
+python3-flake8
+black
+pylint
+pipx
+dos2unix
+colordiff
+capstone-tool
+i2c-tools
+edid-decode
+v4l-utils
+brightnessctl
+efibootmgr
+mokutil
+tpm2-tools
+sysbench
+fio
+nghttp2-client
 
 # --- Batch 3 Curated Kali Linux & Pentest Tools (Debian 12 bookworm/main) ---
 # Batch 3 Recon, Scanning, OSINT & Monitoring

@@ -348,30 +348,30 @@ _CALENDAR_EXTRA_QSS = f"""
 QFrame#WorldTile {{
     background-color: #10121B;
     border: 1px solid {COLORS['border']};
-    border-radius: 9px;
+    border-radius: 10px;
 }}
 QFrame#DateBanner {{
     background-color: #10121B;
     border: 1px solid {COLORS['border']};
-    border-radius: 10px;
+    border-radius: 12px;
 }}
 QCalendarWidget#ViceCalendar {{
     background-color: #10121B;
     border: 1px solid {COLORS['border']};
-    border-radius: 10px;
+    border-radius: 12px;
 }}
 QCalendarWidget#ViceCalendar QWidget#qt_calendar_navigationbar {{
     background-color: {COLORS['bg_surface']};
     border-bottom: 1px solid {COLORS['border']};
-    border-top-left-radius: 10px;
-    border-top-right-radius: 10px;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
     padding: 6px 8px;
 }}
 QCalendarWidget#ViceCalendar QToolButton#qt_calendar_prevmonth,
 QCalendarWidget#ViceCalendar QToolButton#qt_calendar_nextmonth {{
     background-color: {COLORS['bg_elevated']};
     border: 1px solid {COLORS['border']};
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 4px;
     min-width: 28px;
     min-height: 28px;
@@ -385,7 +385,7 @@ QCalendarWidget#ViceCalendar QToolButton#qt_calendar_monthbutton {{
     background-color: transparent;
     color: {COLORS['text_primary']};
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 4px 12px;
     font-size: 13px;
     font-weight: bold;
@@ -401,7 +401,7 @@ QCalendarWidget#ViceCalendar QSpinBox#qt_calendar_yearedit {{
     background-color: {COLORS['bg_elevated']};
     color: {COLORS['accent_peach']};
     border: 1px solid {COLORS['border']};
-    border-radius: 7px;
+    border-radius: 9px;
     padding: 3px 8px;
     min-width: 62px;
     font-size: 13px;
@@ -414,8 +414,8 @@ QCalendarWidget#ViceCalendar QTableView#qt_calendar_calendarview {{
     selection-background-color: {COLORS['accent_coral']};
     selection-color: #0D0E15;
     border: none;
-    border-bottom-left-radius: 10px;
-    border-bottom-right-radius: 10px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
     outline: none;
 }}
 """
