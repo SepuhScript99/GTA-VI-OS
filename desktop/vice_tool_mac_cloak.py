@@ -48,6 +48,17 @@ except ImportError:
 
 _IFACE_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,32}$")
 _MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
+_SBIN_PATH = os.pathsep.join([
+    os.environ.get("PATH", ""),
+    "/usr/local/sbin",
+    "/usr/sbin",
+    "/sbin",
+])
+
+
+def _which(cmd: str) -> str:
+    return shutil.which(cmd) or shutil.which(cmd, path=_SBIN_PATH) or ""
+
 
 TRACE_TARGETS = [
     ("bash_history", "Bash Command History (~/.bash_history)", ["~/.bash_history"]),
@@ -195,7 +206,7 @@ class CloakWorker(QThread):
 
     def _read_sockets(self) -> list:
         rows = []
-        ss_bin = shutil.which("ss")
+        ss_bin = _which("ss")
         if not ss_bin:
             return rows
         try:

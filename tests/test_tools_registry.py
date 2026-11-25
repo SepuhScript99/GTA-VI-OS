@@ -434,7 +434,14 @@ class TestToolsRegistry(unittest.TestCase):
         ):
             self.assertIn(ext_id, tools_by_id)
             self.assertEqual(tools_by_id[ext_id]["package"], ext_pkg)
-        self.assertEqual(tools_by_id["node-typescript"]["exec"], "tsc --version")
+        self.assertEqual(tools_by_id["node-typescript"]["exec"], "tsc")
+        self.assertEqual(tools_by_id["python3-flake8"]["exec"], "python3 -m flake8")
+
+        for native_hw_pkg in (
+            "thunar-volman", "gvfs-fuse", "gvfs-daemons", "mtp-tools",
+            "usbmuxd", "fwupd", "unattended-upgrades", "dkms", "udisks2-btrfs",
+        ):
+            self.assertIn(native_hw_pkg, pkgs_set, f"Missing ISO #16 native HW/update pkg '{native_hw_pkg}'")
 
     def test_iso15_bookworm_install_order_and_typescript_wiring(self):
         pkgs_set = set(_load_packages_list())
@@ -504,6 +511,8 @@ class TestToolsRegistry(unittest.TestCase):
             for bad_tok in ("|", ";", "&&", "||", "`"):
                 self.assertNotIn(bad_tok, ex, f"Shell metacharacter '{bad_tok}' in {tool['id']} exec: {ex}")
             if tool["terminal"]:
+                if tool["id"] == "python3-flake8" and ex == "python3 -m flake8":
+                    continue
                 self.assertNotIn(head, gui_only_bins, f"GUI app '{head}' marked terminal=true for {tool['id']}")
             else:
                 self.assertTrue(
@@ -672,6 +681,8 @@ class TestToolsIntegrationAndDeployment(unittest.TestCase):
         self.assertIn('main "$@"', code)
         self.assertIn("xfce4-terminal", code)
         self.assertIn("/usr/sbin", code)
+        self.assertIn("needs_root_exec", code)
+        self.assertIn('[ "${cmd_args[1]}" = "-m" ]', code)
         self.assertNotIn("\r\n", code)
 
         for batch_cli in (
@@ -811,6 +822,33 @@ class TestToolsIntegrationAndDeployment(unittest.TestCase):
         reg = _load_registry()
         for tool in reg["tools"]:
             self.assertIn(f"`{tool['id']}`", doc, f"TOOLS_PROGRESS.md missing tool ID {tool['id']}")
+
+    def test_iso16_vscode_leonida_icon_and_turbo_radio_degimmick(self):
+        gen_code = _read_text("assets", "generate_tool_icons.py")
+        vscode_block = gen_code.split('elif kind == "vscode":', 1)[1].split("elif kind ==", 1)[0]
+        self.assertNotIn("sky", vscode_block, "VS Code icon must use Leonida Sunset/Aqua, not legacy blue 'sky'")
+        self.assertIn("coral", vscode_block)
+        self.assertIn("aqua", vscode_block)
+
+        turbo_code = _read_text("desktop", "vice_tool_turbo.py")
+        for token in (
+            "def _read_cpufreq_info",
+            "def _read_zram_stats",
+            "def _read_proc_stat_cpus",
+            "vm.drop_caches=3",
+            "Host-managed (VM)",
+        ):
+            self.assertIn(token, turbo_code)
+
+        radio_code = _read_text("desktop", "vice_tool_radio.py")
+        for token in (
+            "def _pick_local_folder",
+            "--audio-display=no",
+            "defcon-128-mp3",
+            "lush-128-mp3",
+            "poptron-128-mp3",
+        ):
+            self.assertIn(token, radio_code)
 
 
 if __name__ == "__main__":

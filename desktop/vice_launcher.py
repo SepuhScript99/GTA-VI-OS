@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Vice OS Application Launcher — unified menu discovering standard XDG .desktop
-applications and Vice OS utilities with categories, search, and favorites.
+Vice OS Application Launcher — unified full-width AppCard grid discovering
+standard XDG .desktop applications and Vice OS utilities with categories,
+live counts, search, favorites, and non-blocking incremental batch rendering.
 """
 
 import glob
@@ -12,20 +13,34 @@ import shlex
 import shutil
 import sys
 
-from PyQt5.QtCore import QProcess, QSize, Qt
-from PyQt5.QtGui import QFont, QIcon, QKeySequence
-from PyQt5.QtWidgets import (
-    QApplication,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QScrollArea,
-    QShortcut,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt5 import QtCore as _qt_core
+from PyQt5 import QtGui as _qt_gui
+from PyQt5 import QtWidgets as _qt_widgets
+
+QProcess = _qt_core.QProcess
+QSize = _qt_core.QSize
+Qt = _qt_core.Qt
+QTimer = getattr(_qt_core, "QTimer", object)
+
+QCursor = getattr(_qt_gui, "QCursor", object)
+QFont = _qt_gui.QFont
+QFontMetrics = getattr(_qt_gui, "QFontMetrics", None)
+QIcon = _qt_gui.QIcon
+QKeySequence = _qt_gui.QKeySequence
+QPixmap = getattr(_qt_gui, "QPixmap", None)
+
+QApplication = _qt_widgets.QApplication
+QFrame = getattr(_qt_widgets, "QFrame", _qt_widgets.QWidget)
+QGridLayout = _qt_widgets.QGridLayout
+QHBoxLayout = _qt_widgets.QHBoxLayout
+QLabel = _qt_widgets.QLabel
+QLineEdit = _qt_widgets.QLineEdit
+QPushButton = _qt_widgets.QPushButton
+QScrollArea = _qt_widgets.QScrollArea
+QShortcut = _qt_widgets.QShortcut
+QSizePolicy = getattr(_qt_widgets, "QSizePolicy", object)
+QVBoxLayout = _qt_widgets.QVBoxLayout
+QWidget = _qt_widgets.QWidget
 
 sys.path.insert(0, "/opt/vice-os/lib")
 sys.path.insert(0, "/opt/vice-os")
@@ -41,8 +56,8 @@ from vice_theme import (  # noqa: E402
     resolve_icon,
 )
 
-WINDOW_WIDTH = 960
-WINDOW_HEIGHT = 600
+WINDOW_WIDTH = 1040
+WINDOW_HEIGHT = 640
 
 _c = COLORS
 STYLE = build_app_qss(
@@ -52,7 +67,7 @@ QPushButton#CategoryTab {{
     color: {_c['text_secondary']};
     border: 1px solid {_c['border']};
     border-radius: 9px;
-    padding: 4px 12px;
+    padding: 5px 12px;
     font-size: 12px;
     font-weight: 600;
     min-width: 0px;
@@ -67,26 +82,45 @@ QPushButton#CategoryTab:checked {{
     color: {_c['accent_peach']};
     border-color: {_c['accent_coral']};
 }}
-QPushButton#AppCard {{
+QFrame#AppCard {{
     background: {_c['bg_surface']};
-    color: {_c['text_primary']};
     border: 1px solid {_c['border']};
     border-radius: 12px;
-    padding: 0px;
-    font-size: 12px;
-    text-align: center;
 }}
-QPushButton#AppCard:hover {{
+QFrame#AppCard:hover {{
     background: {_c['bg_elevated']};
-    color: {_c['accent_peach']};
+    border-color: {_c['accent_coral']};
+}}
+QFrame#AppCard:focus {{
+    background: {_c['bg_elevated']};
+    border: 1px solid {_c['accent_aqua']};
+}}
+QPushButton#FavStarBtn {{
+    background: transparent;
+    color: {_c['text_muted']};
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    font-size: 15px;
+}}
+QPushButton#FavStarBtn:hover {{
+    background: {_c['bg_hover']};
+    color: {_c['accent_gold']};
     border-color: {_c['border_strong']};
+}}
+QPushButton#FavStarBtn[favorited="true"] {{
+    color: {_c['accent_gold']};
 }}
 QPushButton#HubPill {{
     background: {_c['bg_elevated']};
     color: {_c['accent_gold']};
     border: 1px solid {_c['border_strong']};
     border-radius: 9px;
-    padding: 4px 12px;
+    padding: 5px 12px;
     font-size: 11px;
     font-weight: bold;
     min-width: 0px;
@@ -100,37 +134,66 @@ QPushButton#HubPill:hover {{
 )
 
 CATEGORIES = {
-    "Internet": ["vice_network_monitor.py", "vice_vpn_manager.py", "vice_network_shares.py",
-                 "vice_wifi_connect.py", "vice_ssh_manager.py", "vice_speedtest.py",
-                 "vice_tool_net_shield.py", "vice_tool_net_radar.py"],
-    "Utilities": ["vice_file_manager.py", "vice_text_editor.py", "vice_terminal.py",
-                  "vice_screenshot.py", "vice_clipboard.py", "vice_archive_manager.py",
-                  "vice_backup_scheduler.py", "vice_sysinfo_exporter.py",
-                  "vice_calculator.py", "vice_calendar.py", "vice_tool_clock_sync.py",
-                  "vice_trash_manager.py", "vice_help_viewer.py",
-                  "vice_file_search.py", "vice_checksum.py"],
-    "Multimedia": ["vice_audio_manager.py", "vice_font_manager.py", "vice_image_viewer.py",
-                   "vice_media_player.py", "vice_pdf_viewer.py", "vice_screen_recorder.py",
-                   "vice_tool_radio.py", "vice_tool_media_studio.py"],
-    "Graphics": [],
+    "Development": [
+        "vice_software_center.py", "vice_package_search.py", "vice_iso_validator.py",
+        "vice_diagnostics.py", "vice_log_viewer.py", "vice_log_rotation.py",
+        "vice_cron_manager.py", "vice_tool_qr_hash.py", "vice_tool_cheatsheets.py",
+    ],
     "Office": ["vice_tool_office_hub.py", "vice_tool_missions.py"],
-    "Development": ["vice_software_center.py", "vice_package_search.py", "vice_iso_validator.py",
-                    "vice_diagnostics.py", "vice_log_viewer.py", "vice_log_rotation.py",
-                    "vice_cron_manager.py", "vice_tool_qr_hash.py", "vice_tool_cheatsheets.py"],
-    "Security": ["vice_tool_cyber_deck.py", "vice_tool_mac_cloak.py", "vice_tool_vault.py",
-                 "vice_tool_payload_lab.py", "vice_firewall_manager.py"],
-    "System": ["vice_task_manager.py", "vice_system_monitor.py", "vice_system_report.py",
-               "vice_service_manager.py", "vice_power_manager.py", "vice_driver_manager.py",
-               "vice_update_manager.py", "vice_kernel_manager.py", "vice_cleanup.py",
-               "vice_session_manager.py", "vice_disk_benchmark.py", "vice_disk_manager.py",
-               "vice_disk_usage.py", "vice_user_manager.py", "vice_usb_manager.py",
-               "vice_printer_manager.py", "vice_bluetooth_manager.py",
-               "vice_tool_hub.py", "vice_tool_turbo.py", "vice_tool_sys_deck.py"],
-    "Settings": ["vice_settings.py", "vice_display_manager.py", "vice_keyboard_shortcuts.py",
-                 "vice_mouse_settings.py", "vice_accessibility.py", "vice_theme_manager.py",
-                 "vice_openbox_editor.py", "vice_startup_apps.py", "vice_wallpaper_picker.py",
-                 "vice_notif_history.py"],
+    "Internet": [
+        "vice_network_monitor.py", "vice_vpn_manager.py", "vice_network_shares.py",
+        "vice_wifi_connect.py", "vice_ssh_manager.py", "vice_speedtest.py",
+        "vice_tool_net_shield.py", "vice_tool_net_radar.py",
+    ],
+    "Security": [
+        "vice_tool_cyber_deck.py", "vice_tool_mac_cloak.py", "vice_tool_vault.py",
+        "vice_tool_payload_lab.py", "vice_firewall_manager.py",
+    ],
+    "System": [
+        "vice_task_manager.py", "vice_system_monitor.py", "vice_system_report.py",
+        "vice_service_manager.py", "vice_power_manager.py", "vice_driver_manager.py",
+        "vice_update_manager.py", "vice_kernel_manager.py", "vice_cleanup.py",
+        "vice_session_manager.py", "vice_disk_benchmark.py", "vice_disk_manager.py",
+        "vice_disk_usage.py", "vice_user_manager.py", "vice_usb_manager.py",
+        "vice_printer_manager.py", "vice_bluetooth_manager.py",
+        "vice_tool_hub.py", "vice_tool_turbo.py", "vice_tool_sys_deck.py",
+    ],
+    "Multimedia": [
+        "vice_audio_manager.py", "vice_font_manager.py", "vice_image_viewer.py",
+        "vice_media_player.py", "vice_pdf_viewer.py", "vice_screen_recorder.py",
+        "vice_tool_radio.py", "vice_tool_media_studio.py",
+    ],
+    "Graphics": [],
+    "Utilities": [
+        "vice_file_manager.py", "vice_text_editor.py", "vice_terminal.py",
+        "vice_screenshot.py", "vice_clipboard.py", "vice_archive_manager.py",
+        "vice_backup_scheduler.py", "vice_sysinfo_exporter.py",
+        "vice_calculator.py", "vice_calendar.py", "vice_tool_clock_sync.py",
+        "vice_trash_manager.py", "vice_help_viewer.py",
+        "vice_file_search.py", "vice_checksum.py",
+    ],
+    "Settings": [
+        "vice_settings.py", "vice_display_manager.py", "vice_keyboard_shortcuts.py",
+        "vice_mouse_settings.py", "vice_accessibility.py", "vice_theme_manager.py",
+        "vice_openbox_editor.py", "vice_startup_apps.py", "vice_wallpaper_picker.py",
+        "vice_notif_history.py",
+    ],
 }
+
+CATEGORY_TABS = [
+    "All",
+    "Favorites",
+    "GTA VI Originals",
+    "Development",
+    "Office",
+    "Internet",
+    "Security",
+    "System",
+    "Multimedia",
+    "Graphics",
+    "Utilities",
+    "Settings",
+]
 
 _XDG_CATEGORY_MAP = {
     "Network": "Internet",
@@ -169,6 +232,7 @@ _EXCLUDED_VICE_SCRIPTS = {
     "vice_setup_apps.py",
     "vice_shell.py",
     "vice_theme.py",
+    "vice_settings_pages.py",
 }
 
 APP_LABELS = {
@@ -411,13 +475,16 @@ def _parse_xdg_desktop_file(filepath: str):
             category = _XDG_CATEGORY_MAP[xdg_cat]
             break
 
+    base_name = os.path.basename(filepath)
+    is_original = base_name.startswith(("vice-", "vice_"))
     return {
-        "id": os.path.basename(filepath),
-        "name": os.path.basename(filepath),
+        "id": base_name,
+        "name": base_name,
         "label": name,
         "icon": icon,
         "comment": comment or name,
         "category": category,
+        "original": is_original,
         "args": args,
         "workdir": workdir,
     }
@@ -505,6 +572,7 @@ def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> l
                 "icon": icon,
                 "comment": label,
                 "category": _VICE_CAT_LOOKUP.get(name, "Utilities"),
+                "original": True,
                 "args": [sys.executable, path],
                 "workdir": os.path.expanduser("~"),
             })
@@ -520,6 +588,7 @@ def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> l
                 "icon": "vice-tool-vscode",
                 "comment": "Code Editing. Redefined (C/C++/C#/Python/Rust/JS)",
                 "category": "Development",
+                "original": False,
                 "args": [code_bin],
                 "workdir": os.path.expanduser("~"),
             })
@@ -545,6 +614,7 @@ def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> l
                 "icon": "vice-tool-hw-autodetect",
                 "comment": "Universal Hardware, GPU, Wi-Fi & VM Driver Auto-Detection",
                 "category": "System",
+                "original": True,
                 "args": hw_args,
                 "workdir": os.path.expanduser("~"),
             })
@@ -553,53 +623,110 @@ def discover_apps(desktop_app_dirs=None, include_vice_scripts: bool = True) -> l
     return apps
 
 
-def _load_card_icon(icon_name: str) -> QIcon:
-    """Resolve an icon from filesystem path, theme, hicolor apps, or pixmaps."""
-    return resolve_icon(icon_name, "application-x-executable", "applications-other")
+def _load_card_pixmap(icon_name: str, cache: dict, size: int = 40):
+    """Resolve and cache a crisp icon QPixmap for *icon_name*."""
+    key = (icon_name or "", size)
+    if key in cache:
+        return cache[key]
+    icon = resolve_icon(icon_name, "application-x-executable", "applications-other")
+    pix = icon.pixmap(size, size) if not icon.isNull() else None
+    cache[key] = pix
+    return pix
 
 
-class AppButton(QPushButton):
-    def __init__(self, app_info, on_launch, on_fav_toggle, is_fav=False):
-        super().__init__()
+class AppCard(QFrame):
+    """Full-width horizontal application card ([40x40 Icon] [Title + Subtitle] [Star])."""
+
+    def __init__(self, app_info, icon_cache, on_launch, on_fav_toggle, is_fav=False, parent=None):
+        super().__init__(parent)
         self._info = app_info
+        self._on_launch = on_launch
+        self._on_fav_toggle = on_fav_toggle
         self._is_fav = is_fav
+
         self.setObjectName("AppCard")
-        self.setFocusPolicy(Qt.NoFocus)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setFixedHeight(74)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setFocusPolicy(Qt.StrongFocus)
+        if hasattr(Qt, "PointingHandCursor"):
+            self.setCursor(QCursor(Qt.PointingHandCursor))
 
-        label = app_info["label"]
-        self.setToolTip(f"{label}\n{app_info.get('comment', '')}".strip())
-        self.setMinimumSize(170, 106)
-        self.setMaximumSize(192, 112)
+        label = app_info.get("label", "")
+        comment = app_info.get("comment", "") or label
+        cat = app_info.get("category", "Utilities")
+        self.setToolTip(f"{label}\n{cat} — {comment}")
 
-        card_layout = QVBoxLayout(self)
-        card_layout.setContentsMargins(10, 8, 10, 8)
-        card_layout.setSpacing(6)
-        card_layout.setAlignment(Qt.AlignVCenter)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(12, 10, 10, 10)
+        row.setSpacing(12)
 
         icon_lbl = QLabel(self)
+        icon_lbl.setFixedSize(40, 40)
         icon_lbl.setAlignment(Qt.AlignCenter)
         icon_lbl.setStyleSheet("background: transparent; border: none;")
-        icon = _load_card_icon(app_info.get("icon", ""))
-        if not icon.isNull():
-            icon_lbl.setPixmap(icon.pixmap(34, 34))
-        card_layout.addWidget(icon_lbl)
+        pix = _load_card_pixmap(app_info.get("icon", ""), icon_cache, 40)
+        if pix is not None and not pix.isNull():
+            icon_lbl.setPixmap(pix)
+        else:
+            icon_lbl.setText(label[:2].upper())
+            icon_lbl.setStyleSheet(
+                f"background: {COLORS['bg_elevated']}; color: {COLORS['accent_peach']}; "
+                f"border-radius: 10px; font-weight: bold;"
+            )
+        row.addWidget(icon_lbl)
 
-        display_label = label[:32] + "…" if len(label) > 33 else label
-        text_lbl = QLabel(display_label, self)
-        text_lbl.setAlignment(Qt.AlignCenter)
-        text_lbl.setWordWrap(True)
-        text_lbl.setMinimumWidth(144)
-        lbl_font = text_lbl.font()
-        lbl_font.setBold(True)
-        text_lbl.setFont(lbl_font)
-        text_lbl.setStyleSheet("background: transparent; border: none; font-size: 12px;")
-        card_layout.addWidget(text_lbl)
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(2)
 
-        self.clicked.connect(lambda: on_launch(app_info))
-        self.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.customContextMenuRequested.connect(
-            lambda _pos, a=app_info: on_fav_toggle(a)
+        title_lbl = QLabel(label, self)
+        title_lbl.setStyleSheet(
+            f"color: {COLORS['text_primary']}; font-size: 13px; font-weight: bold; "
+            "background: transparent; border: none;"
         )
+        title_lbl.setWordWrap(False)
+        title_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        text_col.addWidget(title_lbl)
+
+        subtitle_raw = f"{cat} · {comment}" if comment and comment != label else cat
+        if len(subtitle_raw) > 54:
+            subtitle_raw = subtitle_raw[:51] + "…"
+        sub_lbl = QLabel(subtitle_raw, self)
+        sub_lbl.setStyleSheet(
+            f"color: {COLORS['text_secondary']}; font-size: 11px; "
+            "background: transparent; border: none;"
+        )
+        sub_lbl.setWordWrap(False)
+        sub_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        text_col.addWidget(sub_lbl)
+        row.addLayout(text_col, 1)
+
+        self._fav_btn = QPushButton("★" if is_fav else "☆", self)
+        self._fav_btn.setObjectName("FavStarBtn")
+        self._fav_btn.setProperty("favorited", "true" if is_fav else "false")
+        self._fav_btn.setFocusPolicy(Qt.NoFocus)
+        self._fav_btn.setToolTip("Unpin from Favorites" if is_fav else "Pin to Favorites")
+        self._fav_btn.clicked.connect(lambda _checked=False: self._on_fav_toggle(self._info))
+        row.addWidget(self._fav_btn, 0, Qt.AlignVCenter)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._on_launch(self._info)
+            event.accept()
+            return
+        if event.button() == Qt.RightButton:
+            self._on_fav_toggle(self._info)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
+            self._on_launch(self._info)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 class AppLauncher(QWidget):
@@ -607,19 +734,41 @@ class AppLauncher(QWidget):
         super().__init__()
         self.setWindowTitle("Vice OS — Applications")
         self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        self.setMinimumSize(700, 480)
+        self.setMinimumSize(780, 520)
         self.setStyleSheet(STYLE)
+
         self._apps = discover_apps()
         self._favorites = load_favorites()
         self._category = "All"
         self._cat_buttons = {}
-        self._cols = self._calc_cols()
+        self._icon_cache = {}
+        self._pending_apps = []
+        self._rendered_count = 0
+        self._render_total = 0
+
+        self._batch_timer = QTimer(self)
+        self._batch_timer.setInterval(10)
+        self._batch_timer.timeout.connect(self._render_next_batch)
+
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(80)
+        self._search_timer.timeout.connect(self._populate)
+
         self._init_ui()
+        self._cols = self._calc_cols()
+        self._update_category_counts()
         self._populate()
         self._search.setFocus()
 
     def _calc_cols(self) -> int:
-        return max(3, (self.width() - 44) // 182)
+        vp_w = self._scroll.viewport().width() if hasattr(self, "_scroll") else 0
+        width = vp_w if vp_w > 120 else (self.width() - 36)
+        if width >= 1160:
+            return 4
+        if width >= 740:
+            return 3
+        return 2
 
     def _init_ui(self):
         c = COLORS
@@ -633,7 +782,7 @@ class AppLauncher(QWidget):
         title.setStyleSheet(f"color: {c['text_primary']};")
         header.addWidget(title)
         header.addStretch(1)
-        hint = QLabel("Right-click card to pin/unpin Favorites · Esc to close")
+        hint = QLabel("Click card to launch · ★ or right-click to pin Favorites · Esc to close")
         hint.setStyleSheet(f"color: {c['text_secondary']}; font-size: 11px;")
         header.addWidget(hint)
         cur_tools, tgt_tools = _read_registry_counts()
@@ -649,8 +798,11 @@ class AppLauncher(QWidget):
         root.addLayout(header)
 
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Search Debian, Office, Security & Vice OS apps...")
-        self._search.textChanged.connect(self._populate)
+        self._search.setPlaceholderText(
+            f"Search {len(self._apps)} Debian, Office, Security & Vice OS apps..."
+        )
+        self._search.setClearButtonEnabled(True)
+        self._search.textChanged.connect(lambda _txt: self._search_timer.start())
         root.addWidget(self._search)
 
         QShortcut(QKeySequence("Escape"), self).activated.connect(self.close)
@@ -659,8 +811,8 @@ class AppLauncher(QWidget):
         cats_host.setStyleSheet("background: transparent;")
         cats_flow = FlowLayout(cats_host, h_spacing=6, v_spacing=6)
         cats_flow.setContentsMargins(0, 0, 0, 0)
-        for cat in ["All", "Favorites"] + list(CATEGORIES.keys()):
-            btn = QPushButton(cat, cats_host)
+        for cat in CATEGORY_TABS:
+            btn = QPushButton(cat.replace("&", "&&"), cats_host)
             btn.setObjectName("CategoryTab")
             btn.setFixedHeight(32)
             btn.setCheckable(True)
@@ -671,19 +823,38 @@ class AppLauncher(QWidget):
             self._cat_buttons[cat] = btn
         root.addWidget(cats_host)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._grid_widget = QWidget()
+        self._grid_widget.setStyleSheet("background: transparent;")
         self._grid_layout = QGridLayout(self._grid_widget)
+        self._grid_layout.setContentsMargins(2, 4, 8, 4)
         self._grid_layout.setSpacing(10)
-        self._grid_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-        scroll.setWidget(self._grid_widget)
-        root.addWidget(scroll, 1)
+        self._grid_layout.setAlignment(Qt.AlignTop)
+        self._scroll.setWidget(self._grid_widget)
+        root.addWidget(self._scroll, 1)
 
         self._count_label = QLabel("")
         self._count_label.setStyleSheet(f"color: {c['text_muted']}; font-size: 11px;")
         root.addWidget(self._count_label)
+
+    def _is_favorite(self, app: dict) -> bool:
+        return app["label"] in self._favorites or app["name"] in self._favorites
+
+    def _matches_category(self, app: dict, cat: str) -> bool:
+        if cat == "All":
+            return True
+        if cat == "Favorites":
+            return self._is_favorite(app)
+        if cat == "GTA VI Originals":
+            return bool(app.get("original"))
+        return app.get("category") == cat
+
+    def _update_category_counts(self):
+        for cat, btn in self._cat_buttons.items():
+            cnt = sum(1 for app in self._apps if self._matches_category(app, cat))
+            btn.setText(f"{cat} ({cnt})".replace("&", "&&"))
 
     def _set_category(self, cat):
         self._category = cat
@@ -691,42 +862,97 @@ class AppLauncher(QWidget):
             btn.setChecked(name == cat)
         self._populate()
 
-    def _populate(self):
+    def _clear_grid(self):
+        self._batch_timer.stop()
+        self._pending_apps = []
+        self._rendered_count = 0
+        self._render_total = 0
         while self._grid_layout.count():
-            w = self._grid_layout.takeAt(0).widget()
-            if w:
+            item = self._grid_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
                 w.deleteLater()
+
+    def _populate(self):
+        self._clear_grid()
 
         search = self._search.text().strip().lower()
         filtered = []
-
         for app in self._apps:
-            is_fav = app["label"] in self._favorites or app["name"] in self._favorites
-            if self._category == "Favorites" and not is_fav:
+            if not self._matches_category(app, self._category):
                 continue
-            if self._category not in ("All", "Favorites") and app.get("category") != self._category:
-                continue
-
-            haystack = f"{app['label']} {app['name']} {app.get('comment', '')}".lower()
-            if search and search not in haystack:
-                continue
+            if search:
+                haystack = (
+                    f"{app['label']} {app['name']} {app.get('category', '')} "
+                    f"{app.get('comment', '')}"
+                ).lower()
+                if search not in haystack:
+                    continue
             filtered.append(app)
 
         cols = self._calc_cols()
         self._cols = cols
-        for i, app in enumerate(filtered):
-            is_fav = app["label"] in self._favorites or app["name"] in self._favorites
-            btn = AppButton(app, self._launch, self._toggle_fav, is_fav)
-            row, col = divmod(i, cols)
-            self._grid_layout.addWidget(btn, row, col)
+        for c in range(6):
+            self._grid_layout.setColumnStretch(c, 1 if c < cols else 0)
 
-        self._count_label.setText(f"{len(filtered)} application(s)")
+        if not filtered:
+            empty = QLabel("No applications match your search.", self._grid_widget)
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setStyleSheet(
+                f"color: {COLORS['text_secondary']}; font-size: 14px; padding: 40px;"
+            )
+            self._grid_layout.addWidget(empty, 0, 0, 1, cols)
+            self._count_label.setText("0 application(s)")
+            return
+
+        self._pending_apps = filtered
+        self._rendered_count = 0
+        self._render_total = len(filtered)
+        self._render_batch(limit=24)
+        if self._pending_apps:
+            self._batch_timer.start()
+
+    def _render_batch(self, limit: int):
+        cols = self._cols
+        batch = self._pending_apps[:limit]
+        self._pending_apps = self._pending_apps[limit:]
+        for app in batch:
+            idx = self._rendered_count
+            card = AppCard(
+                app,
+                self._icon_cache,
+                self._launch,
+                self._toggle_fav,
+                is_fav=self._is_favorite(app),
+                parent=self._grid_widget,
+            )
+            row, col = divmod(idx, cols)
+            self._grid_layout.addWidget(card, row, col)
+            self._rendered_count += 1
+
+        if not self._pending_apps:
+            self._batch_timer.stop()
+            last_row = max(0, (self._render_total - 1) // cols + 1)
+            self._grid_layout.setRowStretch(last_row, 1)
+            self._count_label.setText(f"{self._render_total} application(s)")
+        else:
+            self._count_label.setText(
+                f"Loading {self._rendered_count} / {self._render_total} applications..."
+            )
+
+    def _render_next_batch(self):
+        self._render_batch(limit=36)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         new_cols = self._calc_cols()
         if new_cols != self._cols:
             self._populate()
+
+    def closeEvent(self, event):
+        self._search_timer.stop()
+        self._batch_timer.stop()
+        super().closeEvent(event)
 
     def _launch(self, app_info):
         args = app_info.get("args", [])
@@ -748,6 +974,7 @@ class AppLauncher(QWidget):
         else:
             self._favorites.append(key)
         save_favorites(self._favorites)
+        self._update_category_counts()
         self._populate()
 
 

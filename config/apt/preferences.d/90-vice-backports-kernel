@@ -1,0 +1,9 @@
+# GTA VI OS (Vice OS) APT Pinning: Debian Backports LTS Kernel & Hardware Firmware
+# Uses Codename (n=bookworm-backports) because Archive/Suite transitions to
+# oldstable-backports after Debian 13 (Trixie) release.
+# Pins ONLY kernel images/headers, hardware firmware, and CPU microcode at 550
+# so core Debian 12 Bookworm userspace stability remains 100% intact.
+
+Package: linux-image-* linux-headers-* firmware-* intel-microcode amd64-microcode
+Pin: release n=bookworm-backports
+Pin-Priority: 550

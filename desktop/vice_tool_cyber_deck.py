@@ -442,8 +442,14 @@ class ViceCyberDeckApp(QMainWindow):
 
     @staticmethod
     def _resolve_preset_bin(preset: dict) -> str:
+        sbin_path = os.pathsep.join([
+            os.environ.get("PATH", ""),
+            "/usr/local/sbin",
+            "/usr/sbin",
+            "/sbin",
+        ])
         for cand in [preset["bin"]] + list(preset.get("alt_bins", [])):
-            found = shutil.which(cand)
+            found = shutil.which(cand) or shutil.which(cand, path=sbin_path)
             if found:
                 return found
         return ""

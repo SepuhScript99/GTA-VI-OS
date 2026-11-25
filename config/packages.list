@@ -40,6 +40,17 @@ xserver-xorg-input-all
 xserver-xorg-input-libinput
 mesa-vulkan-drivers
 
+# Batch 4B Native Upstream Hardware Auto-Mount, MTP/iOS, Firmware & Auto-Updates
+thunar-volman
+gvfs-fuse
+gvfs-daemons
+mtp-tools
+usbmuxd
+fwupd
+unattended-upgrades
+dkms
+udisks2-btrfs
+
 # Batch 1 Curated System, Network, Security & Disk Utilities
 ca-certificates
 btop

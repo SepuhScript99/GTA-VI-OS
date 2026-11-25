@@ -166,6 +166,47 @@ install_dev_suite() {
     apt-get clean
 }
 
+install_kernel_and_firmware() {
+    local build_arch="$1"
+    local kernel_pkg="$2"
+    local headers_pkg="$3"
+
+    log_info "Installing kernel and firmware (${build_arch}; preferring pinned bookworm-backports LTS)..."
+
+    # Ensure 90-vice-backports-kernel pinning is active even if 01 runs standalone
+    if [ -d /vice_payload/config/apt/preferences.d ]; then
+        mkdir -p /etc/apt/preferences.d
+        local pref_file
+        for pref_file in /vice_payload/config/apt/preferences.d/*; do
+            if [ -f "$pref_file" ]; then
+                cp "$pref_file" "/etc/apt/preferences.d/$(basename "$pref_file")"
+                chown root:root "/etc/apt/preferences.d/$(basename "$pref_file")"
+                chmod 644 "/etc/apt/preferences.d/$(basename "$pref_file")"
+            fi
+        done
+    fi
+
+    local kernel_pkgs=("${kernel_pkg}" "${headers_pkg}" "initramfs-tools" "firmware-linux" "firmware-misc-nonfree")
+    local selected_pkgs=()
+    local pkg candidate
+    for pkg in "${kernel_pkgs[@]}"; do
+        if has_install_candidate "$pkg"; then
+            candidate=$(apt-cache policy "$pkg" 2>/dev/null | awk '/Candidate:/ {if (!c) c=$2} END {print c}')
+            log_info "  ${pkg} candidate: ${candidate:-unknown}"
+            selected_pkgs+=("$pkg")
+        else
+            log_warn "Kernel/firmware package unavailable, skipping: $pkg"
+        fi
+    done
+
+    if [ "${#selected_pkgs[@]}" -gt 0 ]; then
+        if ! apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "${selected_pkgs[@]}"; then
+            log_warn "Backports kernel/firmware install hit a resolution error; falling back cleanly to standard bookworm..."
+            apt-get "${APT_OPTS[@]}" install -y --no-install-recommends -t bookworm "${selected_pkgs[@]}"
+        fi
+    fi
+}
+
 main() {
     # Read build configuration
     local build_arch="amd64"
@@ -186,10 +227,7 @@ main() {
     # live-boot must be present before the kernel package triggers initramfs generation
     apt-get "${APT_OPTS[@]}" install -y --no-install-recommends live-boot live-config
 
-    log_info "Installing kernel and firmware (${build_arch})..."
-    apt-get "${APT_OPTS[@]}" install -y --no-install-recommends \
-        "${kernel_pkg}" "${headers_pkg}" initramfs-tools \
-        firmware-linux firmware-misc-nonfree
+    install_kernel_and_firmware "${build_arch}" "${kernel_pkg}" "${headers_pkg}"
 
     log_info "Installing bootloader and installer prerequisites (${build_arch})..."
     local core_infra_candidates=("grub2-common" "dosfstools" "parted" "cryptsetup" "rsync" "whiptail")

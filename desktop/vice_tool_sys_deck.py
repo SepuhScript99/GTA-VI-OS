@@ -52,10 +52,17 @@ def _read_text(path: str, limit: int = 8000) -> str:
 
 
 def _run_tool(cmd: list, timeout: int = 3) -> str:
-    if not shutil.which(cmd[0]):
+    sbin_path = os.pathsep.join([
+        os.environ.get("PATH", ""),
+        "/usr/local/sbin",
+        "/usr/sbin",
+        "/sbin",
+    ])
+    exe = shutil.which(cmd[0]) or shutil.which(cmd[0], path=sbin_path)
+    if not exe:
         return f"[{cmd[0]} not installed]"
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        res = subprocess.run([exe] + cmd[1:], capture_output=True, text=True, timeout=timeout)
         out = res.stdout.strip() or res.stderr.strip()
         return out or "(no output)"
     except Exception as exc:
@@ -96,6 +103,8 @@ class SysDeckWorker(QThread):
             return
 
         mem_parts = ["=== Memory Overview (free -h) ===\n" + _run_tool(["free", "-h"])]
+        if _run_tool(["zramctl"]) != "[zramctl not installed]":
+            mem_parts.append("=== ZRAM Devices (zramctl) ===\n" + _run_tool(["zramctl"]))
         swaps = _read_text("/proc/swaps", 2048)
         if swaps:
             mem_parts.append("=== Swap Devices (/proc/swaps) ===\n" + swaps)

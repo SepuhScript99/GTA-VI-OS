@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
 GTA VI OS (Vice OS) — Vice Turbo Mode & HUD.
-Real system booster and live telemetry HUD: CPU, RAM, Disk, Load, Temperature,
-picom compositor pause/resume toggle for VM smoothness, top-process renice,
-and swappiness/memory tuning via non-blocking QThread/pkexec.
+Real Linux system tuning & live telemetry HUD: per-core CPU, RAM/swap/ZRAM,
+root storage, live Disk/Net I/O rates, CPU frequency governor switcher
+(/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor via pkexec), picom
+compositor pause/resume toggle, sysctl vm.drop_caches=3 & swappiness tuning,
+and interactive top-process renice/terminate controls.
 Styled via vice_theme (Noto Sans CJK fallback).
 """
 
@@ -13,10 +15,11 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 
 from PyQt5.QtCore import QProcess, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
-    QAbstractItemView, QApplication, QGridLayout, QHBoxLayout,
+    QAbstractItemView, QApplication, QComboBox, QGridLayout, QHBoxLayout,
     QHeaderView, QLabel, QMainWindow, QMessageBox, QProgressBar,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 )
@@ -45,6 +48,18 @@ try:
 except ImportError:
     def log_info(msg: str) -> None:
         print(f"[INFO] {msg}")
+
+
+_SBIN_PATH = os.pathsep.join([
+    os.environ.get("PATH", ""),
+    "/usr/local/sbin",
+    "/usr/sbin",
+    "/sbin",
+])
+
+
+def _which(cmd: str) -> str:
+    return shutil.which(cmd) or shutil.which(cmd, path=_SBIN_PATH) or ""
 
 
 def _read_proc_meminfo() -> tuple:
@@ -95,48 +110,201 @@ def _read_swappiness() -> str:
         return "N/A"
 
 
+def _read_cpufreq_info() -> tuple:
+    """Return (active_governor, available_governors_list) from sysfs cpufreq."""
+    gov_path = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
+    avail_path = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors"
+    current = ""
+    avail = []
+    if os.path.isfile(gov_path):
+        try:
+            with open(gov_path, "r", encoding="utf-8") as fp:
+                current = fp.read().strip()
+        except OSError:
+            pass
+    if os.path.isfile(avail_path):
+        try:
+            with open(avail_path, "r", encoding="utf-8") as fp:
+                avail = [g for g in fp.read().split() if g.strip()]
+        except OSError:
+            pass
+    return current or "Host-managed (VM)", avail
+
+
+def _read_zram_stats() -> str:
+    """Read real ZRAM mm_stat compression telemetry if active."""
+    mm_paths = sorted(glob.glob("/sys/block/zram*/mm_stat"))
+    if not mm_paths:
+        return "Inactive"
+    orig_total = 0
+    compr_total = 0
+    active_devs = 0
+    for path in mm_paths:
+        try:
+            with open(path, "r", encoding="utf-8") as fp:
+                parts = fp.read().split()
+            if len(parts) >= 3:
+                orig_b = int(parts[0])
+                compr_b = int(parts[1])
+                if orig_b > 0 or compr_b > 0:
+                    active_devs += 1
+                    orig_total += orig_b
+                    compr_total += compr_b
+        except (OSError, ValueError):
+            continue
+    if active_devs == 0:
+        return f"{len(mm_paths)} dev(s), 0 MiB used"
+    orig_mib = orig_total / 1048576.0
+    compr_mib = compr_total / 1048576.0
+    ratio = (orig_total / compr_total) if compr_total > 0 else 1.0
+    return f"{compr_mib:.1f}/{orig_mib:.1f} MiB ({ratio:.1f}x)"
+
+
+def _read_proc_stat_cpus() -> tuple:
+    """Return (overall_idle_total_tuple, per_core_dict) from /proc/stat."""
+    overall = (0, 0)
+    cores = {}
+    try:
+        with open("/proc/stat", "r", encoding="utf-8") as fp:
+            for line in fp:
+                parts = line.split()
+                if not parts:
+                    continue
+                if parts[0] == "cpu":
+                    fields = [int(x) for x in parts[1:]]
+                    idle = fields[3] + (fields[4] if len(fields) > 4 else 0)
+                    overall = (idle, sum(fields))
+                elif parts[0].startswith("cpu") and parts[0][3:].isdigit():
+                    idx = int(parts[0][3:])
+                    fields = [int(x) for x in parts[1:]]
+                    idle = fields[3] + (fields[4] if len(fields) > 4 else 0)
+                    cores[idx] = (idle, sum(fields))
+    except OSError:
+        pass
+    return overall, cores
+
+
+def _read_proc_io_bytes() -> tuple:
+    """Return (disk_read_bytes, disk_write_bytes, net_rx_bytes, net_tx_bytes)."""
+    d_read, d_write = 0, 0
+    if psutil is not None:
+        try:
+            dio = psutil.disk_io_counters()
+            if dio is not None:
+                d_read, d_write = dio.read_bytes, dio.write_bytes
+        except Exception:
+            pass
+    if d_read == 0 and d_write == 0 and os.path.isfile("/proc/diskstats"):
+        try:
+            with open("/proc/diskstats", "r", encoding="utf-8") as fp:
+                for line in fp:
+                    parts = line.split()
+                    if len(parts) >= 10:
+                        dev = parts[2]
+                        if dev.startswith(("sd", "vd", "nvme", "mmcblk")) and not dev[-1].isdigit():
+                            d_read += int(parts[5]) * 512
+                            d_write += int(parts[9]) * 512
+        except (OSError, ValueError):
+            pass
+
+    n_rx, n_tx = 0, 0
+    if psutil is not None:
+        try:
+            nio = psutil.net_io_counters()
+            if nio is not None:
+                n_rx, n_tx = nio.bytes_recv, nio.bytes_sent
+        except Exception:
+            pass
+    if n_rx == 0 and n_tx == 0 and os.path.isfile("/proc/net/dev"):
+        try:
+            with open("/proc/net/dev", "r", encoding="utf-8") as fp:
+                for line in fp.readlines()[2:]:
+                    if ":" not in line:
+                        continue
+                    iface, rest = line.split(":", 1)
+                    if iface.strip() == "lo":
+                        continue
+                    cols = rest.split()
+                    if len(cols) >= 9:
+                        n_rx += int(cols[0])
+                        n_tx += int(cols[8])
+        except (OSError, ValueError):
+            pass
+    return d_read, d_write, n_rx, n_tx
+
+
 def _is_compositor_running() -> bool:
+    pgrep_bin = _which("pgrep")
+    if not pgrep_bin:
+        return False
     for proc_name in ("picom", "compton"):
-        if shutil.which("pgrep"):
-            res = subprocess.run(["pgrep", "-x", proc_name], capture_output=True)
-            if res.returncode == 0:
-                return True
+        res = subprocess.run([pgrep_bin, "-x", proc_name], capture_output=True)
+        if res.returncode == 0:
+            return True
     return False
 
 
 class TelemetryWorker(QThread):
-    """Collects CPU, RAM, Disk, Load, Temp, Compositor, and top processes off UI thread."""
+    """Collects per-core CPU, RAM/ZRAM, Disk/Net I/O, Load, Temp, Governor, and top processes."""
     snapshot_ready = pyqtSignal(dict)
 
-    def __init__(self):
+    def __init__(self, prev_state: dict = None):
         super().__init__()
         self._stopped = False
-        self._prev_idle = 0
-        self._prev_total = 0
+        self._state = prev_state if prev_state is not None else {}
 
     def stop(self) -> None:
         self._stopped = True
 
-    def _cpu_percent(self) -> int:
+    def _cpu_metrics(self) -> tuple:
         if psutil is not None:
             try:
-                return int(round(psutil.cpu_percent(interval=None)))
+                per_core = [int(round(v)) for v in psutil.cpu_percent(interval=None, percpu=True)]
+                if per_core:
+                    avg = int(round(sum(per_core) / len(per_core)))
+                    return avg, per_core
             except Exception:
                 pass
-        try:
-            with open("/proc/stat", "r", encoding="utf-8") as fp:
-                fields = [int(x) for x in fp.readline().split()[1:]]
-            idle = fields[3] + (fields[4] if len(fields) > 4 else 0)
-            total = sum(fields)
-            d_idle = idle - self._prev_idle
-            d_total = total - self._prev_total
-            self._prev_idle = idle
-            self._prev_total = total
+
+        overall, cores = _read_proc_stat_cpus()
+        prev_overall = self._state.get("overall_cpu", (0, 0))
+        prev_cores = self._state.get("per_core_cpu", {})
+        self._state["overall_cpu"] = overall
+        self._state["per_core_cpu"] = cores
+
+        avg = 0
+        if prev_overall[1] > 0:
+            d_idle = overall[0] - prev_overall[0]
+            d_total = overall[1] - prev_overall[1]
             if d_total > 0:
-                return max(0, min(100, int(round(100.0 * (1.0 - d_idle / d_total)))))
-        except Exception:
-            pass
-        return 0
+                avg = max(0, min(100, int(round(100.0 * (1.0 - d_idle / d_total)))))
+
+        per_core = []
+        for idx in sorted(cores):
+            cur_i, cur_t = cores[idx]
+            old_i, old_t = prev_cores.get(idx, (0, 0))
+            if old_t > 0 and cur_t > old_t:
+                pct = max(0, min(100, int(round(100.0 * (1.0 - (cur_i - old_i) / (cur_t - old_t))))))
+            else:
+                pct = 0
+            per_core.append(pct)
+        return avg, per_core
+
+    def _io_rates(self) -> tuple:
+        now = time.monotonic()
+        dr, dw, rx, tx = _read_proc_io_bytes()
+        prev_ts = self._state.get("io_ts", 0.0)
+        prev_vals = self._state.get("io_vals")
+        self._state["io_ts"] = now
+        self._state["io_vals"] = (dr, dw, rx, tx)
+        if not prev_vals or prev_ts <= 0.0 or now <= prev_ts:
+            return 0.0, 0.0, 0.0, 0.0
+        dt = now - prev_ts
+        r_mbs = max(0.0, (dr - prev_vals[0]) / dt / 1048576.0)
+        w_mbs = max(0.0, (dw - prev_vals[1]) / dt / 1048576.0)
+        rx_kbs = max(0.0, (rx - prev_vals[2]) / dt / 1024.0)
+        tx_kbs = max(0.0, (tx - prev_vals[3]) / dt / 1024.0)
+        return r_mbs, w_mbs, rx_kbs, tx_kbs
 
     def _top_processes(self) -> list:
         rows = []
@@ -156,10 +324,11 @@ class TelemetryWorker(QThread):
                 return procs[:15]
             except Exception:
                 pass
-        if shutil.which("ps"):
+        ps_bin = _which("ps")
+        if ps_bin:
             try:
                 res = subprocess.run(
-                    ["ps", "-eo", "pid,comm,%cpu,%mem,ni", "--sort=-%cpu", "--no-headers"],
+                    [ps_bin, "-eo", "pid,comm,%cpu,%mem,ni", "--sort=-%cpu", "--no-headers"],
                     capture_output=True, text=True, timeout=2
                 )
                 for line in res.stdout.splitlines()[:15]:
@@ -176,7 +345,8 @@ class TelemetryWorker(QThread):
     def run(self) -> None:
         if self._stopped:
             return
-        cpu_pct = self._cpu_percent()
+        cpu_pct, per_core = self._cpu_metrics()
+        r_mbs, w_mbs, rx_kbs, tx_kbs = self._io_rates()
         if psutil is not None:
             try:
                 vm = psutil.virtual_memory()
@@ -204,19 +374,28 @@ class TelemetryWorker(QThread):
         except Exception:
             load_str = "N/A"
 
+        gov_cur, gov_avail = _read_cpufreq_info()
         snap = {
             "cpu_pct": cpu_pct,
+            "per_core": per_core,
             "ram_used": ram_used,
             "ram_tot": ram_tot,
             "ram_pct": ram_pct,
             "swap_used": swap_used,
             "swap_tot": swap_tot,
+            "zram": _read_zram_stats(),
             "disk_used": disk_used,
             "disk_tot": disk_tot,
             "disk_pct": disk_pct,
+            "io_r": r_mbs,
+            "io_w": w_mbs,
+            "net_rx": rx_kbs,
+            "net_tx": tx_kbs,
             "load": load_str,
             "temp": _read_temperature(),
             "swappiness": _read_swappiness(),
+            "gov_cur": gov_cur,
+            "gov_avail": gov_avail,
             "picom_on": _is_compositor_running(),
             "procs": self._top_processes(),
         }
@@ -280,14 +459,16 @@ class ViceTurboApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Vice Turbo Mode & HUD — Vice OS")
-        self.resize(940, 650)
-        self.setMinimumSize(760, 520)
+        self.resize(980, 690)
+        self.setMinimumSize(780, 550)
         icon = load_tool_icon("vice-tool-turbo", "utilities-system-monitor")
         if not icon.isNull():
             self.setWindowIcon(icon)
 
         self._worker = None
         self._priv_worker = None
+        self._telemetry_state = {}
+        self._gov_populated = False
         self._init_ui()
 
         self._timer = QTimer(self)
@@ -307,13 +488,13 @@ class ViceTurboApp(QMainWindow):
 
         self._header = make_header(
             title="Vice Turbo Mode & Telemetry HUD",
-            subtitle="Compositor control, memory tuning, and live process prioritization",
+            subtitle="Live per-core telemetry, CPU governor, compositor control, ZRAM/cache & process tuning",
             icon_name="vice-tool-turbo",
             badge_text="CHECKING",
             badge_variant="neutral",
             parent=root,
         )
-        self._pause_picom_btn = make_button("Enable Turbo", variant="primary", parent=self._header)
+        self._pause_picom_btn = make_button("Pause Compositor", variant="primary", parent=self._header)
         self._pause_picom_btn.clicked.connect(self._pause_compositor)
         self._header.right_layout.addWidget(self._pause_picom_btn)
 
@@ -326,35 +507,54 @@ class ViceTurboApp(QMainWindow):
         grid = QGridLayout()
         grid.setSpacing(10)
 
-        self._cpu_lbl, self._cpu_bar = self._make_meter_card("CPU Utilization", grid, 0, 0)
-        self._ram_lbl, self._ram_bar = self._make_meter_card("Memory & Swap", grid, 0, 1)
-        self._disk_lbl, self._disk_bar = self._make_meter_card("Root Storage (/)", grid, 1, 0)
+        self._cpu_lbl, self._cpu_bar, self._cores_lbl = self._make_meter_card(
+            "CPU Utilization (Per-Core)", grid, 0, 0, extra="Sampling cores..."
+        )
+        self._ram_lbl, self._ram_bar, self._zram_lbl = self._make_meter_card(
+            "Memory, Swap && ZRAM", grid, 0, 1, extra="ZRAM: checking..."
+        )
+        self._disk_lbl, self._disk_bar, self._io_lbl = self._make_meter_card(
+            "Storage (/) && Live I/O", grid, 1, 0, extra="Disk R/W: - · Net: -"
+        )
 
-        info_card = make_card(title="Thermals, Load & VM Tuning", parent=root)
+        info_card = make_card(title="Thermals, Load && CPU Governor", parent=root)
         self._kernel_lbl = QLabel("Load: - · Temp: - · vm.swappiness: -", info_card)
         self._kernel_lbl.setWordWrap(True)
         self._kernel_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-weight: 600;")
         info_card.body_layout.addWidget(self._kernel_lbl)
+
+        self._gov_lbl = QLabel("CPU Governor: checking...", info_card)
+        self._gov_lbl.setWordWrap(True)
+        self._gov_lbl.setStyleSheet(f"color: {COLORS['accent_aqua']}; font-size: 12px; font-weight: 600;")
+        info_card.body_layout.addWidget(self._gov_lbl)
         grid.addWidget(info_card, 1, 1)
 
         layout.addLayout(grid)
 
-        # Memory & Swappiness Quick Tune Row
-        mem_row = QHBoxLayout()
-        mem_row.setSpacing(8)
-        drop_btn = make_button("Drop Page Cache (pkexec)", variant="secondary", parent=root)
+        # Kernel / CPU Governor / Memory Tuning Row
+        tune_row = QHBoxLayout()
+        tune_row.setSpacing(8)
+        self._gov_combo = QComboBox(root)
+        self._gov_combo.setMinimumWidth(150)
+        tune_row.addWidget(self._gov_combo)
+
+        self._gov_btn = make_button("Apply Governor (pkexec)", variant="primary", parent=root)
+        self._gov_btn.clicked.connect(self._apply_governor)
+        tune_row.addWidget(self._gov_btn)
+
+        drop_btn = make_button("Drop Caches (sysctl)", variant="secondary", parent=root)
         drop_btn.clicked.connect(self._drop_caches)
-        mem_row.addWidget(drop_btn)
+        tune_row.addWidget(drop_btn)
 
-        swap_zram_btn = make_button("Set vm.swappiness=100 (ZRAM)", variant="secondary", parent=root)
+        swap_zram_btn = make_button("Swappiness=100 (ZRAM)", variant="secondary", parent=root)
         swap_zram_btn.clicked.connect(lambda: self._set_swappiness(100))
-        mem_row.addWidget(swap_zram_btn)
+        tune_row.addWidget(swap_zram_btn)
 
-        swap_bal_btn = make_button("Set vm.swappiness=60 (Balanced)", variant="secondary", parent=root)
+        swap_bal_btn = make_button("Swappiness=60 (Balanced)", variant="secondary", parent=root)
         swap_bal_btn.clicked.connect(lambda: self._set_swappiness(60))
-        mem_row.addWidget(swap_bal_btn)
-        mem_row.addStretch(1)
-        layout.addLayout(mem_row)
+        tune_row.addWidget(swap_bal_btn)
+        tune_row.addStretch(1)
+        layout.addLayout(tune_row)
 
         proc_lbl = QLabel("Top Active Processes (select row to renice or terminate)", root)
         proc_lbl.setObjectName("SectionTitle")
@@ -374,7 +574,11 @@ class ViceTurboApp(QMainWindow):
         boost_btn.clicked.connect(lambda: self._renice_selected(-5))
         pact.addWidget(boost_btn)
 
-        throttle_btn = make_button("Throttle Priority (Nice +10)", variant="secondary", parent=root)
+        normal_btn = make_button("Normal (Nice 0)", variant="secondary", parent=root)
+        normal_btn.clicked.connect(lambda: self._renice_selected(0))
+        pact.addWidget(normal_btn)
+
+        throttle_btn = make_button("Throttle (Nice +10)", variant="secondary", parent=root)
         throttle_btn.clicked.connect(lambda: self._renice_selected(10))
         pact.addWidget(throttle_btn)
 
@@ -388,7 +592,7 @@ class ViceTurboApp(QMainWindow):
         pact.addWidget(self._action_status)
         layout.addLayout(pact)
 
-    def _make_meter_card(self, title: str, grid: QGridLayout, row: int, col: int) -> tuple:
+    def _make_meter_card(self, title: str, grid: QGridLayout, row: int, col: int, extra: str = "") -> tuple:
         card = make_card(title=title, parent=self)
         val_lbl = QLabel("Sampling...", card)
         val_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-weight: 600;")
@@ -396,37 +600,72 @@ class ViceTurboApp(QMainWindow):
         bar = QProgressBar(card)
         bar.setRange(0, 100)
         card.body_layout.addWidget(bar)
+        sub_lbl = QLabel(extra, card)
+        sub_lbl.setWordWrap(True)
+        sub_lbl.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 11px;")
+        card.body_layout.addWidget(sub_lbl)
         grid.addWidget(card, row, col)
-        return val_lbl, bar
+        return val_lbl, bar, sub_lbl
 
     def _poll_telemetry(self) -> None:
         if self._worker is not None and self._worker.isRunning():
             return
-        self._worker = TelemetryWorker()
+        self._worker = TelemetryWorker(self._telemetry_state)
         self._worker.snapshot_ready.connect(self._apply_snapshot)
         self._worker.start()
 
     def _apply_snapshot(self, s: dict) -> None:
-        self._cpu_lbl.setText(f"{s['cpu_pct']}% Active")
+        self._cpu_lbl.setText(f"{s['cpu_pct']}% Active ({len(s['per_core'])} cores)")
         self._cpu_bar.setValue(s["cpu_pct"])
+        if s["per_core"]:
+            core_str = "  ".join(f"C{i}:{v}%" for i, v in enumerate(s["per_core"][:16]))
+            if len(s["per_core"]) > 16:
+                core_str += f" (+{len(s['per_core']) - 16})"
+            self._cores_lbl.setText(core_str)
+        else:
+            self._cores_lbl.setText("Per-core counters unavailable.")
 
         self._ram_lbl.setText(
             f"{s['ram_used']:.2f} / {s['ram_tot']:.2f} GiB · Swap {s['swap_used']:.2f} / {s['swap_tot']:.2f} GiB"
         )
         self._ram_bar.setValue(s["ram_pct"])
+        self._zram_lbl.setText(f"ZRAM: {s['zram']}")
 
         self._disk_lbl.setText(f"{s['disk_used']:.1f} / {s['disk_tot']:.1f} GiB Used")
         self._disk_bar.setValue(s["disk_pct"])
+        self._io_lbl.setText(
+            f"Disk R {s['io_r']:.2f} / W {s['io_w']:.2f} MiB/s · Net ↓{s['net_rx']:.1f} / ↑{s['net_tx']:.1f} KiB/s"
+        )
 
         self._kernel_lbl.setText(
             f"Load: {s['load']}  ·  Temp: {s['temp']}  ·  vm.swappiness: {s['swappiness']}"
         )
+        self._gov_lbl.setText(f"CPU Governor: {s['gov_cur']}")
+
+        avail_govs = s.get("gov_avail") or []
+        if not self._gov_populated:
+            self._gov_populated = True
+            self._gov_combo.clear()
+            if avail_govs:
+                self._gov_combo.addItems(avail_govs)
+                idx = self._gov_combo.findText(s["gov_cur"])
+                if idx >= 0:
+                    self._gov_combo.setCurrentIndex(idx)
+                self._gov_combo.setEnabled(True)
+                self._gov_btn.setEnabled(True)
+            else:
+                self._gov_combo.addItem("Host-managed (VM)")
+                self._gov_combo.setEnabled(False)
+                self._gov_btn.setEnabled(False)
+                self._gov_btn.setToolTip("cpufreq sysfs is not exposed inside this VM")
 
         picom_on = bool(s["picom_on"])
+        self._pause_picom_btn.setEnabled(picom_on)
+        self._resume_picom_btn.setEnabled(not picom_on)
         if picom_on:
             self._header.set_badge("COMPOSITOR ON", "aqua")
         else:
-            self._header.set_badge("TURBO ACTIVE", "gold")
+            self._header.set_badge("COMPOSITOR PAUSED", "gold")
 
         selected_pid = self._selected_pid()
         self._proc_table.setRowCount(0)
@@ -467,13 +706,14 @@ class ViceTurboApp(QMainWindow):
         self._poll_telemetry()
 
     def _pause_compositor(self) -> None:
-        if not shutil.which("pkill"):
+        pkill_bin = _which("pkill")
+        if not pkill_bin:
             self._action_status.setText("pkill not available.")
             return
         for proc_name in ("picom", "compton"):
-            subprocess.run(["pkill", "-x", proc_name], capture_output=True)
+            subprocess.run([pkill_bin, "-x", proc_name], capture_output=True)
         self._action_status.setStyleSheet(f"color: {COLORS['accent_gold']}; font-weight: 600;")
-        self._action_status.setText("Turbo Mode ON: compositor paused for smoother frame pacing.")
+        self._action_status.setText("Compositor paused (picom stopped) to reduce desktop frame overhead.")
         log_info("Vice Turbo paused picom/compton")
         self._poll_telemetry()
 
@@ -481,36 +721,58 @@ class ViceTurboApp(QMainWindow):
         if _is_compositor_running():
             self._action_status.setText("Compositor is already running.")
             return
-        comp_bin = shutil.which("picom") or shutil.which("compton")
+        comp_bin = _which("picom") or _which("compton")
         if not comp_bin:
             self._action_status.setText("picom/compton is not installed.")
             return
         args = ["-b"]
-        if os.path.isfile("/etc/xdg/picom.conf"):
+        user_conf = os.path.expanduser("~/.config/picom.conf")
+        if os.path.isfile(user_conf):
+            args.extend(["--config", user_conf])
+        elif os.path.isfile("/etc/xdg/picom.conf"):
             args.extend(["--config", "/etc/xdg/picom.conf"])
         elif os.path.isfile("/etc/xdg/compton.conf"):
             args.extend(["--config", "/etc/xdg/compton.conf"])
-        if os.path.basename(comp_bin) == "picom":
+        elif os.path.basename(comp_bin) == "picom":
             args.extend(["--backend", "xrender", "--no-fading-openclose"])
         QProcess.startDetached(comp_bin, args, os.path.expanduser("~"))
         self._action_status.setStyleSheet(f"color: {COLORS['accent_aqua']}; font-weight: 600;")
-        self._action_status.setText("Resumed compositor.")
+        self._action_status.setText("Resumed picom compositor.")
         QTimer.singleShot(500, self._poll_telemetry)
+
+    def _apply_governor(self) -> None:
+        gov = self._gov_combo.currentText().strip()
+        if not gov or gov.startswith("Host-managed"):
+            return
+        pkexec_bin = _which("pkexec")
+        if not pkexec_bin:
+            self._action_status.setText("pkexec required to switch CPU governor.")
+            return
+        script = (
+            'for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do '
+            '[ -w "$g" ] && printf "%s" "$1" > "$g"; '
+            'done'
+        )
+        self._run_priv_async(
+            [pkexec_bin, "bash", "-c", script, "vice-gov", gov],
+            f"CPU governor switched to '{gov}'.",
+        )
 
     def _renice_selected(self, nice_val: int) -> None:
         pid = self._selected_pid()
         if pid is None:
             self._action_status.setText("Select a process first.")
             return
-        if not shutil.which("renice"):
+        renice_bin = _which("renice")
+        if not renice_bin:
             self._action_status.setText("renice binary missing.")
             return
-        res = subprocess.run(["renice", "-n", str(nice_val), "-p", str(pid)], capture_output=True, text=True)
+        res = subprocess.run([renice_bin, "-n", str(nice_val), "-p", str(pid)], capture_output=True, text=True)
         if res.returncode == 0:
             self._on_priv_done(True, f"Set PID {pid} nice={nice_val}.")
-        elif shutil.which("pkexec"):
+        elif _which("pkexec"):
             self._run_priv_async(
-                ["pkexec", "renice", "-n", str(nice_val), "-p", str(pid)],
+                [_which("pkexec"), renice_bin, "-n", str(nice_val), "-p", str(pid)],
                 f"Set PID {pid} nice={nice_val}.",
             )
         else:
@@ -532,9 +794,10 @@ class ViceTurboApp(QMainWindow):
             os.kill(pid, signal.SIGTERM)
             self._on_priv_done(True, f"Sent SIGTERM to PID {pid}.")
         except PermissionError:
-            if shutil.which("pkexec"):
+            pkexec_bin = _which("pkexec")
+            if pkexec_bin:
                 self._run_priv_async(
-                    ["pkexec", "kill", "-TERM", str(pid)],
+                    [pkexec_bin, "kill", "-TERM", str(pid)],
                     f"Sent SIGTERM to PID {pid}.",
                 )
             else:
@@ -543,20 +806,24 @@ class ViceTurboApp(QMainWindow):
             self._on_priv_done(False, f"Error: {exc}")
 
     def _drop_caches(self) -> None:
-        if not shutil.which("pkexec"):
+        pkexec_bin = _which("pkexec")
+        if not pkexec_bin:
             self._action_status.setText("pkexec required for privileged cache drop.")
             return
+        sysctl_bin = _which("sysctl") or "sysctl"
         self._run_priv_async(
-            ["pkexec", "sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"],
-            "Dropped Linux page/inode caches.",
+            [pkexec_bin, "sh", "-c", f"sync && {sysctl_bin} -w vm.drop_caches=3"],
+            "Dropped Linux page/dentry/inode caches (vm.drop_caches=3).",
         )
 
     def _set_swappiness(self, val: int) -> None:
-        if not shutil.which("pkexec"):
+        pkexec_bin = _which("pkexec")
+        if not pkexec_bin:
             self._action_status.setText("pkexec required for sysctl tuning.")
             return
+        sysctl_bin = _which("sysctl") or "sysctl"
         self._run_priv_async(
-            ["pkexec", "sysctl", "-w", f"vm.swappiness={int(val)}"],
+            [pkexec_bin, sysctl_bin, "-w", f"vm.swappiness={int(val)}"],
             f"vm.swappiness set to {int(val)}.",
         )
 

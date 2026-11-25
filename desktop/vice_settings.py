@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
 """
 GTA VI OS (Vice OS) Settings Center.
-Unified system configuration center providing 29 configuration pages for desktop,
-system, security, and hardware, styled with the Leonida Coastal Dusk design system.
+Unified system configuration center providing 29 live inline configuration pages
+for desktop, system, security, and hardware, styled with the Leonida Coastal Dusk
+design system.
 """
 
+import argparse
 import os
 import platform
 import shutil
 import subprocess
 import sys
 
-from PyQt5.QtCore import QProcess, QThread, Qt, pyqtSignal
+from PyQt5.QtCore import QSize, QThread, Qt, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QIcon
 from PyQt5.QtWidgets import (
     QApplication,
-    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -38,19 +40,18 @@ sys.path.insert(0, "/opt/vice-os/lib")
 sys.path.insert(0, "/opt/vice-os")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from python.vice_utils import log_error, log_info  # noqa: E402
+from vice_settings_pages import INLINE_PAGE_CLASSES  # noqa: E402
 from vice_theme import (  # noqa: E402
     COLORS,
     build_app_qss,
     configure_cjk_fonts,
     configure_icon_theme,
-    make_badge,
     resolve_icon,
 )
 
 STYLE_FILE = "/opt/vice-os/style.qss"
-SETTINGS_WIDTH = 940
-SETTINGS_HEIGHT = 640
+SETTINGS_WIDTH = 1080
+SETTINGS_HEIGHT = 680
 
 PAGE_NAMES = [
     "Display", "Sound", "Network", "Users", "Power", "About",
@@ -64,14 +65,19 @@ PAGE_NAMES = [
 _c = COLORS
 STYLE = build_app_qss(
     f"""
-QListWidget#SettingsNav {{
+QWidget#SettingsSidebar {{
     background-color: {_c['bg_surface']};
     border: 1px solid {_c['border']};
     border-radius: 12px;
-    padding: 6px;
+}}
+QListWidget#SettingsNav {{
+    background-color: transparent;
+    border: none;
+    padding: 2px 4px;
+    outline: none;
 }}
 QListWidget#SettingsNav::item {{
-    padding: 7px 11px;
+    padding: 7px 10px;
     border-radius: 9px;
     color: {_c['text_secondary']};
 }}
@@ -552,43 +558,13 @@ class DriversPage(QWidget):
             self._scan()
 
 
-PAGE_APPS = {
-    "Display": "vice_display_manager.py",
-    "Sound": "vice_audio_manager.py",
-    "Network": "vice_wifi_connect.py",
-    "Users": "vice_user_manager.py",
-    "Power": "vice_power_manager.py",
-    "Firewall": "vice_firewall_manager.py",
-    "Printers": "vice_printer_manager.py",
-    "Date & Time": "vice_tool_clock_sync.py",
-    "Accessibility": "vice_accessibility.py",
-    "Storage": "vice_disk_manager.py",
-    "Updates": "vice_update_manager.py",
-    "Bluetooth": "vice_bluetooth_manager.py",
-    "Security": "vice_tool_cyber_deck.py",
-    "Theme": "vice_theme_manager.py",
-    "Keyboard": "vice_keyboard_shortcuts.py",
-    "Mouse": "vice_mouse_settings.py",
-    "Cleanup": "vice_cleanup.py",
-    "Kernel": "vice_kernel_manager.py",
-    "Startup": "vice_startup_apps.py",
-    "VPN": "vice_tool_net_shield.py",
-    "SSH": "vice_ssh_manager.py",
-    "Wallpaper": "vice_wallpaper_picker.py",
-    "Network Shares": "vice_network_shares.py",
-    "Cron": "vice_cron_manager.py",
-    "Backup": "vice_backup_scheduler.py",
-    "USB": "vice_usb_manager.py",
-}
-
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
-
 _PAGE_ICONS = {
     "Display": ("preferences-desktop-display", "video-display"),
     "Sound": ("audio-volume-high", "multimedia-volume-control"),
     "Network": ("network-wireless", "network-wired"),
     "Users": ("system-users", "user-info"),
     "Power": ("battery", "battery-full"),
+    "About": ("dialog-information", "vice-debian-gta6"),
     "Firewall": ("security-high", "network-firewall"),
     "Printers": ("printer", "preferences-desktop-printer"),
     "Date & Time": ("vice-tool-clock-sync", "preferences-system-time", "x-office-calendar"),
@@ -600,141 +576,19 @@ _PAGE_ICONS = {
     "Theme": ("preferences-desktop-theme", "applications-graphics"),
     "Keyboard": ("input-keyboard", "preferences-desktop-keyboard"),
     "Mouse": ("input-mouse", "preferences-desktop-mouse"),
+    "Wallpaper": ("preferences-desktop-wallpaper", "image-x-generic"),
+    "Startup": ("preferences-system", "system-run"),
     "Cleanup": ("edit-clear", "user-trash"),
     "Kernel": ("applications-system", "utilities-system-monitor"),
-    "Startup": ("preferences-system", "system-run"),
     "VPN": ("vice-tool-net-shield", "network-vpn", "network-server"),
     "SSH": ("network-server", "utilities-terminal"),
-    "Wallpaper": ("preferences-desktop-wallpaper", "image-x-generic"),
     "Network Shares": ("folder-remote", "network-workgroup"),
     "Cron": ("appointment-new", "x-office-calendar"),
     "Backup": ("document-save", "drive-harddisk"),
     "USB": ("drive-removable-media", "media-removable"),
+    "Diagnostics": ("utilities-system-monitor", "network-transmit-receive"),
+    "Drivers": ("preferences-desktop", "vice-tool-hw-autodetect"),
 }
-
-
-_PAGE_SUMMARIES = {
-    "Display": ("Monitors, resolution, scaling & refresh rate", ["Multi-head layout & DPI adjustment", "Live xrandr preview and persistence"]),
-    "Sound": ("PipeWire output devices, sink levels & mixer", ["Adjust volume & default playback devices", "Inspect AC97/PipeWire audio streams"]),
-    "Network": ("Wi-Fi profiles, Ethernet & wireless scan", ["Connect to secured wireless networks", "Inspect link state and DNS settings"]),
-    "Users": ("Local user accounts, groups & passwords", ["Manage sudo privileges and accounts", "Configure session user profiles"]),
-    "Power": ("Battery telemetry, suspend & power profile", ["Inspect AC/battery charge status", "Configure sleep and lock policies"]),
-    "Firewall": ("UFW / nftables packet rules & ports", ["Enable/disable host firewall safely", "Allow or deny incoming service ports"]),
-    "Printers": ("CUPS print queues & local printer setup", ["Discover USB and network printers", "Manage active print jobs"]),
-    "Date & Time": ("World clock, IANA timezone & host sync", ["Sync clock with host & geolocation timezone", "Inspect Chrony NTP synchronization"]),
-    "Accessibility": ("Visual contrast, font scaling & assist tools", ["Configure screen readability preferences", "Adjust keyboard & pointer accessibility"]),
-    "Storage": ("Disk partitions, SMART health & mounts", ["Inspect drives, partitions and filesystems", "Mount and check removable storage"]),
-    "Updates": ("Debian Bookworm APT updates & security fixes", ["Check available system package updates", "Apply security patches cleanly"]),
-    "Bluetooth": ("Bluetooth adapter power & device pairing", ["Scan and pair nearby audio/HID devices", "Manage trusted Bluetooth peripherals"]),
-    "Security": ("Vice Cyber Audit Deck & system hardening", ["Run ethical security & port audits", "Inspect listening services and file integrity"]),
-    "Theme": ("Leonida Dusk visual profile & icon theme", ["Preview GTK3, Qt5 and Openbox styles", "Customize desktop theme presets"]),
-    "Keyboard": ("Keymap layouts, shortcuts & repeat rate", ["Switch international keyboard layouts", "Review desktop & Openbox bindings"]),
-    "Mouse": ("Pointer speed, acceleration & touchpad", ["Tune cursor sensitivity and scrolling", "Configure left/right button layout"]),
-    "Cleanup": ("APT cache, temp files & disk reclaim", ["Safely clear package caches and logs", "Reclaim free workspace storage"]),
-    "Kernel": ("Linux kernel modules, sysctl & parameters", ["Inspect loaded modules and kernel version", "Review live sysctl tuning"]),
-    "Startup": ("Session autostart apps & background services", ["Control applications launched at login", "Keep boot fast and uncluttered"]),
-    "VPN": ("OpenVPN, WireGuard, Tor & Secure DNS", ["Import .ovpn / .conf profiles safely", "Toggle Tor, Privoxy & encrypted DNS"]),
-    "SSH": ("OpenSSH client/server keys & connections", ["Manage SSH keys and known hosts", "Toggle and audit SSH service access"]),
-    "Wallpaper": ("Leonida coastal dusk backgrounds", ["Select or preview desktop wallpapers", "Sync wallpaper across PCManFM & nitrogen"]),
-    "Network Shares": ("SMB/CIFS & SSHFS remote mounts", ["Browse and mount shared folders", "Manage persistent remote shares"]),
-    "Cron": ("Scheduled user & system cron jobs", ["Inspect and edit recurring timers", "Review Vice TimeSync & maintenance jobs"]),
-    "Backup": ("Timeshift snapshots & archive jobs", ["Create and schedule system backups", "Protect key user config directories"]),
-    "USB": ("Attached USB devices & auto-mount rules", ["Inspect connected USB hubs and drives", "Configure safe removable media mounting"]),
-}
-
-
-class AppLauncherPage(QWidget):
-    """A settings page presenting a structured card to launch its dedicated tool."""
-
-    def __init__(self, page_name, app_file):
-        super().__init__()
-        c = COLORS
-        layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignCenter)
-        layout.setContentsMargins(28, 24, 28, 24)
-
-        card = QFrame(self)
-        card.setObjectName("Card")
-        card.setMaximumWidth(540)
-        card.setMinimumWidth(440)
-        cl = QVBoxLayout(card)
-        cl.setContentsMargins(28, 26, 28, 26)
-        cl.setSpacing(14)
-
-        top_row = QHBoxLayout()
-        top_row.setSpacing(14)
-
-        icon_badge = QLabel(card)
-        icon_badge.setAlignment(Qt.AlignCenter)
-        icon_badge.setFixedSize(64, 64)
-        icon_badge.setStyleSheet(
-            f"background: {c['bg_elevated']}; border: 1px solid {c['border']}; border-radius: 14px;"
-        )
-        icon_names = _PAGE_ICONS.get(page_name, ("preferences-system", "applications-other"))
-        ic = _theme_icon(*icon_names, "preferences-system")
-        if not ic.isNull():
-            icon_badge.setPixmap(ic.pixmap(42, 42))
-        else:
-            icon_badge.setText(page_name[:2].upper())
-        top_row.addWidget(icon_badge)
-
-        title_col = QVBoxLayout()
-        title_col.setSpacing(4)
-        pretty = app_file.replace("vice_tool_", "").replace("vice_", "").replace(".py", "").replace("_", " ").title()
-        app_name = QLabel(f"Vice {pretty}", card)
-        app_name.setWordWrap(True)
-        app_name.setStyleSheet(f"color: {c['text_primary']}; font-size: 18px; font-weight: bold;")
-        title_col.addWidget(app_name)
-
-        summary_text, bullets = _PAGE_SUMMARIES.get(
-            page_name,
-            (f"Configure {page_name.lower()} preferences", [f"Dedicated {page_name} configuration module"]),
-        )
-        sub_lbl = QLabel(summary_text, card)
-        sub_lbl.setStyleSheet(f"color: {c['text_secondary']}; font-size: 12px;")
-        sub_lbl.setWordWrap(True)
-        title_col.addWidget(sub_lbl)
-        top_row.addLayout(title_col, 1)
-
-        badge = make_badge(page_name.upper(), "coral", card)
-        top_row.addWidget(badge, alignment=Qt.AlignTop)
-        cl.addLayout(top_row)
-
-        sep = QFrame(card)
-        sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background-color: {c['border']}; border: none;")
-        cl.addWidget(sep)
-
-        for bullet in bullets:
-            b_lbl = QLabel(f"•  {bullet}", card)
-            b_lbl.setStyleSheet(f"color: {c['text_secondary']}; font-size: 12px;")
-            b_lbl.setWordWrap(True)
-            cl.addWidget(b_lbl)
-
-        cl.addSpacing(4)
-        btn_row = QHBoxLayout()
-        open_btn = QPushButton(f"Open {page_name} Settings".replace("&", "&&"), card)
-        open_btn.setObjectName("PrimaryButton")
-        open_btn.clicked.connect(lambda: self._launch(app_file))
-        btn_row.addWidget(open_btn)
-        btn_row.addStretch(1)
-        hint = QLabel(f"Module: {app_file}", card)
-        hint.setStyleSheet(f"color: {c['text_muted']}; font-size: 11px;")
-        btn_row.addWidget(hint)
-        cl.addLayout(btn_row)
-
-        layout.addWidget(card, alignment=Qt.AlignCenter)
-
-    @staticmethod
-    def _launch(app_file):
-        path = os.path.join(APP_DIR, app_file)
-        if not os.path.exists(path) and app_file == "vice_tool_clock_sync.py":
-            path = os.path.join(APP_DIR, "vice_calendar.py")
-        if os.path.exists(path):
-            QProcess.startDetached(sys.executable, [path])
-            log_info(f"Settings launched: {os.path.basename(path)}")
-        else:
-            log_error(f"Settings app missing: {path}")
 
 
 class AboutPage(QWidget):
@@ -814,54 +668,85 @@ class AboutPage(QWidget):
 
 
 class SettingsWindow(QWidget):
-    def __init__(self):
+    def __init__(self, initial_page: str = None):
         super().__init__()
         self.setWindowTitle("Vice OS Settings")
         win_icon = _theme_icon("preferences-system", "vice-debian-gta6", "vice-app")
         if not win_icon.isNull():
             self.setWindowIcon(win_icon)
-        self.setFixedSize(SETTINGS_WIDTH, SETTINGS_HEIGHT)
+        self.resize(SETTINGS_WIDTH, SETTINGS_HEIGHT)
+        self.setMinimumSize(860, 560)
         self.setStyleSheet(STYLE)
-        self._init_ui()
+        self._init_ui(initial_page=initial_page)
 
-    def _init_ui(self):
+    def _init_ui(self, initial_page: str = None):
         root = QHBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
 
-        self._nav = QListWidget()
+        sidebar = QWidget(self)
+        sidebar.setObjectName("SettingsSidebar")
+        sidebar.setFixedWidth(220)
+        sl = QVBoxLayout(sidebar)
+        sl.setContentsMargins(8, 8, 8, 8)
+        sl.setSpacing(6)
+
+        self._sidebar_search = QLineEdit(sidebar)
+        self._sidebar_search.setPlaceholderText("Filter settings...")
+        self._sidebar_search.setClearButtonEnabled(True)
+        self._sidebar_search.textChanged.connect(self._filter_nav)
+        sl.addWidget(self._sidebar_search)
+
+        self._nav = QListWidget(sidebar)
         self._nav.setObjectName("SettingsNav")
-        self._nav.setFixedWidth(186)
-        for name in PAGE_NAMES:
-            self._nav.addItem(name)
-        self._nav.currentRowChanged.connect(self._switch_page)
-        root.addWidget(self._nav)
+        self._nav.setIconSize(QSize(18, 18))
+        sl.addWidget(self._nav, 1)
+        root.addWidget(sidebar)
 
         self._stack = QStackedWidget()
         self._stack.setObjectName("SettingsStack")
         root.addWidget(self._stack, 1)
 
-        for name in PAGE_NAMES:
+        target_row = 0
+        for idx, name in enumerate(PAGE_NAMES):
+            icon_names = _PAGE_ICONS.get(name, ("preferences-system",))
+            ic = _theme_icon(*icon_names, "preferences-system")
+            item = QListWidgetItem(ic, name) if not ic.isNull() else QListWidgetItem(name)
+            item.setData(Qt.UserRole, idx)
+            self._nav.addItem(item)
+
             if name == "Diagnostics":
-                self._stack.addWidget(DiagnosticsPage())
+                page = DiagnosticsPage()
             elif name == "Drivers":
-                self._stack.addWidget(DriversPage())
+                page = DriversPage()
             elif name == "About":
-                self._stack.addWidget(AboutPage())
-            elif name in PAGE_APPS:
-                self._stack.addWidget(AppLauncherPage(name, PAGE_APPS[name]))
+                page = AboutPage()
+            elif name in INLINE_PAGE_CLASSES:
+                page = INLINE_PAGE_CLASSES[name]()
             else:
-                placeholder = QWidget()
-                pl = QVBoxLayout(placeholder)
-                lbl = QLabel(f"{name} settings coming soon.")
-                lbl.setAlignment(Qt.AlignCenter)
-                lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 14px;")
-                pl.addWidget(lbl)
-                self._stack.addWidget(placeholder)
+                page = AboutPage()
+            self._stack.addWidget(page)
 
-        self._nav.setCurrentRow(0)
+            if initial_page and name.lower() == initial_page.strip().lower():
+                target_row = idx
 
-    def _switch_page(self, index):
+        self._nav.currentItemChanged.connect(self._on_nav_changed)
+        self._nav.setCurrentRow(target_row)
+
+    def _filter_nav(self, text: str):
+        q = text.strip().lower()
+        for i in range(self._nav.count()):
+            it = self._nav.item(i)
+            it.setHidden(bool(q and q not in it.text().lower()))
+
+    def _on_nav_changed(self, current: QListWidgetItem, _previous):
+        if current is None:
+            return
+        idx = current.data(Qt.UserRole)
+        if idx is not None:
+            self._switch_page(int(idx))
+
+    def _switch_page(self, index: int):
         self._stack.setCurrentIndex(index)
         page = self._stack.widget(index)
         if page is not None and hasattr(page, "on_activated"):
@@ -870,6 +755,8 @@ class SettingsWindow(QWidget):
     def closeEvent(self, event):
         for idx in range(self._stack.count()):
             page = self._stack.widget(idx)
+            if hasattr(page, "stop_workers"):
+                page.stop_workers()
             worker = getattr(page, "_worker", None)
             if worker is not None:
                 if hasattr(worker, "stop"):
@@ -886,10 +773,14 @@ class SettingsWindow(QWidget):
 
 
 def main():
-    app = QApplication(sys.argv)
+    parser = argparse.ArgumentParser(description="Vice OS Settings Center")
+    parser.add_argument("--page", default=None, help="Initial settings page name")
+    args, qt_args = parser.parse_known_args()
+
+    app = QApplication([sys.argv[0]] + qt_args)
     configure_icon_theme()
     configure_cjk_fonts(app)
-    win = SettingsWindow()
+    win = SettingsWindow(initial_page=args.page)
     win.show()
     sys.exit(app.exec_())
 

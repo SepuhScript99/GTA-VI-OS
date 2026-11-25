@@ -169,13 +169,14 @@ is_ignored_iface() {
     return 1
 }
 
-probe_hardware_modules() {
+probe_vm_guest_modules() {
     local platform="$1"
     if ! command -v modprobe >/dev/null 2>&1; then
         return 0
     fi
 
-    # Probe hypervisor guest kernel modules cleanly if present (never disturb snd-intel8x0)
+    # Probe hypervisor guest kernel modules cleanly if present; let native
+    # systemd-udevd handle all PCI/USB hardware driver binding automatically.
     local vm_mods=()
     case "$platform" in
         oracle)
@@ -196,46 +197,6 @@ probe_hardware_modules() {
     for mod in "${vm_mods[@]}"; do
         modprobe -q "$mod" >/dev/null 2>&1 || true
     done
-
-    # Bind drivers for unbound PCI Network/Audio/I2C-input devices via modalias
-    local dev cls alias
-    if [ -d /sys/bus/pci/devices ]; then
-        for dev in /sys/bus/pci/devices/*; do
-            [ -d "$dev" ] || continue
-            [ -e "$dev/driver" ] && continue
-            [ -r "$dev/class" ] || continue
-            [ -r "$dev/modalias" ] || continue
-            cls=$(tr -d '[:space:]' < "$dev/class" 2>/dev/null || true)
-            case "$cls" in
-                0x02*|0x0403*|0x0c80*|0x0d*)
-                    alias=$(tr -d '[:space:]' < "$dev/modalias" 2>/dev/null || true)
-                    if [ -n "$alias" ]; then
-                        modprobe -b -q "$alias" >/dev/null 2>&1 || true
-                    fi
-                    ;;
-            esac
-        done
-    fi
-
-    # Bind drivers for unbound USB Network/RNDIS/Wireless/HID devices via modalias
-    local ucls
-    if [ -d /sys/bus/usb/devices ]; then
-        for dev in /sys/bus/usb/devices/*; do
-            [ -d "$dev" ] || continue
-            [ -e "$dev/driver" ] && continue
-            [ -r "$dev/bInterfaceClass" ] || continue
-            [ -r "$dev/modalias" ] || continue
-            ucls=$(tr -d '[:space:]' < "$dev/bInterfaceClass" 2>/dev/null || true)
-            case "$ucls" in
-                02|03|e0|ef)
-                    alias=$(tr -d '[:space:]' < "$dev/modalias" 2>/dev/null || true)
-                    if [ -n "$alias" ]; then
-                        modprobe -b -q "$alias" >/dev/null 2>&1 || true
-                    fi
-                    ;;
-            esac
-        done
-    fi
 }
 
 unblock_and_settle() {
@@ -249,7 +210,7 @@ unblock_and_settle() {
         udevadm settle --timeout=5 >/dev/null 2>&1 || true
     fi
 
-    probe_hardware_modules "$platform"
+    probe_vm_guest_modules "$platform"
 
     if command -v udevadm >/dev/null 2>&1; then
         udevadm settle --timeout=3 >/dev/null 2>&1 || true
@@ -259,7 +220,7 @@ unblock_and_settle() {
         rfkill unblock all >/dev/null 2>&1 || true
     fi
 
-    log_info "Hardware settled and wireless radios unblocked."
+    log_info "Native udev hardware settled and wireless radios unblocked."
 }
 
 unit_is_installed() {

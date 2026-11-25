@@ -65,6 +65,19 @@ find_terminal_bin() {
     return 1
 }
 
+needs_root_exec() {
+    local base
+    base=$(basename "$1")
+    case "$base" in
+        iotop-c|dmidecode|powertop|ufw|rkhunter|arp-scan|aa-status|lshw|iftop|nethogs|testdisk|atop|netdiscover|wifite|btscanner|iptraf-ng|nwipe|efibootmgr|lynis|chkrootkit|unhide|bully|hcxdumptool|mdk3|mdk4|reaver|p0f|netsniff-ng|yersinia|t50|masscan|zmap)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 needs_args_prompt() {
     local base
     base=$(basename "$1")
@@ -79,18 +92,19 @@ needs_args_prompt() {
 }
 
 run_help_and_prompt() {
-    local bin="$1"
+    local base_cmd=("$@")
+    local cmd_label="${base_cmd[*]}"
     local rc=0
     local help_out=""
     local h_out=""
 
     set +e
-    help_out=$("$bin" --help </dev/null 2>&1)
+    help_out=$("${base_cmd[@]}" --help </dev/null 2>&1)
     rc=$?
     if [ "$rc" -eq 0 ] && [ -n "$help_out" ]; then
         printf '%s\n' "$help_out" | head -n 36
     else
-        h_out=$("$bin" -h </dev/null 2>&1)
+        h_out=$("${base_cmd[@]}" -h </dev/null 2>&1)
         if [ -n "$h_out" ] && ! printf '%s\n' "$h_out" | grep -qiE 'invalid option|unrecognized option|unknown option'; then
             printf '%s\n' "$h_out" | head -n 36
         elif [ -n "$help_out" ]; then
@@ -104,8 +118,13 @@ run_help_and_prompt() {
         return 0
     fi
 
+    local prefix=()
+    if needs_root_exec "${base_cmd[0]}" && [ "$(id -u)" -ne 0 ] && [ "${VICE_NO_SUDO:-0}" != "1" ] && command -v sudo >/dev/null 2>&1; then
+        prefix=(sudo)
+    fi
+
     while true; do
-        printf '\n%bArgs for "%s" ("sh" for shell, Enter to close): %b' "$PEACH" "$bin" "$RESET"
+        printf '\n%bArgs for "%s" ("sh" for shell, Enter to close): %b' "$PEACH" "$cmd_label" "$RESET"
         local user_line=""
         if ! read -r user_line; then
             break
@@ -121,7 +140,11 @@ run_help_and_prompt() {
         read -r -a extra_args <<< "$user_line"
         printf '\n'
         set +e
-        "$bin" "${extra_args[@]}"
+        if [ "${#prefix[@]}" -gt 0 ]; then
+            "${prefix[@]}" "${base_cmd[@]}" "${extra_args[@]}"
+        else
+            "${base_cmd[@]}" "${extra_args[@]}"
+        fi
         rc=$?
         set -e
         printf '\n%b[exit %d]%b\n' "$MUTED" "$rc" "$RESET"
@@ -194,6 +217,19 @@ main() {
         set -e
         cleanup_tty
         exit "$rc"
+    fi
+
+    if [ "${#cmd_args[@]}" -eq 3 ] && [ "${cmd_args[1]}" = "-m" ] && needs_args_prompt "${cmd_args[2]}"; then
+        set +e
+        run_help_and_prompt "${cmd_args[@]}"
+        rc=$?
+        set -e
+        cleanup_tty
+        exit "$rc"
+    fi
+
+    if needs_root_exec "${cmd_args[0]}" && [ "$(id -u)" -ne 0 ] && [ "${VICE_NO_SUDO:-0}" != "1" ] && command -v sudo >/dev/null 2>&1; then
+        cmd_args=(sudo "${cmd_args[@]}")
     fi
 
     set +e

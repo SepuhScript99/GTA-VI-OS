@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 GTA VI OS (Vice OS) — Leonida FM Radio.
-Real PipeWire/mpv-backed audio & internet radio player featuring Leonida FM
-stations, custom stream URLs, local audio playback, live track metadata via
-mpv IPC, volume control, and clean process shutdown on close.
+Real PipeWire/mpv-backed audio & internet radio player featuring verified HTTPS
+Leonida FM stations, custom stream URLs, local music folder/file playlist
+playback with Prev/Next track navigation, live track metadata via mpv IPC,
+volume control, and clean process shutdown on close.
 Styled via vice_theme (Noto Sans CJK fallback).
 """
 
@@ -47,6 +48,8 @@ except ImportError:
         print(f"[ERROR] {msg}", file=sys.stderr)
 
 
+AUDIO_EXTS = (".mp3", ".flac", ".ogg", ".wav", ".m4a", ".opus", ".aac")
+
 STATIONS = [
     {
         "name": "Vice Sunset 104.5 FM",
@@ -78,6 +81,21 @@ STATIONS = [
         "genre": "Jazz · Lounge Noir",
         "url": "https://ice2.somafm.com/secretagent-128-mp3",
     },
+    {
+        "name": "DEF CON Cyber Ops FM",
+        "genre": "Electronic · Hacker Lounge",
+        "url": "https://ice2.somafm.com/defcon-128-mp3",
+    },
+    {
+        "name": "Coral Bay Lush 95.1",
+        "genre": "Dream Pop · Ambient Vocals",
+        "url": "https://ice2.somafm.com/lush-128-mp3",
+    },
+    {
+        "name": "PopTron Vice 107.9",
+        "genre": "Electropop · Indie Synth",
+        "url": "https://ice2.somafm.com/poptron-128-mp3",
+    },
 ]
 
 
@@ -87,8 +105,8 @@ class LeonidaRadioApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Leonida FM Radio — Vice OS")
-        self.resize(780, 580)
-        self.setMinimumSize(640, 480)
+        self.resize(820, 620)
+        self.setMinimumSize(660, 500)
         icon = load_tool_icon("vice-tool-radio", "multimedia-player")
         if not icon.isNull():
             self.setWindowIcon(icon)
@@ -97,8 +115,10 @@ class LeonidaRadioApp(QMainWindow):
         self._socket_path = os.path.join(
             tempfile.gettempdir(), f"vice_radio_ipc_{os.getpid()}.sock"
         )
+        self._playlist_path = ""
+        self._is_playlist = False
         self._current_station = "Off Air"
-        self._current_genre = "Select a Leonida FM station, stream URL, or local audio file"
+        self._current_genre = "Select a Leonida FM station, stream URL, or local audio folder/file"
         self._paused = False
         self._muted = False
 
@@ -119,7 +139,7 @@ class LeonidaRadioApp(QMainWindow):
 
         self._header = make_header(
             title="Leonida FM Radio",
-            subtitle="PipeWire & mpv Audio Streamer",
+            subtitle="PipeWire & mpv Audio Streamer and Local Player",
             icon_name="vice-tool-radio",
             badge_text="OFF AIR",
             badge_variant="neutral",
@@ -160,7 +180,7 @@ class LeonidaRadioApp(QMainWindow):
         presets_card.body_layout.addWidget(self._station_list, 1)
         layout.addWidget(presets_card, 1)
 
-        # Custom Stream & Local File Row
+        # Custom Stream & Local Music Folder/File Row
         custom_row = QHBoxLayout()
         custom_row.setSpacing(8)
         self._url_input = QLineEdit(root)
@@ -175,6 +195,10 @@ class LeonidaRadioApp(QMainWindow):
         file_btn = make_button("Local File...", variant="secondary", parent=root)
         file_btn.clicked.connect(self._pick_local_file)
         custom_row.addWidget(file_btn)
+
+        folder_btn = make_button("Local Folder...", variant="secondary", parent=root)
+        folder_btn.clicked.connect(self._pick_local_folder)
+        custom_row.addWidget(folder_btn)
         layout.addLayout(custom_row)
 
         # Playback + Volume Controls Card
@@ -190,6 +214,16 @@ class LeonidaRadioApp(QMainWindow):
         self._pause_btn.clicked.connect(self._toggle_pause)
         self._pause_btn.setEnabled(False)
         ctrl_row.addWidget(self._pause_btn)
+
+        self._prev_btn = make_button("Prev", variant="secondary", parent=ctrl_card)
+        self._prev_btn.clicked.connect(self._prev_track)
+        self._prev_btn.setEnabled(False)
+        ctrl_row.addWidget(self._prev_btn)
+
+        self._next_btn = make_button("Next", variant="secondary", parent=ctrl_card)
+        self._next_btn.clicked.connect(self._next_track)
+        self._next_btn.setEnabled(False)
+        ctrl_row.addWidget(self._next_btn)
 
         self._stop_btn = make_button("Stop", variant="danger", parent=ctrl_card)
         self._stop_btn.clicked.connect(self._stop_playback)
@@ -210,7 +244,7 @@ class LeonidaRadioApp(QMainWindow):
         self._vol_slider = QSlider(Qt.Horizontal, ctrl_card)
         self._vol_slider.setRange(0, 100)
         self._vol_slider.setValue(80)
-        self._vol_slider.setFixedWidth(150)
+        self._vol_slider.setFixedWidth(135)
         self._vol_slider.valueChanged.connect(self._on_volume_changed)
         ctrl_row.addWidget(self._vol_slider)
 
@@ -254,6 +288,14 @@ class LeonidaRadioApp(QMainWindow):
             except OSError:
                 pass
 
+    def _cleanup_playlist(self) -> None:
+        if self._playlist_path and os.path.exists(self._playlist_path):
+            try:
+                os.unlink(self._playlist_path)
+            except OSError:
+                pass
+        self._playlist_path = ""
+
     def _stop_playback(self) -> None:
         self._poll_timer.stop()
         if self._proc is not None:
@@ -270,18 +312,22 @@ class LeonidaRadioApp(QMainWindow):
                         pass
             self._proc = None
         self._cleanup_socket()
+        self._cleanup_playlist()
+        self._is_playlist = False
         self._paused = False
         self._current_station = ""
         self._current_genre = ""
         self._station_lbl.setText("No Station Selected")
-        self._track_lbl.setText("Select a station or paste a stream URL to begin.")
+        self._track_lbl.setText("Select a station, stream URL, or local audio folder/file to begin.")
         self._track_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 13px;")
         self._pause_btn.setText("Pause")
         self._pause_btn.setEnabled(False)
+        self._prev_btn.setEnabled(False)
+        self._next_btn.setEnabled(False)
         self._stop_btn.setEnabled(False)
         self._header.set_badge("OFF AIR", "neutral")
 
-    def _start_stream(self, target: str, title: str, subtitle: str) -> None:
+    def _start_stream(self, target: str, title: str, subtitle: str, is_playlist: bool = False) -> None:
         if not shutil.which("mpv"):
             QMessageBox.warning(
                 self,
@@ -290,23 +336,35 @@ class LeonidaRadioApp(QMainWindow):
             )
             return
 
-        self._stop_playback()
+        prev_playlist = self._playlist_path if is_playlist else ""
+        if not is_playlist:
+            self._stop_playback()
+        else:
+            self._playlist_path = ""
+            self._stop_playback()
+            self._playlist_path = prev_playlist
+
         self._cleanup_socket()
 
         vol = self._vol_slider.value()
         cmd = [
             "mpv",
             "--no-video",
+            "--audio-display=no",
+            "--force-window=no",
             "--no-terminal",
             "--ao=pipewire,pulse,alsa",
             f"--volume={vol}",
             "--ytdl=no",
-            target,
         ]
         if hasattr(socket, "AF_UNIX"):
-            cmd.insert(3, f"--input-ipc-server={self._socket_path}")
+            cmd.append(f"--input-ipc-server={self._socket_path}")
         if self._muted:
-            cmd.insert(3, "--mute=yes")
+            cmd.append("--mute=yes")
+        if is_playlist:
+            cmd.append(f"--playlist={target}")
+        else:
+            cmd.append(target)
 
         try:
             self._proc = subprocess.Popen(
@@ -319,6 +377,7 @@ class LeonidaRadioApp(QMainWindow):
             QMessageBox.critical(self, "Playback Error", f"Failed to start mpv:\n{exc}")
             return
 
+        self._is_playlist = is_playlist
         self._current_station = title
         self._current_genre = subtitle
         self._paused = False
@@ -327,9 +386,11 @@ class LeonidaRadioApp(QMainWindow):
         self._track_lbl.setStyleSheet(
             f"color: {COLORS['accent_aqua']}; font-size: 13px; font-weight: 600;"
         )
-        self._header.set_badge("LIVE", "aqua")
+        self._header.set_badge("LOCAL" if is_playlist else "LIVE", "aqua")
         self._pause_btn.setText("Pause")
         self._pause_btn.setEnabled(True)
+        self._prev_btn.setEnabled(is_playlist)
+        self._next_btn.setEnabled(is_playlist)
         self._stop_btn.setEnabled(True)
         self._poll_timer.start()
         log_info(f"Leonida FM tuned to {title}")
@@ -352,14 +413,61 @@ class LeonidaRadioApp(QMainWindow):
         self._start_stream(url, "Custom Stream", url)
 
     def _pick_local_file(self) -> None:
+        music_dir = os.path.expanduser("~/Music")
+        start_dir = music_dir if os.path.isdir(music_dir) else os.path.expanduser("~")
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Open Local Audio File",
-            os.path.expanduser("~/Music"),
+            start_dir,
             "Audio Files (*.mp3 *.flac *.ogg *.wav *.m4a *.opus *.aac);;All Files (*)",
         )
         if path:
             self._start_stream(path, os.path.basename(path), os.path.dirname(path))
+
+    def _pick_local_folder(self) -> None:
+        music_dir = os.path.expanduser("~/Music")
+        start_dir = music_dir if os.path.isdir(music_dir) else os.path.expanduser("~")
+        folder = QFileDialog.getExistingDirectory(self, "Select Local Music Folder", start_dir)
+        if not folder:
+            return
+        tracks = []
+        for root_dir, _dirs, files in os.walk(folder):
+            for fname in sorted(files):
+                if fname.lower().endswith(AUDIO_EXTS):
+                    tracks.append(os.path.join(root_dir, fname))
+        if not tracks:
+            QMessageBox.information(
+                self, "No Audio Files",
+                f"No supported audio files ({', '.join(AUDIO_EXTS)}) found in:\n{folder}"
+            )
+            return
+
+        fd, m3u_path = tempfile.mkstemp(prefix="vice_radio_pl_", suffix=".m3u8")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fp:
+                for t in tracks:
+                    fp.write(t + "\n")
+        except Exception as exc:
+            QMessageBox.critical(self, "Playlist Error", str(exc))
+            return
+
+        self._cleanup_playlist()
+        self._playlist_path = m3u_path
+        folder_name = os.path.basename(folder.rstrip(os.sep)) or folder
+        self._start_stream(
+            m3u_path,
+            f"Folder: {folder_name}",
+            f"{len(tracks)} track(s) in {folder}",
+            is_playlist=True,
+        )
+
+    def _prev_track(self) -> None:
+        if self._is_playlist and self._proc is not None and self._proc.poll() is None:
+            self._ipc_command(["playlist-prev", "weak"])
+
+    def _next_track(self) -> None:
+        if self._is_playlist and self._proc is not None and self._proc.poll() is None:
+            self._ipc_command(["playlist-next", "weak"])
 
     def _toggle_pause(self) -> None:
         if self._proc is None or self._proc.poll() is not None:
@@ -367,7 +475,8 @@ class LeonidaRadioApp(QMainWindow):
         self._paused = not self._paused
         self._ipc_command(["set_property", "pause", self._paused])
         self._pause_btn.setText("Resume" if self._paused else "Pause")
-        self._header.set_badge("PAUSED" if self._paused else "LIVE", "gold" if self._paused else "aqua")
+        badge_live = "LOCAL" if self._is_playlist else "LIVE"
+        self._header.set_badge("PAUSED" if self._paused else badge_live, "gold" if self._paused else "aqua")
 
     def _toggle_mute(self) -> None:
         self._muted = self._mute_btn.isChecked()
@@ -387,13 +496,18 @@ class LeonidaRadioApp(QMainWindow):
         rc = self._proc.poll()
         if rc is not None:
             self._stop_playback()
-            self._track_lbl.setText(f"Stream stopped (mpv exited with code {rc}).")
+            self._track_lbl.setText(f"Playback finished (mpv exited with code {rc}).")
             self._track_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 13px;")
             return
 
         title = self._ipc_command(["get_property", "media-title"])
         if isinstance(title, str) and title.strip() and not title.startswith("http"):
-            self._track_lbl.setText(f"Now Playing: {title.strip()}")
+            pos = self._ipc_command(["get_property", "playlist-pos-1"])
+            cnt = self._ipc_command(["get_property", "playlist-count"])
+            if self._is_playlist and isinstance(pos, int) and isinstance(cnt, int) and cnt > 1:
+                self._track_lbl.setText(f"Track {pos}/{cnt}: {title.strip()}")
+            else:
+                self._track_lbl.setText(f"Now Playing: {title.strip()}")
         else:
             self._track_lbl.setText(self._current_genre)
 

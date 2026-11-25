@@ -4297,7 +4297,7 @@
       "description": "Strict statically typed JavaScript superset compiler installed globally via Node.js 22 LTS npm",
       "category": "Developer",
       "package": "node-typescript",
-      "exec": "tsc --version",
+      "exec": "tsc",
       "terminal": true,
       "gta_themed": false,
       "icon_glyph": "typescript"
@@ -4506,7 +4506,7 @@
       "description": "Fast PEP8 style, pyflakes bug, and cyclomatic complexity checker for Python code",
       "category": "Developer",
       "package": "python3-flake8",
-      "exec": "flake8",
+      "exec": "python3 -m flake8",
       "terminal": true,
       "gta_themed": false,
       "icon_glyph": "code"

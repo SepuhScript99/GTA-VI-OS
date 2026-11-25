@@ -1,0 +1,11 @@
+// GTA VI OS (Vice OS) Polkit Rules: Native UDisks2 USB/Media Auto-Mount
+// Allow active local console users to mount, eject, and power off
+// removable USB/external drives and optical media without password prompts.
+polkit.addRule(function(action, subject) {
+    if ((action.id == "org.freedesktop.udisks2.filesystem-mount" ||
+         action.id == "org.freedesktop.udisks2.eject-media" ||
+         action.id == "org.freedesktop.udisks2.power-off-drive") &&
+        subject.local && subject.active) {
+        return polkit.Result.YES;
+    }
+});

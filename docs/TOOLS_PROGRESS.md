@@ -439,7 +439,7 @@ Batch 4A: [####################]  50 /  50 (Complete)
 | 387 | `cargo` | Cargo Rust Package Manager | Developer | `cargo` | `cargo` | Terminal | `vice-tool-cargo` |
 | 388 | `rustfmt` | Rustfmt Code Formatter | Developer | `rustfmt` | `rustfmt` | Terminal | `vice-tool-rustfmt` |
 | 389 | `nodejs` | Node.js 22 LTS Runtime | Developer | `nodejs` | `node` | Terminal | `vice-tool-nodejs` |
-| 390 | `node-typescript` | TypeScript (Latest LTS via Node.js) | Developer | `node-typescript` | `tsc --version` | Terminal | `vice-tool-node-typescript` |
+| 390 | `node-typescript` | TypeScript (Latest LTS via Node.js) | Developer | `node-typescript` | `tsc` | Terminal | `vice-tool-node-typescript` |
 | 391 | `dotnet-sdk-8.0` | .NET 8.0 LTS SDK (C#) | Developer | `dotnet-sdk-8.0` | `dotnet` | Terminal | `vice-tool-dotnet-sdk-8.0` |
 | 392 | `golang-go` | Go Compiler & Toolchain | Developer | `golang-go` | `go` | Terminal | `vice-tool-golang-go` |
 | 393 | `openjdk-17-jdk-headless` | OpenJDK 17 LTS Compiler | Developer | `openjdk-17-jdk-headless` | `javac` | Terminal | `vice-tool-openjdk-17-jdk-headless` |
@@ -458,7 +458,7 @@ Batch 4A: [####################]  50 /  50 (Complete)
 | 406 | `yamllint` | yamllint YAML Validator | Developer | `yamllint` | `yamllint` | Terminal | `vice-tool-yamllint` |
 | 407 | `codespell` | Codespell Source Checker | Developer | `codespell` | `codespell` | Terminal | `vice-tool-codespell` |
 | 408 | `python3-pytest` | Pytest Python Test Runner | Developer | `python3-pytest` | `pytest` | Terminal | `vice-tool-python3-pytest` |
-| 409 | `python3-flake8` | Flake8 Python Linter | Developer | `python3-flake8` | `flake8` | Terminal | `vice-tool-python3-flake8` |
+| 409 | `python3-flake8` | Flake8 Python Linter | Developer | `python3-flake8` | `python3 -m flake8` | Terminal | `vice-tool-python3-flake8` |
 | 410 | `black` | Black Python Formatter | Developer | `black` | `black` | Terminal | `vice-tool-black` |
 | 411 | `pylint` | Pylint Static Analyzer | Developer | `pylint` | `pylint` | Terminal | `vice-tool-pylint` |
 | 412 | `pipx` | pipx Isolated CLI Runner | Developer | `pipx` | `pipx` | Terminal | `vice-tool-pipx` |

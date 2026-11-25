@@ -102,7 +102,7 @@ test_desktop_modules() {
     log_info "--- Test: Desktop helper modules ---"
     local missing=0
 
-    for mod in systray_manager.py power_manager.py wallpaper_manager.py session_watchdog.py panel_config.py vice_settings.py welcome_wizard.py; do
+    for mod in systray_manager.py power_manager.py wallpaper_manager.py session_watchdog.py panel_config.py vice_settings.py vice_settings_pages.py vice_launcher.py welcome_wizard.py; do
         if [ ! -f "$WORKDIR/desktop/$mod" ]; then
             log_error "Missing desktop module: $mod"
             missing=$((missing + 1))
@@ -195,10 +195,10 @@ test_chroot_scripts() {
 
     local count
     count=$(ls "$WORKDIR/chroot_scripts"/*.sh 2>/dev/null | wc -l)
-    if [ "$count" -ge 47 ]; then
-        record_result "47+ chroot scripts present ($count found)" PASS
+    if [ "$count" -eq 49 ]; then
+        record_result "49 chroot scripts present ($count found)" PASS
     else
-        record_result "47+ chroot scripts present ($count found)" FAIL
+        record_result "49 chroot scripts present ($count found)" FAIL
     fi
 
     # Check cleanup runs last
@@ -281,7 +281,7 @@ test_config_integrity() {
     log_info "--- Test: Configuration files ---"
 
     local missing=0
-    for f in grub.cfg fstab packages.list os-release openbox_rc.xml picom.conf firefox/vice-os.js firefox/policies.json fontconfig/99-vice-cjk.conf; do
+    for f in grub.cfg fstab packages.list os-release openbox_rc.xml picom.conf firefox/vice-os.js firefox/policies.json fontconfig/99-vice-cjk.conf apt/preferences.d/90-vice-backports-kernel apt/apt.conf.d/20auto-upgrades apt/apt.conf.d/50unattended-upgrades libfm/libfm.conf polkit-1/rules.d/50-vice-udisks-automount.rules skel/.config/xfce4/xfconf/xfce-perchannel-xml/thunar-volman.xml; do
         if [ ! -f "$WORKDIR/config/$f" ]; then
             log_error "Missing config: $f"
             missing=$((missing + 1))

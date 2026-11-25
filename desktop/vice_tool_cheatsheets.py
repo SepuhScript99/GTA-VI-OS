@@ -107,7 +107,7 @@ CHEATSHEETS = [
     ("Security", "List GPG public & secret keys", "gpg --list-keys", "Show imported OpenPGP keys in your local keyring.", True),
 
     ("Shortcuts", "Open Vice OS Start Menu", "Super (Windows Key) / Alt+F1", "Instant Start Menu popup with categories, search, and Places.", False),
-    ("Shortcuts", "Launch Vice Tool Hub (250 / 500)", "python3 /opt/vice-os/vice_tool_hub.py", "Open the Vice Tool Hub explorer for all 250 curated tools.", True),
+    ("Shortcuts", "Launch Vice Tool Hub (425 / 500)", "python3 /opt/vice-os/vice_tool_hub.py", "Open the Vice Tool Hub explorer for all 425 curated tools.", True),
     ("Shortcuts", "Launch interactive CLI tool wrapper", "vice-run-tool 'htop' htop", "Open any CLI/TUI tool with clean banner and hold-open prompt.", True),
     ("Shortcuts", "Close active window / Switch windows", "Alt+F4  |  Alt+Tab", "Openbox window close and switcher hotkeys.", False),
     ("Shortcuts", "Open Run Command / Terminal", "Alt+F2  |  Ctrl+Alt+T", "Quick launch Openbox run dialog or xfce4-terminal.", False),

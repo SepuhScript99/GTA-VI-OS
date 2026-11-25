@@ -975,7 +975,9 @@ class TestLeonidaOverhaulAndTimesync(unittest.TestCase):
         self.assertNotIn("setRange(0, 150)", shell_code)
 
         settings_code = self._read_repo("desktop", "vice_settings.py")
-        self.assertIn('f"Open {page_name} Settings".replace("&", "&&")', settings_code)
+        self.assertNotIn("AppLauncherPage", settings_code)
+        pages_code = self._read_repo("desktop", "vice_settings_pages.py")
+        self.assertIn('label.replace("&", "&&")', pages_code)
 
         office_code = self._read_repo("desktop", "vice_tool_office_hub.py")
         self.assertIn('spec["subtitle"].replace("&", "&&")', office_code)
@@ -1297,6 +1299,99 @@ class TestLeonidaOverhaulAndTimesync(unittest.TestCase):
         vf_sh = self._read_repo("system_scripts", "vicefetch.sh")
         for token in ("COLORTERM", "--hold", "--plain", "--help", "--version", "Vice Tools"):
             self.assertIn(token, vf_sh)
+
+    def test_iso16_launcher_inline_settings_backports_automount_and_xorriso(self):
+        # 1. Full-width AppCard grid launcher (zero crushed AppButton(QPushButton))
+        launcher_code = self._read_repo("desktop", "vice_launcher.py")
+        self.assertIn("class AppCard(QFrame)", launcher_code)
+        self.assertNotIn("class AppButton", launcher_code)
+        self.assertIn("setColumnStretch", launcher_code)
+        self.assertIn("def _calc_cols", launcher_code)
+        self.assertIn("WINDOW_WIDTH = 1040", launcher_code)
+        self.assertIn("WINDOW_HEIGHT = 640", launcher_code)
+        self.assertIn("_batch_timer", launcher_code)
+
+        # 2. 100% inline Settings Center (AppLauncherPage removed, 29 pages covered)
+        settings_code = self._read_repo("desktop", "vice_settings.py")
+        pages_code = self._read_repo("desktop", "vice_settings_pages.py")
+        self.assertNotIn("AppLauncherPage", settings_code)
+        self.assertNotIn("AppLauncherPage", pages_code)
+        self.assertIn("INLINE_PAGE_CLASSES", settings_code)
+        for token in (
+            "setRange(0, 100)", "libfm.conf", "thunar-volman",
+            "bookworm-backports", "unattended-upgrades", "udisksctl",
+            "vice-timesync", "fwupdmgr", "ufw", "nmcli", "stop_workers",
+        ):
+            self.assertIn(token, pages_code)
+
+        # 3. VS Code Leonida startup/colors & LibreOffice Impress template suppression
+        code_cfg = json.loads(self._read_repo("config", "skel", ".config", "Code", "User", "settings.json"))
+        self.assertEqual(code_cfg.get("workbench.startupEditor"), "none")
+        self.assertIs(code_cfg.get("chat.disableAIFeatures"), True)
+        self.assertEqual(code_cfg.get("workbench.secondarySideBar.defaultVisibility"), "hidden")
+        self.assertEqual(code_cfg["workbench.colorCustomizations"].get("welcomePage.progress.foreground"), "#FF5E7E")
+        self.assertEqual(code_cfg["workbench.colorCustomizations"].get("statusBarItem.remoteBackground"), "#FF5E7E")
+
+        xcu_path = os.path.join(
+            REPO_ROOT, "config", "skel", ".config", "libreoffice", "4", "user", "registrymodifications.xcu"
+        )
+        xcu_text = self._read_repo("config", "skel", ".config", "libreoffice", "4", "user", "registrymodifications.xcu")
+        ET.parse(xcu_path)
+        self.assertIn("TemplateSelection", xcu_text)
+
+        # 4. Bookworm Backports kernel/firmware pinning & unattended-upgrades
+        sources = self._read_repo("config", "apt", "sources.list")
+        self.assertIn("deb http://deb.debian.org/debian bookworm-backports main contrib non-free non-free-firmware", sources)
+
+        pin_cfg = self._read_repo("config", "apt", "preferences.d", "90-vice-backports-kernel")
+        self.assertIn("Pin: release n=bookworm-backports", pin_cfg)
+        self.assertIn("Pin-Priority: 550", pin_cfg)
+        for pat in ("linux-image-*", "linux-headers-*", "firmware-*", "intel-microcode", "amd64-microcode"):
+            self.assertIn(pat, pin_cfg)
+
+        auto_up = self._read_repo("config", "apt", "apt.conf.d", "20auto-upgrades")
+        self.assertIn('APT::Periodic::Unattended-Upgrade "1";', auto_up)
+        unatt = self._read_repo("config", "apt", "apt.conf.d", "50unattended-upgrades")
+        self.assertIn("codename=${distro_codename}-backports", unatt)
+
+        self.assertIn("preferences.d", self._read_repo("chroot_scripts", "00_base_config.sh"))
+        self.assertIn("install_kernel_and_firmware", self._read_repo("chroot_scripts", "01_install_packages.sh"))
+        self.assertIn("preferences.d", self._read_repo("chroot_scripts", "17_apt_config_setup.sh"))
+
+        # 5. Native Linux auto-mount, auto-play, udisks2 polkit, and udev HW detection
+        libfm = self._read_repo("config", "libfm", "libfm.conf")
+        for opt in ("mount_on_startup=1", "mount_removable=1", "autorun=1"):
+            self.assertIn(opt, libfm)
+
+        volman_path = os.path.join(
+            REPO_ROOT, "config", "skel", ".config", "xfce4", "xfconf", "xfce-perchannel-xml", "thunar-volman.xml"
+        )
+        self.assertTrue(os.path.isfile(volman_path))
+        ET.parse(volman_path)
+        volman_txt = self._read_repo(
+            "config", "skel", ".config", "xfce4", "xfconf", "xfce-perchannel-xml", "thunar-volman.xml"
+        )
+        for token in ("automount-media", "automount-drives", "autobrowse", "/usr/bin/mpv cdda://", "/usr/bin/mpv dvd://"):
+            self.assertIn(token, volman_txt)
+
+        udisks_rule = self._read_repo("config", "polkit-1", "rules.d", "50-vice-udisks-automount.rules")
+        self.assertIn("org.freedesktop.udisks2.filesystem-mount", udisks_rule)
+        self.assertIn("org.freedesktop.udisks2.", self._read_repo("chroot_scripts", "07_polkit_setup.sh"))
+        self.assertIn("thunar-volman.xml", self._read_repo("chroot_scripts", "22_skel_setup.sh"))
+        self.assertIn("fwupd-refresh.timer", self._read_repo("chroot_scripts", "19_systemd_setup.sh"))
+
+        hw_sh = self._read_repo("system_scripts", "vice-hw-autodetect.sh")
+        self.assertIn("probe_vm_guest_modules", hw_sh)
+        self.assertNotIn("modprobe -b -q", hw_sh)
+
+        # 6. >2 GB safe xorriso ISO validator (no isoinfo / no grep -q SIGPIPE)
+        val_iso = self._read_repo("validation", "validate_iso.sh")
+        val_iso_code = "\n".join(line for line in val_iso.splitlines() if not line.lstrip().startswith("#"))
+        self.assertIn("xorriso -indev", val_iso_code)
+        self.assertIn("-osirrox on", val_iso_code)
+        self.assertIn("-lsl /live/filesystem.squashfs", val_iso_code)
+        self.assertNotIn("isoinfo", val_iso_code)
+        self.assertNotIn("grep -q", val_iso_code)
 
 
 if __name__ == "__main__":

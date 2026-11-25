@@ -65,6 +65,10 @@ main() {
             chmod 644 "$dest_dir/.config/Code/User/settings.json"
             log_info "Synced VS Code Leonida settings to $dest_dir/.config/Code/User/"
         fi
+        if [ -f "$dest_dir/.config/xfce4/xfconf/xfce-perchannel-xml/thunar-volman.xml" ]; then
+            chmod 644 "$dest_dir/.config/xfce4/xfconf/xfce-perchannel-xml/thunar-volman.xml"
+            log_info "Synced thunar-volman auto-mount/auto-play config to $dest_dir/.config/xfce4/"
+        fi
         if [ -f "$dest_dir/Desktop/vicefetch.desktop" ]; then
             chmod 755 "$dest_dir/Desktop/vicefetch.desktop"
             log_info "Synced Desktop/vicefetch.desktop to $dest_dir/Desktop/"

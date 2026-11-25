@@ -1014,12 +1014,13 @@ def _draw_glyph(draw: ImageDraw.ImageDraw, kind: str, c1: tuple, c2: tuple, hi: 
         draw.polygon([(142, 66), (194, 66), (194, 118)], fill=coral)
 
     elif kind == "vscode":
-        # Visual Studio Code geometric infinity-ribbon emblem
-        sky = (82, 183, 255, 255)
+        # Visual Studio Code geometric infinity-ribbon emblem (Leonida Sunset & Aqua)
+        coral = (255, 94, 126, 255)
+        peach = (255, 154, 98, 255)
         aqua = (54, 214, 195, 255)
         draw.line([(68, 92), (166, 174)], fill=aqua, width=20)
-        draw.line([(68, 164), (166, 82)], fill=sky, width=22)
-        draw.polygon([(156, 62), (192, 76), (192, 180), (156, 194)], fill=sky)
+        draw.line([(68, 164), (166, 82)], fill=coral, width=22)
+        draw.polygon([(156, 62), (192, 76), (192, 180), (156, 194)], fill=peach)
         draw.line([(162, 80), (162, 176)], fill=ALABASTER, width=6)
 
     elif kind == "cpp":

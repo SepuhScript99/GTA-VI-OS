@@ -12,7 +12,11 @@ deb http://deb.debian.org/debian-security bookworm-security main contrib non-fre
 # Recommended Updates
 deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
 
+# Backports (Latest LTS Kernel, Headers & Hardware Firmware)
+deb http://deb.debian.org/debian bookworm-backports main contrib non-free non-free-firmware
+
 # Source Repositories (Uncomment to enable for development/compiling kernel modules)
 # deb-src http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
 # deb-src http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
 # deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+# deb-src http://deb.debian.org/debian bookworm-backports main contrib non-free non-free-firmware

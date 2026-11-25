@@ -67,6 +67,20 @@ else
     exit 1
 fi
 
+# 6. APT Pinning Preferences (must be installed BEFORE apt-get update / kernel install)
+if [ -d /vice_payload/config/apt/preferences.d ]; then
+    mkdir -p /etc/apt/preferences.d
+    for pref_file in /vice_payload/config/apt/preferences.d/*; do
+        if [ -f "$pref_file" ]; then
+            pref_name=$(basename "$pref_file")
+            cp "$pref_file" "/etc/apt/preferences.d/$pref_name"
+            chown root:root "/etc/apt/preferences.d/$pref_name"
+            chmod 644 "/etc/apt/preferences.d/$pref_name"
+            log_info "Installed APT pinning preference: $pref_name"
+        fi
+    done
+fi
+
 log_info "Updating package lists..."
 if ! apt-get update; then
     log_warn "Primary mirror failed. Falling back to US mirror..."

@@ -1,0 +1,19 @@
+// GTA VI OS (Vice OS) Unattended Upgrades Configuration
+// Enables automatic Debian 12 security updates plus bookworm-backports
+// LTS kernel, headers, firmware, and CPU microcode maintenance.
+
+Unattended-Upgrade::Origins-Pattern {
+    "origin=Debian,codename=${distro_codename},label=Debian";
+    "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+    "origin=Debian,codename=${distro_codename}-updates";
+    "origin=Debian Backports,codename=${distro_codename}-backports,label=Debian Backports";
+};
+
+Unattended-Upgrade::Package-Blacklist {
+};
+
+Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+Unattended-Upgrade::MinimalSteps "true";
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "false";

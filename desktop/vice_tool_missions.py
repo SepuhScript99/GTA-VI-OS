@@ -197,7 +197,7 @@ class ViceMissionBoardApp(QMainWindow):
         return [
             {
                 "id": str(uuid.uuid4()),
-                "title": "Explore Vice Tool Hub (250 / 500 Batch 2)",
+                "title": "Explore Vice Tool Hub (425 / 500)",
                 "notes": "Browse GTA VI Originals, Office Studio, and Security tools",
                 "category": "System",
                 "stars": 5,

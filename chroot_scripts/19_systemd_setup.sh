@@ -103,12 +103,15 @@ configure_boot_service_defaults() {
     done
 
     # Mask periodic audit timers/services that require an MTA (mail) or pre-built DB,
-    # plus zramswap.service (zram-tools conflicts with zram-setup.service on /dev/zram0)
+    # offline-failing LVFS metadata refresh timer, plus zramswap.service
+    # (zram-tools conflicts with zram-setup.service on /dev/zram0)
     local failing_timers=(
         "chkrootkit.service"
         "chkrootkit.timer"
         "dailyaidecheck.service"
         "dailyaidecheck.timer"
+        "fwupd-refresh.service"
+        "fwupd-refresh.timer"
         "zramswap.service"
     )
     for unit in "${failing_timers[@]}"; do

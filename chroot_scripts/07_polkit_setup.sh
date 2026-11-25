@@ -3,7 +3,8 @@ set -Eeuo pipefail
 
 # ============================================================================
 # GTA VI OS (Vice OS) Chroot Script: Polkit Setup
-# Installs custom polkit rules for desktop authentication and privileges.
+# Installs custom polkit rules for desktop authentication and native udisks2
+# removable media auto-mounting.
 # ============================================================================
 
 # Source the shared library from the payload directory
@@ -22,6 +23,9 @@ main() {
     # Install the Vice OS polkit rules
     if [ -f /vice_payload/config/polkit-1.preset ]; then
         cp /vice_payload/config/polkit-1.preset /etc/polkit-1/rules.d/49-vice-os.rules
+        # Defer udisks2 actions so 50-vice-udisks-automount.rules allows passwordless
+        # removable USB/optical mount/eject for active local console users in sudo.
+        sed -i 's/if (subject.isInGroup("sudo")) {/if (subject.isInGroup("sudo") \&\& action.id.indexOf("org.freedesktop.udisks2.") !== 0) {/' /etc/polkit-1/rules.d/49-vice-os.rules
         # Polkit requires strict permissions for rules files
         chown root:root /etc/polkit-1/rules.d/49-vice-os.rules
         chmod 644 /etc/polkit-1/rules.d/49-vice-os.rules
@@ -29,6 +33,21 @@ main() {
     else
         log_error "polkit-1.preset not found in payload! Skipping polkit configuration."
         exit 1
+    fi
+
+    # Install modular polkit-1/rules.d rules (e.g. 50-vice-udisks-automount.rules)
+    if [ -d /vice_payload/config/polkit-1/rules.d ]; then
+        local rule_file
+        for rule_file in /vice_payload/config/polkit-1/rules.d/*.rules; do
+            if [ -f "$rule_file" ]; then
+                local rule_name
+                rule_name=$(basename "$rule_file")
+                cp "$rule_file" "/etc/polkit-1/rules.d/$rule_name"
+                chown root:root "/etc/polkit-1/rules.d/$rule_name"
+                chmod 644 "/etc/polkit-1/rules.d/$rule_name"
+                log_info "Installed polkit rule: $rule_name"
+            fi
+        done
     fi
 
     # Ensure the policykit-1-gnome autostart entry is present system-wide

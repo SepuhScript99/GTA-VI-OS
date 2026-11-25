@@ -61,6 +61,16 @@ DNS_PRESETS = [
 ]
 
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+_SBIN_PATH = os.pathsep.join([
+    os.environ.get("PATH", ""),
+    "/usr/local/sbin",
+    "/usr/sbin",
+    "/sbin",
+])
+
+
+def _which(cmd: str) -> str:
+    return shutil.which(cmd) or shutil.which(cmd, path=_SBIN_PATH) or ""
 
 
 def _safe_profile_name(raw: str) -> str:
@@ -88,7 +98,7 @@ def _read_resolv_dns() -> str:
 def _read_ufw_conf_enabled() -> str:
     conf = "/etc/ufw/ufw.conf"
     if not os.path.isfile(conf):
-        return "Not installed" if not shutil.which("ufw") else "Unknown"
+        return "Not installed" if not _which("ufw") else "Unknown"
     try:
         with open(conf, "r", encoding="utf-8", errors="replace") as fp:
             for line in fp:
@@ -675,11 +685,11 @@ class ViceNetShieldApp(QMainWindow):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
         en_btn = make_button("Enable UFW", variant="primary", parent=card)
-        en_btn.clicked.connect(lambda: self._run_priv(["pkexec", "ufw", "--force", "enable"], "UFW firewall enabled."))
+        en_btn.clicked.connect(lambda: self._run_priv(["pkexec", _which("ufw") or "ufw", "--force", "enable"], "UFW firewall enabled."))
         btn_row.addWidget(en_btn)
 
         dis_btn = make_button("Disable UFW", variant="danger", parent=card)
-        dis_btn.clicked.connect(lambda: self._run_priv(["pkexec", "ufw", "disable"], "UFW firewall disabled."))
+        dis_btn.clicked.connect(lambda: self._run_priv(["pkexec", _which("ufw") or "ufw", "disable"], "UFW firewall disabled."))
         btn_row.addWidget(dis_btn)
 
         insp_btn = make_button("Inspect Rules (pkexec)", variant="secondary", parent=card)
@@ -821,19 +831,21 @@ class ViceNetShieldApp(QMainWindow):
         if not prof:
             return
         if prof["kind"] == "WireGuard":
-            if not shutil.which("wg-quick"):
+            wg_bin = _which("wg-quick")
+            if not wg_bin:
                 QMessageBox.warning(self, "Missing wg-quick", "Install package 'wireguard-tools'.")
                 return
-            self._run_priv(["pkexec", "wg-quick", "up", prof["path"]], f"Connected WireGuard: {prof['name']}")
+            self._run_priv(["pkexec", wg_bin, "up", prof["path"]], f"Connected WireGuard: {prof['name']}")
         else:
-            if not shutil.which("openvpn"):
+            ovpn_bin = _which("openvpn")
+            if not ovpn_bin:
                 QMessageBox.warning(self, "Missing openvpn", "Install package 'openvpn'.")
                 return
             safe = _safe_profile_name(prof["name"])
             pid_file = f"/run/vice-ovpn-{safe}.pid"
             log_file = f"/run/vice-ovpn-{safe}.log"
             self._run_priv(
-                ["pkexec", "openvpn", "--config", prof["path"], "--daemon",
+                ["pkexec", ovpn_bin, "--config", prof["path"], "--daemon",
                  "--writepid", pid_file, "--log", log_file],
                 f"Started OpenVPN tunnel: {prof['name']}"
             )
@@ -843,7 +855,8 @@ class ViceNetShieldApp(QMainWindow):
         if not prof:
             return
         if prof["kind"] == "WireGuard":
-            self._run_priv(["pkexec", "wg-quick", "down", prof["path"]], f"Disconnected WireGuard: {prof['name']}")
+            wg_bin = _which("wg-quick") or "wg-quick"
+            self._run_priv(["pkexec", wg_bin, "down", prof["path"]], f"Disconnected WireGuard: {prof['name']}")
         else:
             safe = _safe_profile_name(prof["name"])
             pid_file = f"/run/vice-ovpn-{safe}.pid"
@@ -916,7 +929,7 @@ class ViceNetShieldApp(QMainWindow):
         if self._cmd_worker is not None and self._cmd_worker.isRunning():
             return
         self._status_lbl.setText("Inspecting UFW rules...")
-        self._cmd_worker = CmdWorker(["pkexec", "ufw", "status", "verbose"], "UFW status loaded")
+        self._cmd_worker = CmdWorker(["pkexec", _which("ufw") or "ufw", "status", "verbose"], "UFW status loaded")
         self._cmd_worker.finished_cmd.connect(self._on_ufw_inspected)
         self._cmd_worker.start()
 
