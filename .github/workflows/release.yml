@@ -1,0 +1,472 @@
+name: Publish GitHub Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Git tag to publish (e.g. v0.01-alpha)"
+        required: false
+        default: "v0.01-alpha"
+        type: string
+      release_name:
+        description: "Optional custom release title (e.g. GTA-VI-OS 0.01 Alpha)"
+        required: false
+        default: ""
+        type: string
+      source_run_id:
+        description: "Optional Build Vice OS ISO workflow run ID"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish-release:
+    name: Publish Release
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve tag and release title
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag_name }}
+          INPUT_RELEASE_NAME: ${{ inputs.release_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$GITHUB_REF_NAME"
+          fi
+          if [ -z "$TAG" ]; then
+            echo "ERROR: Could not resolve release tag." >&2
+            exit 1
+          fi
+          if [ -n "$INPUT_RELEASE_NAME" ]; then
+            RELEASE_TITLE="$INPUT_RELEASE_NAME"
+          elif [[ "$TAG" =~ ^v([0-9]+\.[0-9]+)-alpha$ ]]; then
+            RELEASE_TITLE="GTA-VI-OS ${BASH_REMATCH[1]} Alpha"
+          elif [[ "$TAG" =~ ^v([0-9]+\.[0-9]+)-beta$ ]]; then
+            RELEASE_TITLE="GTA-VI-OS ${BASH_REMATCH[1]} Beta"
+          else
+            RELEASE_TITLE="GTA-VI-OS ${TAG#v}"
+          fi
+          {
+            echo "TAG=$TAG"
+            echo "RELEASE_TITLE=$RELEASE_TITLE"
+          } >> "$GITHUB_ENV"
+          echo "Resolved TAG=$TAG"
+          echo "Resolved RELEASE_TITLE=$RELEASE_TITLE"
+
+      - name: Resolve source ISO workflow run
+        env:
+          INPUT_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          SOURCE_RUN_ID=""
+          SOURCE_RUN_NUMBER=""
+          SOURCE_SHA=""
+          SOURCE_URL=""
+
+          TRIMMED_RUN_ID=$(echo "$INPUT_SOURCE_RUN_ID" | xargs || true)
+          if [ -n "$TRIMMED_RUN_ID" ]; then
+            SOURCE_RUN_ID="$TRIMMED_RUN_ID"
+            RUN_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")
+            SOURCE_RUN_NUMBER=$(echo "$RUN_JSON" | jq -r '.run_number')
+            SOURCE_SHA=$(echo "$RUN_JSON" | jq -r '.head_sha')
+            SOURCE_URL=$(echo "$RUN_JSON" | jq -r '.html_url')
+          else
+            RUNS_JSON=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/build.yml/runs?branch=main&status=success&per_page=10")
+            for rid in $(echo "$RUNS_JSON" | jq -r '.workflow_runs[].id'); do
+              ARTS_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${rid}/artifacts")
+              if echo "$ARTS_JSON" | jq -e \
+                '.artifacts[] | select(.name == "gta-vi-os-amd64" and .expired == false)' >/dev/null; then
+                SOURCE_RUN_ID="$rid"
+                SOURCE_RUN_NUMBER=$(echo "$RUNS_JSON" | jq -r --argjson id "$rid" \
+                  '.workflow_runs[] | select(.id == $id) | .run_number')
+                SOURCE_SHA=$(echo "$RUNS_JSON" | jq -r --argjson id "$rid" \
+                  '.workflow_runs[] | select(.id == $id) | .head_sha')
+                SOURCE_URL=$(echo "$RUNS_JSON" | jq -r --argjson id "$rid" \
+                  '.workflow_runs[] | select(.id == $id) | .html_url')
+                break
+              fi
+            done
+          fi
+
+          if [ -z "$SOURCE_RUN_ID" ] || [ -z "$SOURCE_RUN_NUMBER" ] || \
+             [ "$SOURCE_RUN_NUMBER" = "null" ] || [ -z "$SOURCE_URL" ] || \
+             [ "$SOURCE_URL" = "null" ]; then
+            echo "ERROR: No successful build.yml run with non-expired gta-vi-os-amd64 artifact found." >&2
+            exit 1
+          fi
+
+          {
+            echo "SOURCE_RUN_ID=$SOURCE_RUN_ID"
+            echo "SOURCE_RUN_NUMBER=$SOURCE_RUN_NUMBER"
+            echo "SOURCE_SHA=$SOURCE_SHA"
+            echo "SOURCE_URL=$SOURCE_URL"
+          } >> "$GITHUB_ENV"
+          echo "Selected Build #$SOURCE_RUN_NUMBER (run $SOURCE_RUN_ID, sha $SOURCE_SHA)"
+
+      - name: Download verified ISO artifact
+        run: |
+          set -euo pipefail
+          mkdir -p out release_assets
+          gh run download "$SOURCE_RUN_ID" -n gta-vi-os-amd64 -D out
+          if [ ! -f out/gta-vi-os-amd64.iso ]; then
+            echo "ERROR: out/gta-vi-os-amd64.iso not found after download." >&2
+            exit 1
+          fi
+          ISO_BYTES=$(stat -c%s out/gta-vi-os-amd64.iso)
+          if [ "$ISO_BYTES" -le 0 ]; then
+            echo "ERROR: out/gta-vi-os-amd64.iso is empty." >&2
+            exit 1
+          fi
+          echo "Downloaded ISO size: $ISO_BYTES bytes"
+          ls -lh out/
+          if [ -f out/SHA256SUMS ]; then
+            echo "--- out/SHA256SUMS ---"
+            cat out/SHA256SUMS
+            (cd out && sha256sum -c SHA256SUMS)
+          fi
+          if [ -f out/build_info.txt ]; then
+            echo "--- out/build_info.txt ---"
+            cat out/build_info.txt
+          fi
+
+      - name: Prepare release assets
+        run: |
+          set -euo pipefail
+          ISO_BYTES=$(stat -c%s out/gta-vi-os-amd64.iso)
+          ISO_GB=$(awk -v b="$ISO_BYTES" 'BEGIN {printf "%.2f", b / 1073741824}')
+          ORIG_SHA=$(sha256sum out/gta-vi-os-amd64.iso | awk '{print $1}')
+          if [ -f out/build_info.txt ]; then
+            cp out/build_info.txt release_assets/build_info.txt
+          fi
+
+          if [ "$ISO_BYTES" -gt 2044723200 ]; then
+            echo "ISO is ${ISO_GB} GiB (> 1950 MiB); splitting into 1800M parts..."
+            split -b 1800M --numeric-suffixes=1 --suffix-length=1 \
+              out/gta-vi-os-amd64.iso release_assets/gta-vi-os-amd64.iso.part
+            MERGED_SHA=$(cat release_assets/gta-vi-os-amd64.iso.part* | sha256sum | awk '{print $1}')
+            if [ "$ORIG_SHA" != "$MERGED_SHA" ]; then
+              echo "ERROR: Split SHA256 verification failed ($ORIG_SHA != $MERGED_SHA)." >&2
+              exit 1
+            fi
+            echo "Streaming SHA256 integrity proof passed: $MERGED_SHA"
+            rm -f out/gta-vi-os-amd64.iso
+            PART_FILES=(release_assets/gta-vi-os-amd64.iso.part*)
+            PART_COUNT=${#PART_FILES[@]}
+            {
+              echo "${ORIG_SHA}  gta-vi-os-amd64.iso"
+              (cd release_assets && sha256sum gta-vi-os-amd64.iso.part*)
+            } > release_assets/SHA256SUMS
+            SPLIT_MODE="true"
+          else
+            mv out/gta-vi-os-amd64.iso release_assets/gta-vi-os-amd64.iso
+            (cd release_assets && sha256sum gta-vi-os-amd64.iso > SHA256SUMS)
+            PART_COUNT=1
+            SPLIT_MODE="false"
+          fi
+
+          export SPLIT_MODE PART_COUNT ISO_GB ORIG_SHA
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          split_mode = os.environ["SPLIT_MODE"] == "true"
+          part_count = int(os.environ["PART_COUNT"])
+          orig_sha = os.environ["ORIG_SHA"]
+          assets = Path("release_assets")
+
+          if split_mode:
+              parts = [f"gta-vi-os-amd64.iso.part{i}" for i in range(1, part_count + 1)]
+              bat_checks = [f'if not exist "{p}" goto :missing_part' for p in parts]
+              copy_expr = " + ".join(f'"{p}"' for p in parts)
+              bat_lines = [
+                  "@echo off",
+                  "setlocal enabledelayedexpansion",
+                  'cd /d "%~dp0"',
+                  "title Gabung ISO GTA-VI-OS",
+                  "echo ========================================================",
+                  "echo   GTA-VI-OS - Penggabung File ISO (Windows)",
+                  "echo ========================================================",
+                  "echo.",
+                  *bat_checks,
+                  f"echo [1/2] Menggabungkan {part_count} bagian ISO menjadi gta-vi-os-amd64.iso ...",
+                  "echo       Mohon tunggu 15-30 detik...",
+                  f'copy /y /b {copy_expr} "gta-vi-os-amd64.iso" >nul',
+                  "if errorlevel 1 goto :copy_failed",
+                  "echo [2/2] Memverifikasi keaslian file (SHA256)...",
+                  f'set "EXPECTED_SHA={orig_sha}"',
+                  'set "ACTUAL_SHA="',
+                  'for /f "skip=1 delims=" %%H in (\'certutil -hashfile "gta-vi-os-amd64.iso" SHA256\') do (',
+                  '    if not defined ACTUAL_SHA set "ACTUAL_SHA=%%H"',
+                  ")",
+                  'set "ACTUAL_SHA=!ACTUAL_SHA: =!"',
+                  'if /i "!ACTUAL_SHA!"=="!EXPECTED_SHA!" goto :verify_ok',
+                  "setlocal disabledelayedexpansion",
+                  "echo.",
+                  "echo [GAGAL] Checksum SHA256 TIDAK COCOK!",
+                  "echo   Seharusnya : %EXPECTED_SHA%",
+                  "echo   Didapat    : %ACTUAL_SHA%",
+                  "echo Silakan download ulang file .part* yang rusak atau tidak lengkap.",
+                  "echo.",
+                  "pause",
+                  "exit /b 1",
+                  "",
+                  ":verify_ok",
+                  "setlocal disabledelayedexpansion",
+                  "echo.",
+                  "echo [OK] BERHASIL! File gta-vi-os-amd64.iso VALID ^& siap dipasang di VirtualBox / VMware / Rufus!",
+                  "echo Lokasi file: %cd%\\gta-vi-os-amd64.iso",
+                  "echo.",
+                  "pause",
+                  "exit /b 0",
+                  "",
+                  ":missing_part",
+                  "setlocal disabledelayedexpansion",
+                  "echo.",
+                  "echo [ERROR] Bagian file ISO tidak ditemukan!",
+                  f"echo Pastikan semua file gta-vi-os-amd64.iso.part1 s/d .part{part_count} dan GABUNG-ISO-WINDOWS.bat",
+                  "echo berada di DALAM 1 FOLDER yang sama sebelum dijalankan.",
+                  "echo.",
+                  "pause",
+                  "exit /b 1",
+                  "",
+                  ":copy_failed",
+                  "setlocal disabledelayedexpansion",
+                  "echo.",
+                  "echo [ERROR] Gagal menggabungkan file ISO. Pastikan ruang disk kosong minimal 3 GB.",
+                  "echo.",
+                  "pause",
+                  "exit /b 1",
+              ]
+              with open(assets / "GABUNG-ISO-WINDOWS.bat", "wb") as fh:
+                  fh.write(("\r\n".join(bat_lines) + "\r\n").encode("ascii"))
+
+              sh_parts = " ".join(parts)
+              sh_lines = [
+                  "#!/usr/bin/env bash",
+                  "set -euo pipefail",
+                  'cd "$(dirname "$0")"',
+                  f'EXPECTED_SHA="{orig_sha}"',
+                  f"PARTS=({sh_parts})",
+                  'for part in "${PARTS[@]}"; do',
+                  '  if [ ! -f "$part" ]; then',
+                  '    echo "[ERROR] File tidak ditemukan / Missing file: $part" >&2',
+                  '    echo "Pastikan semua file .part* dan gabung-iso-linux.sh ada di 1 folder yang sama." >&2',
+                  "    exit 1",
+                  "  fi",
+                  "done",
+                  'echo "[1/2] Menggabungkan / Merging ${#PARTS[@]} parts -> gta-vi-os-amd64.iso ..."',
+                  "cat gta-vi-os-amd64.iso.part* > gta-vi-os-amd64.iso",
+                  'echo "[2/2] Memverifikasi / Verifying SHA256..."',
+                  "if command -v sha256sum >/dev/null 2>&1; then",
+                  '  ACTUAL_SHA=$(sha256sum "gta-vi-os-amd64.iso" | awk \'{print $1}\')',
+                  "elif command -v shasum >/dev/null 2>&1; then",
+                  '  ACTUAL_SHA=$(shasum -a 256 "gta-vi-os-amd64.iso" | awk \'{print $1}\')',
+                  "else",
+                  '  echo "[ERROR] sha256sum / shasum tidak ditemukan / not found." >&2',
+                  "  exit 1",
+                  "fi",
+                  'if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then',
+                  '  echo "[GAGAL / FAILED] SHA256 tidak cocok / mismatch!" >&2',
+                  '  echo "  Expected : $EXPECTED_SHA" >&2',
+                  '  echo "  Actual   : $ACTUAL_SHA" >&2',
+                  "  exit 1",
+                  "fi",
+                  'echo "[OK] BERHASIL! gta-vi-os-amd64.iso VALID & siap digunakan (VirtualBox / VMware / USB)."',
+              ]
+              sh_path = assets / "gabung-iso-linux.sh"
+              with open(sh_path, "wb") as fh:
+                  fh.write(("\n".join(sh_lines) + "\n").encode("utf-8"))
+              os.chmod(sh_path, 0o755)
+          PY
+
+          {
+            echo "SPLIT_MODE=$SPLIT_MODE"
+            echo "PART_COUNT=$PART_COUNT"
+            echo "ISO_GB=$ISO_GB"
+            echo "ORIG_SHA=$ORIG_SHA"
+          } >> "$GITHUB_ENV"
+          ls -lh release_assets/
+
+      - name: Generate release notes
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          title = os.environ["RELEASE_TITLE"]
+          run_num = os.environ["SOURCE_RUN_NUMBER"]
+          source_url = os.environ["SOURCE_URL"]
+          source_sha = os.environ.get("SOURCE_SHA", "")[:7]
+          iso_gb = os.environ["ISO_GB"]
+          orig_sha = os.environ["ORIG_SHA"]
+          split_mode = os.environ["SPLIT_MODE"] == "true"
+          part_count = int(os.environ["PART_COUNT"])
+
+          lines = [
+              f"## {title} (Build #{run_num})",
+              "",
+              "Sistem operasi Linux berbasis **Debian 12 Bookworm** bertema **GTA VI (Vice City / Leonida)**",
+              "dengan tampilan modern ala Windows 11, kernel LTS terbaru, dan ratusan tools siap pakai.",
+              "",
+              "A **Debian 12 Bookworm** Linux OS themed around **GTA VI (Vice City / Leonida)**",
+              "with a modern Windows 11-inspired UI, latest LTS kernel, and hundreds of ready-to-use tools.",
+              "",
+          ]
+
+          if split_mode:
+              parts = [f"gta-vi-os-amd64.iso.part{i}" for i in range(1, part_count + 1)]
+              parts_md = ", ".join(f"`{p}`" for p in parts)
+              copy_cmd = " + ".join(parts)
+              lines += [
+                  f"### Cara Download & Gabung ISO ({iso_gb} GiB) / Download & Merge Guide",
+                  "",
+                  f"> GitHub Releases membatasi ukuran 1 file maksimal **2.00 GiB**, sehingga ISO ({iso_gb} GiB)",
+                  f"> dipecah menjadi **{part_count} bagian** ({parts_md}) dengan hash identik.",
+                  f"> GitHub Releases caps single assets at **2.00 GiB**, so the ISO is split into {part_count} parts.",
+                  "",
+                  "#### Windows (3 Langkah Mudah — Tanpa Aplikasi Tambahan)",
+                  f"1. Download semua file bagian ({parts_md}) dan **`GABUNG-ISO-WINDOWS.bat`**",
+                  "   ke **1 folder yang sama** (misalnya `Downloads`).",
+                  "2. **Klik 2x** file `GABUNG-ISO-WINDOWS.bat`",
+                  "   *(jika muncul Windows SmartScreen, klik **More info** -> **Run anyway**)*.",
+                  "3. Tunggu ~15-30 detik sampai muncul **`[OK] BERHASIL!`** —",
+                  "   file **`gta-vi-os-amd64.iso`** siap dipakai!",
+                  "",
+                  "Alternatif manual lewat **Command Prompt (`cmd`)** di folder tersebut:",
+                  "```bat",
+                  f"copy /b {copy_cmd} gta-vi-os-amd64.iso",
+                  "```",
+                  "",
+                  "#### Linux / macOS",
+                  f"1. Download semua file bagian ({parts_md}) dan **`gabung-iso-linux.sh`**",
+                  "   ke **1 folder yang sama**.",
+                  "2. Jalankan perintah berikut di Terminal:",
+                  "```bash",
+                  "bash gabung-iso-linux.sh",
+                  "```",
+                  "Atau gabung manual & cek SHA256:",
+                  "```bash",
+                  "cat gta-vi-os-amd64.iso.part* > gta-vi-os-amd64.iso && sha256sum -c SHA256SUMS",
+                  "```",
+                  "",
+              ]
+          else:
+              lines += [
+                  f"### Cara Download ISO ({iso_gb} GiB) / Download Guide",
+                  "",
+                  "Download **`gta-vi-os-amd64.iso`** dan `SHA256SUMS` di bagian **Assets** di bawah.",
+                  "",
+              ]
+
+          lines += [
+              "### Cara Menjalankan / Quick-Start (VirtualBox, VMware & USB)",
+              "",
+              "- **VirtualBox**: New -> Type `Linux` / `Debian (64-bit)` -> RAM min `4096 MB`, `2-4` CPU,",
+              "  Disk `30 GB VDI` -> Display `VMSVGA` `128 MB` -> Storage pilih `gta-vi-os-amd64.iso` -> Start!",
+              "- **VMware Workstation / Player**: Create New VM -> Installer disc `gta-vi-os-amd64.iso`",
+              "  -> `Debian 12 64-bit` -> RAM `4 GB+`, Disk `30 GB` (`open-vm-tools` aktif otomatis).",
+              "- **USB Flashdisk (Rufus / BalenaEtcher)**: Siapkan flashdisk min `4 GB / 8 GB`, tulis",
+              "  `gta-vi-os-amd64.iso` via **Rufus** atau **BalenaEtcher** (mendukung UEFI & Legacy BIOS).",
+              "  Untuk install permanen ke SSD/HDD, jalankan `sudo vp-installer.sh` di Terminal.",
+              "",
+              "### Login Default Live Session",
+              "",
+              "- **Username**: `vice`",
+              "- **Password**: `vice` (`sudo` password: `vice`)",
+              "",
+              f"### Highlight Fitur (Build #{run_num})",
+              "",
+              "- **Base System & Kernel**: Debian 12 Bookworm + **Backports 6.12 LTS kernel** & auto-updates",
+              "- **Vice Tool Hub**: **425/500 tools** siap pakai (Coding, Cybersecurity, Office, Multimedia)",
+              "- **Leonida UI**: Tampilan **Win11-style rounded Leonida UI** yang bersih & responsif",
+              "- **Vice OS Settings**: **29-panel** pusat pengaturan langsung tanpa tab stub",
+              "- **Applications Launcher**: Menu launcher full-width dengan pencarian & kategori cepat",
+              "- **Developer Stack**: **VS Code** (tema Leonida) + **11 dev languages/toolchains**",
+              "  (C/C++, C# .NET 8, Python 3, Rust, Node.js/TypeScript, Go, Java, PHP, Ruby, Lua)",
+              "- **Produktivitas & Audio**: **LibreOffice** suite lengkap + **PipeWire** audio modern",
+              "- **Hardware Plug & Play**: Universal **HW/Wi-Fi auto-detect & auto-mount** USB/drive",
+              "",
+              "### Verifikasi Integritas / Integrity & Build Info",
+              "",
+              f"- **SHA256 (`gta-vi-os-amd64.iso`)**: `{orig_sha}`",
+              f"- **Source Build**: [Build #{run_num} (`{source_sha}`)]({source_url})",
+              "- File `SHA256SUMS` dan `build_info.txt` ikut dilampirkan di **Assets**.",
+          ]
+
+          Path("release_notes.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+          echo "--- Generated release_notes.md ---"
+          cat release_notes.md
+
+      - name: Publish GitHub Release
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Updating existing release $TAG as Latest..."
+            gh release edit "$TAG" \
+              --title "$RELEASE_TITLE" \
+              --notes-file release_notes.md \
+              --latest \
+              --prerelease=false \
+              --draft=false
+          else
+            echo "Creating new release $TAG as Latest..."
+            gh release create "$TAG" \
+              --title "$RELEASE_TITLE" \
+              --notes-file release_notes.md \
+              --latest
+          fi
+
+          for f in release_assets/*; do
+            [ -f "$f" ] || continue
+            echo "Uploading asset: $f"
+            uploaded=0
+            for attempt in 1 2 3; do
+              if gh release upload "$TAG" "$f" --clobber; then
+                uploaded=1
+                break
+              fi
+              echo "Attempt $attempt failed for $f; retrying in 5s..."
+              sleep 5
+            done
+            if [ "$uploaded" -ne 1 ]; then
+              echo "ERROR: Failed to upload $f after 3 attempts." >&2
+              exit 1
+            fi
+          done
+
+      - name: Verify published Latest Release
+        run: |
+          set -euo pipefail
+          LATEST_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest")
+          echo "$LATEST_JSON" | jq -e \
+            '.tag_name == env.TAG and .name == env.RELEASE_TITLE and .prerelease == false and .draft == false' \
+            >/dev/null
+          for f in release_assets/*; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            size=$(stat -c%s "$f")
+            echo "$LATEST_JSON" | jq -e --arg name "$name" --argjson size "$size" \
+              '.assets[] | select(.name == $name and .size == $size)' >/dev/null
+          done
+          echo "Verified Latest Release:"
+          echo "$LATEST_JSON" | jq -r '"  Tag   : \(.tag_name)\n  Title : \(.name)\n  URL   : \(.html_url)"'
+          echo "Uploaded Assets:"
+          echo "$LATEST_JSON" | jq -r '.assets[] | "  - \(.name) (\(.size) bytes)"'

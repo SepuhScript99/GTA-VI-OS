@@ -6,6 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+## [0.01-alpha] - 2026-11-25
+
+**GTA-VI-OS 0.01 Alpha — Build #16**
+
+First public alpha release featuring a full-width Applications Launcher, 29 live inline Settings pages, de-gimmicked native Vice OS tools, Debian Backports Linux 6.12 LTS kernel & firmware support, native upstream hardware auto-mount/auto-play, and a `xorriso`-based >2 GB ISO CI validator.
+
+### Added
+
+- **Debian Backports Linux 6.12 LTS Kernel & Unattended Security Updates**:
+  - Enabled `bookworm-backports` in `config/apt/sources.list`.
+  - Added codename-pinned APT preferences (`config/apt/preferences.d/90-vice-backports-kernel`, `Pin: release n=bookworm-backports`, `Pin-Priority: 550`) for `linux-image-*`, `linux-headers-*`, `firmware-*`, `intel-microcode`, and `amd64-microcode` while preserving core Debian 12 Bookworm stability.
+  - Added `unattended-upgrades` configuration (`config/apt/apt.conf.d/20auto-upgrades` and `50unattended-upgrades`) installed alongside APT preferences in `chroot_scripts/00_base_config.sh` and `17_apt_config_setup.sh`.
+- **100% Native Upstream Hardware Auto-Mount & Media Auto-Play**:
+  - Added 9 verified packages to `config/packages.list` (`thunar-volman`, `gvfs-fuse`, `gvfs-daemons`, `mtp-tools`, `usbmuxd`, `fwupd`, `unattended-upgrades`, `dkms`, `udisks2-btrfs` — `552` total packages, `0` duplicates).
+  - Enabled `[volume]` auto-mount/autorun defaults in `config/libfm/libfm.conf` (`mount_on_startup=1`, `mount_removable=1`, `autorun=1`).
+  - Added `config/skel/.config/xfce4/xfconf/xfce-perchannel-xml/thunar-volman.xml` (copied via `chroot_scripts/22_skel_setup.sh`) for native USB/media auto-mount, auto-browse, and audio/video CD auto-play (`/usr/bin/mpv`).
+  - Added passwordless local console `udisks2` auto-mount polkit rules (`config/polkit-1/rules.d/50-vice-udisks-automount.rules`) wired in `chroot_scripts/07_polkit_setup.sh`.
+- **29 Real Inline Settings Center Pages (`desktop/vice_settings_pages.py`)**:
+  - Replaced all `AppLauncherPage` open-me stub cards in `desktop/vice_settings.py` with live inline Linux control panels across all 29 `PAGE_NAMES` (`Display`, `Sound` with `0–100%` PipeWire/WirePlumber cap, `Network`/`VPN`, `Bluetooth`, `Firewall`, `Date & Time`, `Storage`/`USB` auto-mount toggles, `Updates`/`Kernel` backports status, `Power`, `Users`, `Printers`, `Theme`, `Wallpaper`, `Diagnostics`, `Drivers`, `About`, etc.) using non-blocking background `QThread` loading and clean shutdown.
+- **Beginner Indonesian Documentation (`README.md`)**:
+  - Rewrote `README.md` for first-time users covering split-ISO (`~2.56 GB`, `.part1` + `.part2`) merge instructions (`GABUNG-ISO-WINDOWS.bat`, `copy /b`, and `gabung-iso-linux.sh`), VirtualBox/VMware/USB flashdrive guides, default `vice`/`vice` login tour, feature overview, and beginner FAQ.
+
+### Changed
+
+- **Full-Width Applications Launcher Overhaul (`desktop/vice_launcher.py`)**:
+  - Replaced crushed `AppButton(QPushButton)` tiles with full-width horizontal `AppCard(QFrame)` cards (`[40x40 Icon] [Title + Category] [Favorite]`) inside a uniform-stretch responsive `QGridLayout` (`1040x640`), live category counts, debounced search, and incremental `QTimer` batch rendering.
+- **De-Gimmicked Native Tools & Launcher (`desktop/vice_tool_*.py`, `system_scripts/vice-run-tool.sh`)**:
+  - Upgraded `desktop/vice_tool_turbo.py` with real Linux telemetry and system tuning: per-core CPU load, live Disk R/W & Net RX/TX rates, ZRAM compression stats, CPU scaling governor switching, `picom` compositor pause/resume, `vm.drop_caches=3`/`vm.swappiness` tuning, and interactive process `renice`/kill controls.
+  - Upgraded `desktop/vice_tool_radio.py` to 9 verified HTTPS SomaFM/Nightride streams plus local music folder M3U8 playlist playback, Prev/Next track controls, and custom stream URLs.
+  - Added `/usr/local/sbin:/usr/sbin:/sbin` lookup fallbacks across `vice_tool_cyber_deck.py`, `vice_tool_net_shield.py`, `vice_tool_mac_cloak.py`, and `vice_tool_sys_deck.py` (plus `zramctl` readout), and synced `425 / 500` strings in `vice_tool_cheatsheets.py` and `vice_tool_missions.py`.
+  - Updated `system_scripts/vice-run-tool.sh` with `sudo` auto-elevation for root-only CLI/TUI utilities and interactive argument prompting for `python3 -m <module>` commands.
+- **Native Hardware Detection & Clean Systemd Units (`system_scripts/vice-hw-autodetect.sh`, `chroot_scripts/19_systemd_setup.sh`)**:
+  - Streamlined hardware detection to rely on native `systemd-udevd`, `udisks2`, `NetworkManager`, and `rfkill` instead of custom PCI/USB modalias `modprobe` loops while keeping `80-vice-net-tune` and conditional VM guest unit masking (`fwupd-refresh` masked for offline/VM cleanliness).
+- **Updated Test Suites (`tests/test_desktop.py`, `tests/test_tools_registry.py`, `tests/test_validation.sh`)**:
+  - Updated test assertions for the full-width `AppCard` launcher, 29 inline settings pages, backports pinning, native auto-mount configs, tool registry fixes, and `xorriso` ISO validation (`86` Python unit tests + `8/8` shell suites passing).
+
+### Fixed
+
+- **>2 GB ISO CI Validator (`validation/validate_iso.sh`)**:
+  - Replaced legacy `isoinfo` inspection/extraction (which failed on ISO #15's `2562.9 MB` image) with `xorriso` (`-osirrox on -extract` for `/vmlinuz`, `/initrd.img`, `/boot/grub/grub.cfg` and `-lsl /live/filesystem.squashfs` size check) and eliminated `grep -q` `SIGPIPE` hazards under `set -Eeuo pipefail`.
+- **VS Code ("Blue UI/Icon") & LibreOffice Impress Visual Fixes**:
+  - Recolored `kind == "vscode"` in `assets/generate_tool_icons.py` from default blue to Leonida Sunset & Aqua (`#FF5E7E` / `#FF9A62` / `#36D6C3`).
+  - Updated `config/skel/.config/Code/User/settings.json` to disable the Copilot Welcome modal (`workbench.startupEditor: "none"`), hide the Copilot chat sidebar (`chat.disableAIFeatures: true`, `workbench.secondarySideBar.defaultVisibility: "hidden"`), and replace remaining blue accents with Leonida Sunset & Aqua.
+  - Disabled LibreOffice Impress startup template selection dialog in `config/skel/.config/libreoffice/4/user/registrymodifications.xcu`.
+- **425 / 500 Tool Registry Fixes (`config/tools_registry.json`, `docs/TOOLS_PROGRESS.md`)**:
+  - Fixed broken `python3-flake8` command (`flake8` -> `python3 -m flake8` for Debian 12 packaging) and updated `node-typescript` (`tsc --version` -> `tsc`) so interactive help/argument prompting triggers cleanly.
+
+---
+
 ## Unreleased
 
 ### Added
